@@ -1,0 +1,53 @@
+# DeskHub --text-check fixture (0.36.0). 종류<TAB>입력<TAB>기대값[<TAB>제목[<TAB>연도]] — 빈 칸 = 빈 값
+# title·authors: 논문 추천 카드 방어 (R-31, C3)
+title	Incorporation of a cost of deliberation time in perceptual decision making c5f602	Incorporation of a cost of deliberation time in perceptual decision making
+title	Neural dynamics over a decade	Neural dynamics over a decade
+title	Coding in area V1 0a1b2c	Coding in area V1
+title	Report C5F602	Report C5F602
+title	<b>Bold</b> title	Bold title
+authors	Unknown, Kira, S., Zylberberg, A., & Shadlen, M. N.	Kira, S., Zylberberg, A., & Shadlen, M. N.
+authors	, , Kira, S.	Kira, S.
+authors	unknown, Unknown, Lee, B.	Lee, B.
+authors	Unknown	
+authors	Unknownson, A.	Unknownson, A.
+authors	Mao, J., & Stocker, A. A.	Mao, J., & Stocker, A. A.
+# cite: Paper Blitz 인용 줄 (R-30, C4) — 앞 9줄은 10-14 덱(PB_261014.pptx) 원문 그대로, 뒤 6줄은 음성(원문 그대로)·particle·빈 값
+cite	Chen, K. W., & Bae, G. Y. (2024). Cognition, 250, 105843.	Chen, 2024, Cognition	Working memory flips
+cite	Jeurissen et al. (2024), Nature Communications	Jeurissen, 2024, Nat Commun	Border-ownership
+cite	David A Leopold, Melanie Wilke, Alexander Maier, Nikos K Logothetis, 2002, Nature Neuroscience	Leopold, 2002, Nat Neurosci	Stable perception
+cite	Jonathon Sensinger ,Adrian Aleman-Zapata,Kevin Englehart, 2015, PLOS One	Sensinger, 2015, PLOS ONE	Do Cost Functions
+cite	Bannister, J. J., Juszczak, H., Aponte, J. D., Katz, D. C., Knott, P. D., Weinberg, S. M., ... & Seth, R. (2022). Facial Plastic Surgery & Aesthetic Medicine, 24(2_suppl), 24-30.	Bannister, 2022, Facial Plast Surg Aesthet Med	Sex differences
+cite	Jazayeri, M., Movshon, J. Nat Neurosci 9, 690–696 (2006).	Jazayeri, 2006, Nat Neurosci	Optimal representation
+cite	Novicky, F., Parr, T., Friston, K., Mirza, M. B., & Sajid, N. (2024). Cerebral Cortex.	Novicky, 2024, Cereb Cortex	Bistable perception
+cite	Tang, C., Herikstad, R., Parthasarathy, A., Libedinsky, C., & Yen, S. C. (2020). Minimally dependent activity subspaces for working memory and motor preparation in the lateral prefrontal cortex. Elife, 9, e58154.	Tang, 2020, eLife	Minimally dependent activity subspaces for working memory and motor preparation in the lateral prefrontal cortex
+cite	Chalk, M., Marre, O., & Tkačik, G. (2018). Toward a unified theory of efficient, predictive, and sparse coding. Proceedings of the national academy of sciences, 115(1), 186-191.	Chalk, 2018, PNAS	Toward a unified theory of efficient, predictive, and sparse coding
+cite	Smith (2019)	Smith (2019)	
+cite	Jazayeri, M., Movshon, J. Some Unknown Journal 9, 690–696 (2006).	Jazayeri, M., Movshon, J. Some Unknown Journal 9, 690–696 (2006).	
+cite	CSNL internal report 2021	CSNL internal report 2021	
+cite	Lee B, Kim J. Vision Res. 2019;160:1-10.	Lee B, Kim J. Vision Res. 2019;160:1-10.	
+cite	van den Berg, R., & Ma, W. J. (2018). eLife, 7, e34963.	van den Berg, 2018, eLife	
+cite			
+# cite 검증 1 리뷰 — Vancouver 이니셜 묶음은 성이 아님(원문), 쉼표 든 저널 이름, 약어 저널·약어/물음표로 끝나는 제목(원문)
+cite	Sheehan TC, Serences JT, 2022, PLOS Biology	Sheehan TC, Serences JT, 2022, PLOS Biology	
+cite	Heng JA, Woodford M, Polania R (2025) Efficient numerosity estimation under limited time. PLOS Computational Biology 21(3): e1012790.	Heng JA, Woodford M, Polania R (2025) Efficient numerosity estimation under limited time. PLOS Computational Biology 21(3): e1012790.	
+cite	Petzschner FH, Glasauer S. Iterative Bayesian estimation as an explanation for range and regression effects: a study on human path integration. J Neurosci. 2011 Nov 23;31(47):17220-9.	Petzschner FH, Glasauer S. Iterative Bayesian estimation as an explanation for range and regression effects: a study on human path integration. J Neurosci. 2011 Nov 23;31(47):17220-9.	
+cite	Kandemir, G., & Olivers, C. N. (2026). Attention, Perception, & Psychophysics, 88(2), 44.	Kandemir, 2026, Atten Percept Psychophys	
+cite	Jiang, Y., Olson, I. R., & Chun, M. M. (2000) Journal of Experimental Psychology: Learning, memory, and cognition	Jiang, Y., Olson, I. R., & Chun, M. M. (2000) Journal of Experimental Psychology: Learning, memory, and cognition	
+cite	Chalk, M., Marre, O., & Tkacik, G. (2018). Toward a unified theory of efficient, predictive, and sparse coding. Proc. Natl. Acad. Sci. USA, 115(1), 186-191.	Chalk, M., Marre, O., & Tkacik, G. (2018). Toward a unified theory of efficient, predictive, and sparse coding. Proc. Natl. Acad. Sci. USA, 115(1), 186-191.	
+cite	Smith, J. (2020). Why so slow? Decision dynamics in monkeys. Neuron, 5, 1-10.	Smith, J. (2020). Why so slow? Decision dynamics in monkeys. Neuron, 5, 1-10.	
+# cite 리뷰 2 — 제목 없는 약어 저널, '?' 로 끝나는 제목(원문), 알려진 저널 뒤 in press
+cite	Smith, J. (2019). Cereb. Cortex, 29, 1-10.	Smith, 2019, Cereb Cortex	
+cite	Lee, K., & Park, S. (2021). Curr. Biol., 31, 100-110.	Lee, 2021, Curr Biol	
+cite	Park, H. (2018). Psychol. Sci., 29, 5-15.	Park, 2018, Psychol Sci	
+cite	Kim, A. (2020). Is it MT? Neuron, 105, 1-5.	Kim, A. (2020). Is it MT? Neuron, 105, 1-5.	
+cite	Doe, J. (2022). Attention, Perception, & Psychophysics, in press.	Doe, 2022, Atten Percept Psychophys	
+cite	Doe, J. (2023). Neuron, in press.	Doe, 2023, Neuron	
+# clamp: 팝오버 창 클램프 (R-33, C6) — 입력 screen=x,y,w,h;visible=x,y,w,h;bar=Y|-;pop=x,y,w,h → 기대 x,y,w,h. 실물 세로·보조 모니터 대신
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1060;bar=1130;pop=1380,520,400,616	1380,510,400,616
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1060;bar=1130;pop=1500,400,400,600	1396,400,400,600
+clamp	screen=1800,-751,1080,1920;visible=1800,-751,1080,1895;bar=1144;pop=2400,560,400,600	2400,540,400,600
+clamp	screen=0,1169,2560,1440;visible=0,1169,2560,1415;bar=2584;pop=2000,1990,400,600	2000,1980,400,600
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1099;bar=1130;pop=1380,530,400,616	1380,510,400,616
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1060;bar=-;pop=1380,520,400,616	1380,510,400,616
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1060;bar=1130;pop=1380,0,400,1200	1380,74,400,1052
+clamp	screen=0,0,1800,1169;visible=0,70,1800,1060;bar=1130;pop=1380,400,400,600	1380,400,400,600

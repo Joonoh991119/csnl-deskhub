@@ -1,0 +1,48 @@
+{
+  "claudeAutoSend" : true,
+  "claudeURL" : "https:\/\/claude.ai\/new",
+  "cornerRadius" : 18,
+  "nasFavorites" : [
+    "Server\/Conferences",
+    "Grant",
+    "Server"
+  ],
+  "nasFileStationURL" : "https:\/\/147.47.70.15:5001\/?launchApp=SYNO.SDS.App.FileStation3.Instance",
+  "nasRoot" : "\/Volumes\/CSNL_new",
+  "nasSMB" : "smb:\/\/joonoh@147.47.70.15\/CSNL_new",
+  "notionAccountHint" : "vnilab@gmail.com",
+  "notionURL" : "https:\/\/www.notion.so\/login",
+  "plaudBundleID" : "ai.plaud.desktop.plaud",
+  "plaudURL" : "https:\/\/web.plaud.ai\/",
+  "userAgent" : "Mozilla\/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit\/605.1.15 (KHTML, like Gecko) Version\/26.0 Safari\/605.1.15",
+  "widgets" : {
+    "claude" : {
+      "h" : 481,
+      "visible" : true,
+      "w" : 544,
+      "x" : 1238,
+      "y" : 96
+    },
+    "nas" : {
+      "h" : 1016,
+      "visible" : true,
+      "w" : 625,
+      "x" : 168,
+      "y" : 78
+    },
+    "notion" : {
+      "h" : 1016,
+      "visible" : true,
+      "w" : 1158,
+      "x" : 87,
+      "y" : 78
+    },
+    "plaud" : {
+      "h" : 365.76,
+      "visible" : true,
+      "w" : 543.9466666666667,
+      "x" : 1238.0533333333333,
+      "y" : 746.24
+    }
+  }
+}

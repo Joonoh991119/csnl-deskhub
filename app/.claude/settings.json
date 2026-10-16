@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(swift build:*)",
+      "Bash(./build.sh:*)",
+      "Bash(open -g -a /Applications/DeskHub.app)",
+      "Bash(open -a /Applications/DeskHub.app)",
+      "Bash(pkill -x DeskHub)",
+      "Bash(pgrep -lx DeskHub)",
+      "Bash(/Applications/DeskHub.app/Contents/MacOS/DeskHub --snapshot:*)",
+      "Bash(launchctl bootstrap:*)",
+      "Bash(launchctl bootout:*)",
+      "Bash(launchctl print:*)",
+      "Bash(defaults read:*)",
+      "Bash(cat:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(sed -n:*)",
+      "Bash(python3:*)",
+      "Bash(codesign:*)",
+      "Bash(iconutil:*)",
+      "Bash(sips:*)",
+      "Bash(curl -s https://api.notion.com/*)",
+      "Read(~/Library/Application Support/DeskHub/**)",
+      "Read(/private/tmp/claude-501/**)"
+    ]
+  }
+}

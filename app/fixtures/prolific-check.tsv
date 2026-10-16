@@ -1,0 +1,11 @@
+# DeskHub --text-check fixtures/prolific-check.tsv (0.37.0 C4) — Prolific study 상태 → 허브·관제탑에 보이나(yes|no)
+# 랩장 10-16 18:12: 진행(ACTIVE)·준비(UNPUBLISHED) 중만. 옛 PAUSED 실험(BYL 19/20) 제외. config 의 showStatuses 는 읽지 않는다
+# 종류	입력(상태)	기대
+prolific	ACTIVE	yes
+prolific	UNPUBLISHED	yes
+prolific	active	yes
+prolific	PAUSED	no
+prolific	COMPLETED	no
+prolific	AWAITING REVIEW	no
+prolific	SCHEDULED	no
+prolific	PUBLISHING	no

@@ -1,0 +1,8 @@
+{
+ "report": "~/Developer/csnl-admin/docs/workspace-report.html",
+ "apps": [
+  {"name": "DeskHub", "path": "/Applications/DeskHub.app", "source": "csnl-admin · plugins/deskhub/app", "desc": "바탕화면 대시보드 — 관제탑·공정 보드·안내판·랩 허브·팝오버"},
+  {"name": "LabClean", "path": "~/Desktop/LabClean.app", "source": "csnl-apps", "desc": "공용 맥 초기화"},
+  {"name": "CSNL DM Archive", "path": "~/Applications/CSNL DM Archive.app", "source": "csnl-admin · report/tools/dm-archive", "desc": "봇 DM → NAS 아카이브 (launchd 15분)"}
+ ]
+}

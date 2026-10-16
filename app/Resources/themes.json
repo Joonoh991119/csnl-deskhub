@@ -1,0 +1,367 @@
+{
+  "csnl": {
+    "name": "CSNL (기본)",
+    "source": "DeskHub 디자인 스펙 2026-10-12",
+    "light": {
+      "card": "#ffffff",
+      "backdrop": "#e6e8ed",
+      "surface": "#f2f4f7",
+      "text": "#1c1e22",
+      "text2": "#5a6069",
+      "text3": "#808690",
+      "ink": "#1f3b5c",
+      "ok": "#1c6b54",
+      "signal": "#a8302d",
+      "heroBG": "#e0e4e8",
+      "onAccent": "#ffffff",
+      "cardBorder": "#1c1e2214",
+      "divider": "#1c1e2214",
+      "fillNeutral": "#1c1e2212",
+      "_contrast": {
+        "text": 15.15,
+        "text2": 5.75,
+        "text3": 3.33,
+        "ink": 10.37,
+        "ok": 5.81,
+        "signal": 6.1
+      }
+    },
+    "dark": {
+      "card": "#1c1f26",
+      "backdrop": "#0f1217",
+      "surface": "#262932",
+      "text": "#e6e7ea",
+      "text2": "#a6aab2",
+      "text3": "#7f848d",
+      "ink": "#9ebde0",
+      "ok": "#73b899",
+      "signal": "#ee8a82",
+      "heroBG": "#2e3540",
+      "onAccent": "#1c1f26",
+      "cardBorder": "#e6e7ea1f",
+      "divider": "#e6e7ea1a",
+      "fillNeutral": "#e6e7ea12",
+      "_contrast": {
+        "text": 11.75,
+        "text2": 6.24,
+        "text3": 3.87,
+        "ink": 7.48,
+        "ok": 6.26,
+        "signal": 5.94
+      }
+    }
+  },
+  "catppuccin": {
+    "name": "Catppuccin (Latte / Mocha)",
+    "source": "github.com/catppuccin/palette (MIT)",
+    "light": {
+      "card": "#eff1f5",
+      "backdrop": "#dce0e8",
+      "surface": "#e6e9ef",
+      "text": "#484b63",
+      "text2": "#5c5f77",
+      "text3": "#818498",
+      "ink": "#0b59f4",
+      "ok": "#307820",
+      "signal": "#cd0f38",
+      "heroBG": "#cfdcf5",
+      "onAccent": "#ffffff",
+      "cardBorder": "#484b6314",
+      "divider": "#484b6314",
+      "fillNeutral": "#484b6312",
+      "_contrast": {
+        "text": 7.01,
+        "text2": 5.14,
+        "text3": 3.04,
+        "ink": 4.61,
+        "ok": 4.5,
+        "signal": 4.64
+      }
+    },
+    "dark": {
+      "card": "#1e1e2e",
+      "backdrop": "#11111b",
+      "surface": "#181825",
+      "text": "#cdd6f4",
+      "text2": "#bac2de",
+      "text3": "#7f849c",
+      "ink": "#89b4fa",
+      "ok": "#a6e3a1",
+      "signal": "#f38ba8",
+      "heroBG": "#2d334b",
+      "onAccent": "#1e1e2e",
+      "cardBorder": "#cdd6f41f",
+      "divider": "#cdd6f41a",
+      "fillNeutral": "#cdd6f412",
+      "_contrast": {
+        "text": 12.14,
+        "text2": 9.91,
+        "text3": 4.75,
+        "ink": 8.34,
+        "ok": 11.81,
+        "signal": 7.58
+      }
+    }
+  },
+  "rosepine": {
+    "name": "Rosé Pine (Dawn / Moon)",
+    "source": "github.com/rose-pine/palette (MIT)",
+    "light": {
+      "card": "#faf4ed",
+      "backdrop": "#f2e9e1",
+      "surface": "#f2e9e1",
+      "text": "#464261",
+      "text2": "#6a6683",
+      "text3": "#888297",
+      "ink": "#286983",
+      "ok": "#416f77",
+      "signal": "#a44f67",
+      "heroBG": "#dde1de",
+      "onAccent": "#ffffff",
+      "cardBorder": "#46426114",
+      "divider": "#46426114",
+      "fillNeutral": "#46426112",
+      "_contrast": {
+        "text": 7.92,
+        "text2": 4.56,
+        "text3": 3.08,
+        "ink": 5.09,
+        "ok": 4.65,
+        "signal": 4.5
+      }
+    },
+    "dark": {
+      "card": "#232136",
+      "backdrop": "#2a273f",
+      "surface": "#2a273f",
+      "text": "#e0def4",
+      "text2": "#938fac",
+      "text3": "#736f8c",
+      "ink": "#9ccfd8",
+      "ok": "#459bbd",
+      "signal": "#eb6f92",
+      "heroBG": "#34394d",
+      "onAccent": "#232136",
+      "cardBorder": "#e0def41f",
+      "divider": "#e0def41a",
+      "fillNeutral": "#e0def412",
+      "_contrast": {
+        "text": 10.9,
+        "text2": 4.63,
+        "text3": 3.0,
+        "ink": 8.44,
+        "ok": 4.57,
+        "signal": 4.94
+      }
+    }
+  },
+  "nord": {
+    "name": "Nord",
+    "source": "github.com/nordtheme/nord (MIT)",
+    "light": {
+      "card": "#eceff4",
+      "backdrop": "#d8dee9",
+      "surface": "#e5e9f0",
+      "text": "#2e3440",
+      "text2": "#4c566a",
+      "text3": "#4c566a",
+      "ink": "#4b6a91",
+      "ok": "#546e3e",
+      "signal": "#ac4650",
+      "heroBG": "#d5dce6",
+      "onAccent": "#ffffff",
+      "cardBorder": "#2e344014",
+      "divider": "#2e344014",
+      "fillNeutral": "#2e344012",
+      "_contrast": {
+        "text": 10.26,
+        "text2": 6.06,
+        "text3": 6.06,
+        "ink": 4.57,
+        "ok": 4.69,
+        "signal": 4.6
+      }
+    },
+    "dark": {
+      "card": "#2e3440",
+      "backdrop": "#242933",
+      "surface": "#3b4252",
+      "text": "#eceff4",
+      "text2": "#d8dee9",
+      "text3": "#818da5",
+      "ink": "#88c0d0",
+      "ok": "#a3be8c",
+      "signal": "#d89fa4",
+      "heroBG": "#3b4854",
+      "onAccent": "#2e3440",
+      "cardBorder": "#eceff41f",
+      "divider": "#eceff41a",
+      "fillNeutral": "#eceff412",
+      "_contrast": {
+        "text": 8.73,
+        "text2": 7.45,
+        "text3": 3.01,
+        "ink": 5.03,
+        "ok": 4.94,
+        "signal": 4.51
+      }
+    }
+  },
+  "solarized": {
+    "name": "Solarized",
+    "source": "github.com/altercation/vim-colors-solarized (MIT)",
+    "light": {
+      "card": "#fdf6e3",
+      "backdrop": "#eee8d5",
+      "surface": "#eee8d5",
+      "text": "#3e4d52",
+      "text2": "#586b72",
+      "text3": "#758787",
+      "ink": "#1d6ca2",
+      "ok": "#5d6b00",
+      "signal": "#ca2522",
+      "heroBG": "#dee3da",
+      "onAccent": "#ffffff",
+      "cardBorder": "#3e4d5214",
+      "divider": "#3e4d5214",
+      "fillNeutral": "#3e4d5212",
+      "_contrast": {
+        "text": 7.18,
+        "text2": 4.56,
+        "text3": 3.08,
+        "ink": 4.61,
+        "ok": 4.8,
+        "signal": 4.51
+      }
+    },
+    "dark": {
+      "card": "#002b36",
+      "backdrop": "#001f27",
+      "surface": "#073642",
+      "text": "#b9c2c2",
+      "text2": "#8b9b9d",
+      "text3": "#657e86",
+      "ink": "#48a0de",
+      "ok": "#8ea300",
+      "signal": "#e87775",
+      "heroBG": "#0a3b4e",
+      "onAccent": "#002b36",
+      "cardBorder": "#b9c2c21f",
+      "divider": "#b9c2c21a",
+      "fillNeutral": "#b9c2c212",
+      "_contrast": {
+        "text": 7.16,
+        "text2": 4.5,
+        "text3": 3.02,
+        "ink": 4.56,
+        "ok": 4.57,
+        "signal": 4.54
+      }
+    }
+  },
+  "gruvbox": {
+    "name": "Gruvbox",
+    "source": "github.com/morhetz/gruvbox (MIT/X11)",
+    "light": {
+      "card": "#fbf1c7",
+      "backdrop": "#ebdbb2",
+      "surface": "#f9f5d7",
+      "text": "#3c3836",
+      "text2": "#796c62",
+      "text3": "#9b8a72",
+      "ink": "#076678",
+      "ok": "#74700d",
+      "signal": "#9d0006",
+      "heroBG": "#d9debc",
+      "onAccent": "#ffffff",
+      "cardBorder": "#3c383614",
+      "divider": "#3c383614",
+      "fillNeutral": "#3c383612",
+      "_contrast": {
+        "text": 10.53,
+        "text2": 4.61,
+        "text3": 3.04,
+        "ink": 6.0,
+        "ok": 4.69,
+        "signal": 7.83
+      }
+    },
+    "dark": {
+      "card": "#282828",
+      "backdrop": "#1d2021",
+      "surface": "#3c3836",
+      "text": "#ebdbb2",
+      "text2": "#aea08d",
+      "text3": "#928374",
+      "ink": "#89a99d",
+      "ok": "#b8bb26",
+      "signal": "#fc7f70",
+      "heroBG": "#363a38",
+      "onAccent": "#282828",
+      "cardBorder": "#ebdbb21f",
+      "divider": "#ebdbb21a",
+      "fillNeutral": "#ebdbb212",
+      "_contrast": {
+        "text": 8.45,
+        "text2": 4.53,
+        "text3": 3.16,
+        "ink": 4.54,
+        "ok": 5.62,
+        "signal": 4.64
+      }
+    }
+  },
+  "tokyonight": {
+    "name": "Tokyo Night (Storm · 항상 다크)",
+    "source": "github.com/folke/tokyonight.nvim (Apache-2.0)",
+    "alwaysDark": true,
+    "light": {
+      "card": "#24283b",
+      "backdrop": "#1f2335",
+      "surface": "#292e42",
+      "text": "#c0caf5",
+      "text2": "#a9b1d6",
+      "text3": "#737aa2",
+      "ink": "#7aa2f7",
+      "ok": "#9ece6a",
+      "signal": "#f7768e",
+      "heroBG": "#303955",
+      "onAccent": "#24283b",
+      "cardBorder": "#c0caf51f",
+      "divider": "#c0caf51a",
+      "fillNeutral": "#c0caf512",
+      "_contrast": {
+        "text": 8.32,
+        "text2": 6.36,
+        "text3": 3.22,
+        "ink": 5.33,
+        "ok": 7.35,
+        "signal": 5.08
+      }
+    },
+    "dark": {
+      "card": "#24283b",
+      "backdrop": "#1f2335",
+      "surface": "#292e42",
+      "text": "#c0caf5",
+      "text2": "#a9b1d6",
+      "text3": "#737aa2",
+      "ink": "#7aa2f7",
+      "ok": "#9ece6a",
+      "signal": "#f7768e",
+      "heroBG": "#303955",
+      "onAccent": "#24283b",
+      "cardBorder": "#c0caf51f",
+      "divider": "#c0caf51a",
+      "fillNeutral": "#c0caf512",
+      "_contrast": {
+        "text": 8.32,
+        "text2": 6.36,
+        "text3": 3.22,
+        "ink": 5.33,
+        "ok": 7.35,
+        "signal": 5.08
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+ "note": "표본 자료 — 실제 집계 아님. Members 탭 '연구원 현황판'의 예시 열(화면 모양 확인용). 숫자는 고정된 가짜 값",
+ "columns": [
+  {"id": "claude", "title": "Claude 사용량", "unit": "회/주"},
+  {"id": "github", "title": "GitHub push", "unit": "회/주"},
+  {"id": "react", "title": "논문 추천 반응", "unit": "건"}
+ ],
+ "values": {
+  "JOP": {"claude": 42, "github": 17, "react": 9},
+  "JYK": {"claude": 35, "github": 12, "react": 7},
+  "BHL": {"claude": 28, "github": 6, "react": 11},
+  "BYL": {"claude": 19, "github": 4, "react": 5},
+  "SMJ": {"claude": 31, "github": 9, "react": 8},
+  "SJK": {"claude": 22, "github": 5, "react": 6},
+  "MSY": {"claude": 16, "github": 3, "react": 4},
+  "JSL": {"claude": 25, "github": 8, "react": 3},
+  "SYJ": {"claude": 14, "github": 2, "react": 6},
+  "JHR": {"claude": 18, "github": 7, "react": 2},
+  "MJC": {"claude": 12, "github": 3, "react": 5},
+  "HJH": {"claude": 10, "github": 1, "react": 3}
+ }
+}

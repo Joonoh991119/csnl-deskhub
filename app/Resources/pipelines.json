@@ -1,0 +1,131 @@
+{
+  "_readme": "공정 보드(ProcessBoardView)의 공정·단계 정의 (D7). 단계 id 는 Pipeline.swift 가 판정하는 이름이고, 여기서 빼면 보드에서 그 칸이 사라진다(코드 수정 없이). label 은 화면 글자. 랩 관행에 맞게 고쳐도 된다 — 결정 28. GRM 은 초록 → 공지 순서(초록 완료 체크가 있어야 공지 초안이 생김, JYK R1 10-15).",
+  "pipelines": [
+    {
+      "id": "grm",
+      "title": "GRM",
+      "stages": [
+        {
+          "id": "abstract",
+          "label": "초록"
+        },
+        {
+          "id": "notice",
+          "label": "공지"
+        },
+        {
+          "id": "slides",
+          "label": "슬라이드"
+        },
+        {
+          "id": "talk",
+          "label": "발표"
+        },
+        {
+          "id": "transcript",
+          "label": "녹취"
+        },
+        {
+          "id": "minutes",
+          "label": "회의록"
+        },
+        {
+          "id": "magazine",
+          "label": "매거진"
+        },
+        {
+          "id": "blitz",
+          "label": "Blitz"
+        }
+      ]
+    },
+    {
+      "id": "grant",
+      "title": "그랜트",
+      "stages": [
+        {
+          "id": "collect",
+          "label": "수집"
+        },
+        {
+          "id": "confirm",
+          "label": "컨펌"
+        },
+        {
+          "id": "approve",
+          "label": "승인"
+        },
+        {
+          "id": "submit",
+          "label": "제출"
+        }
+      ]
+    },
+    {
+      "id": "papers",
+      "title": "논문 추천",
+      "stages": [
+        {
+          "id": "produce",
+          "label": "생산"
+        },
+        {
+          "id": "deliver",
+          "label": "배달"
+        },
+        {
+          "id": "react",
+          "label": "반응"
+        },
+        {
+          "id": "comment",
+          "label": "댓글"
+        }
+      ]
+    },
+    {
+      "id": "experiment",
+      "title": "실험",
+      "stages": [
+        {
+          "id": "reserve",
+          "label": "예약"
+        },
+        {
+          "id": "recruit",
+          "label": "모집"
+        },
+        {
+          "id": "collect",
+          "label": "수집"
+        },
+        {
+          "id": "done",
+          "label": "완료"
+        }
+      ]
+    },
+    {
+      "id": "conference",
+      "title": "학회",
+      "stages": [
+        {
+          "id": "abstract",
+          "label": "초록"
+        },
+        {
+          "id": "register",
+          "label": "등록"
+        },
+        {
+          "id": "poster",
+          "label": "포스터"
+        },
+        {
+          "id": "present",
+          "label": "발표"
+        }
+      ]
+    }
+  ]
+}

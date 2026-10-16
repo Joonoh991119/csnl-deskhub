@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key><string>ko</string>
+    <key>CFBundleExecutable</key><string>DeskHub</string>
+    <key>CFBundleIdentifier</key><string>kr.ac.snu.csnl.deskhub</string>
+    <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+    <key>CFBundleName</key><string>DeskHub</string>
+    <key>CFBundleDisplayName</key><string>DeskHub</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.0</string>
+    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>바탕화면 '오늘 일정' 위젯에 캘린더 일정을 표시합니다.</string>
+    <key>NSCalendarsUsageDescription</key><string>바탕화면 '오늘 일정' 위젯에 캘린더 일정을 표시합니다.</string>
+    <key>NSMicrophoneUsageDescription</key><string>Plaud Web 녹음에 마이크를 사용합니다.</string>
+    <key>NSCameraUsageDescription</key><string>웹 위젯에서 카메라를 요청할 때 사용합니다.</string>
+    <key>CFBundleURLTypes</key>
+    <array><dict>
+        <key>CFBundleURLName</key><string>kr.ac.snu.csnl.deskhub</string>
+        <key>CFBundleURLSchemes</key><array><string>deskhub</string></array>
+    </dict></array>
+    <key>NSAppTransportSecurity</key>
+    <dict><key>NSAllowsArbitraryLoads</key><true/></dict>
+</dict>
+</plist>
