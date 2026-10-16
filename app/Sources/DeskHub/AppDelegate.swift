@@ -306,6 +306,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let m = hubs.values.first, let c = m.conferences.first(where: { InterestFile.displayName($0).lowercased().contains(q) }) { m.toggleInterest(c) }
             else { NSSound.beep() }
         }
+        // 분야 최근 이슈 보기 (0.39.0 C3) — '관심만'·'전체' 단추와 같은 경로(FeedPrefs, 이 맥 UserDefaults)
+        else if k.hasPrefix("feed:") { FeedPrefs.shared.set(String(k.dropFirst("feed:".count))) }
+        // 논문 소통 '같이 읽자' (0.39.0 C5) — 제목 일부가 맞는 첫 논문([논문 추천] 덤프 순서)에 단추와 같은 경로 · talk-undo = 마지막 대기 취소.
+        // talk: 는 시험용 키라 드라이런 훅(DESKHUB_NOTION_WRITE=dry:)이 없으면 아무것도 쓰지 않고 삐 — Notion 댓글은 API 로 지울 수 없다 (검증 1).
+        // talk-undo 는 대기 중인 쓰기를 취소만 하므로(쓰기 없음) 막지 않는다. 사람이 누르는 단추 경로는 그대로
+        else if k == "talk-undo" { if let m = hubs.values.first, let p = m.talkCommits.pending.last { m.talkCommits.undo(p.id) } }
+        else if k.hasPrefix("talk:") {
+            guard NotionDryRun.path != nil else { NSSound.beep(); return }
+            let q = String(k.dropFirst("talk:".count)).lowercased()
+            if !q.isEmpty, let m = hubs.values.first, let p = m.papers.first(where: { $0.title.lowercased().contains(q) }) { m.toggleTalk(p) }
+            else { NSSound.beep() }
+        }
         else { KeyBus.shared.send(k) }
     }
 
@@ -355,8 +367,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // [실험] — 오늘의 실험 카드 행 그대로: 출처 · 제목 · 실험자 · 상태 (0.37.0 C4 — Prolific 은 진행·준비 중만)
             out += ["", "[실험] \(m.experiments.count)"]
             out += m.experiments.map { x in [dash(x.source), dash(x.title), dash(x.owner), dash(x.status)].joined(separator: " · ") }
-            // [Members 전광판] — Members 탭 현황판: 열 · 띠 · 행(이니셜 · 진행 프로젝트 · 다음 GRM · Milestone · 예시 열) (0.37.0 C7)
+            // Prolific 안내 줄(미연결·조회 실패 — 지난 행이 남으면 '아래는 HH:mm 결과') (0.38.0 C5)
+            if let n = m.prolificNote { out.append("알림 · " + n) }
+            // [연구 탭] — 가상 탭 901 (0.39.0 C1): 칸 · 분야 최근 이슈 · 논문 추천(보기 대상 · 편 수 · 신선도)
+            out += ["", "[연구 탭]"] + ResearchTabView.dumpLines(m)
+            // [분야 이슈] — bioRxiv neuroscience 7일 (0.39.0 C2): 출처·받기 횟수·호출 수·받은 날·관심 일치·보기·행 [주제] (IssueFeedCard 와 같은 함수, C3)
+            out += ["", "[분야 이슈]"] + IssueFeedCard.dumpLines(m)
+            // [논문 소통] — '같이 읽자' 제안·모임 후보·6초 대기 (0.39.0 C5, PaperComment.proposers — 뷰와 같은 함수)
+            out += ["", "[논문 소통]"] + PaperTalk.dumpLines(m)
+            // [Members 전광판] — Members 탭 현황판: 열(실제/예시) · 띠 · 합계 · 행(이니셜 · 진행 프로젝트 · 다음 GRM · Milestone · 논문 반응 · 예시 열) · 각주 (0.37.0 C7, 0.39.0 C4)
             out += ["", "[Members 전광판]"] + MembersBoardRow.dumpLines(m)
+            // [전광판 집계] — 논문 반응 28일(ScoreboardLive.tally 와 같은 함수): 기간 · 댓글 읽음 · 반응·댓글 합 / 이니셜 행 / 목록 밖 (0.39.0 C4)
+            out += ["", "[전광판 집계]"] + MembersBoardRow.tallyDumpLines(m)
             // [진행 프로젝트] — 칩 줄 멤버마다 팝오버 목록(PopoverView.myProjects)과 칩 목록(MemberGroup 이 받는 entry)을 비교 (R-32)
             let shown = MembersProjectsStrip.shown(m)
             out += ["", "[진행 프로젝트] \(shown.count)"]
@@ -420,6 +442,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for id in calendars.keys.sorted() { if let c = calendars[id] { info.append(c.debugLine + " (\(id) 창)") } }
         info.append(popoverDebugLine)
         info.append(HubLayoutProbe.line)
+        // 접힘 빈 면 채우기 (0.38.0 C3) — 'hub-fill: 1 preprints +1 papers +2 · 2 … (결정 HH:mm:ss · 1.0배)' / '꺼짐' / '대기(이유)'
+        info.append(HubFill.shared.line)
+        // ViewThatFits 가 고른 갈래 (0.38.0 C2) — 'choices: board-deadline 한 줄 · conf-row Cosyne 2027 한 줄 · …'
+        info.append(LayoutChoice.line)
         // 글자·색 (0.37.0 C3) — 'display: 글자 1.3배 · 색 고대비 · 외형 light|dark'
         let d = HubDisplay.shared
         info.append("display: 글자 \(d.scaleLabel) · 색 \(d.presetLabel) · 외형 " + (NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? "dark" : "light"))

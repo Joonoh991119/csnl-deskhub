@@ -83,7 +83,8 @@ MainActor.assumeIsolated { runApp() }
 
 /// `--text-check` 실행기 (0.36.0). 줄 형식 `종류<TAB>입력<TAB>기대값[<TAB>제목[<TAB>연도]]`, `#` 으로 시작하는 줄과 빈 줄은 건너뛴다.
 /// 빈 칸 = 빈 값. 종류: title(Hub.cleanPaperTitle) · authors(Hub.cleanAuthors) · cite(Hub.citationLine — 넷째 칸 제목, 다섯째 칸 연도) · clamp(PopoverPlacement.clamp)
-/// · prolific(ProlificFilter.keep → yes|no, 0.37.0)
+/// · prolific(ProlificFilter.keep → yes|no, 0.37.0) · topic(TopicFilter.match → 주제 id ',' 로, 0.39.0) · comment(PaperComment.settle → talkLine, 0.39.0)
+/// · tally(PaperComment.settle → ScoreboardLive.tally → '반응 n · 사람 n · 댓글 n', 0.39.0 검증 1) · feed(BioRxivFeed.isSettled → 확정|미확정, 0.39.0 리뷰 2)
 enum TextCheck {
     static func run(path: String) -> Int32 {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -103,6 +104,14 @@ enum TextCheck {
             case "clamp": got = clamp(input)
             // Prolific 상태 → 허브에 보이나 (0.37.0 C4) — fixtures/prolific-check.tsv
             case "prolific": got = ProlificFilter.keep(input) ? "yes" : "no"
+            // 관심 주제 (0.39.0 C3) — 입력 '제목 | 초록', 기대 = 주제 id 를 ',' 로(없으면 빈 칸). 주제 파일 = <tsv 디렉터리>/../Resources/research-topics.json
+            case "topic": got = topic(input, tsv: path)
+            // 논문 댓글 판정 (0.39.0 C5) — 입력 '[XX] 내용@분' 을 ';' 로, 기대 '반응 n · 같이 BHL,JOP|— · 댓글 n[ · 모임 후보]'
+            case "comment": got = comment(input)
+            // 전광판 집계 (0.39.0 C4, 검증 1) — 입력은 comment 와 같은 형식, 기대 '반응 n · 사람 n · 댓글 n'. 제안·취소는 댓글로 세지 않는다
+            case "tally": got = tally(input)
+            // 피드 확정 날 (0.39.0 리뷰 2) — 입력 '오늘 yyyy-MM-dd|날 yyyy-MM-dd', 기대 '확정' | '미확정'(오늘·어제는 늘 다시 받음)
+            case "feed": got = feed(input)
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
@@ -110,6 +119,47 @@ enum TextCheck {
         print("text-check: OK \(ok) · FAIL \(fails.count)")
         fails.forEach { print($0) }
         return fails.isEmpty ? 0 : 1
+    }
+    /// topic — 앱과 같은 TopicFilter.match. NSApplication 앞이라 Bundle.main 대신 tsv 옆 Resources 경로로 읽는다(한 번)
+    private static var topicFile: ResearchTopicFile??
+    static func topic(_ input: String, tsv: String) -> String {
+        if topicFile == nil {
+            let url = URL(fileURLWithPath: tsv).deletingLastPathComponent().appendingPathComponent("../Resources/research-topics.json").standardizedFileURL
+            topicFile = .some(TopicFilter.load(url: url))
+        }
+        guard let f = topicFile ?? nil else { return "(주제 파일 없음)" }
+        let parts = input.components(separatedBy: " | ")
+        let title = parts.first ?? "", abstract = parts.dropFirst().joined(separator: " | ")
+        return TopicFilter.match(title: title, abstract: abstract, topics: f.topics).map(\.id).joined(separator: ",")
+    }
+    /// comment — PaperComment.parse → settle → talkLine (앱과 같은 함수). '@분' 은 만든 시각(분), 없으면 줄 순서
+    static func comment(_ input: String) -> String {
+        PaperComment.talkLine(PaperComment.settle(parseComments(input)))
+    }
+    /// tally — 한 논문 페이지로 settle 뒤 ScoreboardLive.tally(앱과 같은 함수). 기간은 입력 시각 전후 하루를 덮고, 로스터는 비워 반응은 목록 밖 합계로
+    static func tally(_ input: String) -> String {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let t = ScoreboardLive.tally(["p": PaperComment.settle(parseComments(input))], roster: [], aliases: [:],
+                                     from: base.addingTimeInterval(-86_400), to: base.addingTimeInterval(86_400))
+        return "반응 \(t.total) · 사람 \(t.people) · 댓글 \(t.notes)"
+    }
+    /// feed — BioRxivFeed.isSettled (applyFeed·캐시·'받은 날 m/7' 과 같은 함수)
+    static func feed(_ input: String) -> String {
+        let p = input.components(separatedBy: "|")
+        guard p.count == 2, let today = FeedItem.dayFormatter.date(from: p[0]) else { return "(입력 형식)" }
+        return BioRxivFeed.isSettled(p[1], today: today) ? "확정" : "미확정"
+    }
+    /// '[XX] 내용@분' 을 ';' 로 → PaperComment (comment·tally 공용)
+    private static func parseComments(_ input: String) -> [PaperComment] {
+        let parts = input.components(separatedBy: ";").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let cs: [PaperComment] = parts.enumerated().compactMap { i, part in
+            var raw = part, minute = Double(i)
+            if let at = part.range(of: "@", options: .backwards), let m = Double(part[at.upperBound...].trimmingCharacters(in: .whitespaces)) {
+                raw = String(part[..<at.lowerBound]); minute = m
+            }
+            return PaperComment.parse(raw: raw, id: "t\(i)", created: Date(timeIntervalSinceReferenceDate: minute * 60))
+        }
+        return cs
     }
     /// clamp 입력 `screen=x,y,w,h;visible=x,y,w,h;bar=Y|-;pop=x,y,w,h` → PopoverPlacement.clamp 결과 "x,y,w,h"
     static func clamp(_ input: String) -> String {

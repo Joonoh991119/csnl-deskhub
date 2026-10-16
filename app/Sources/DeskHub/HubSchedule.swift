@@ -104,6 +104,7 @@ struct UpcomingEventsCard: View {
         let nearOnly: Bool
         @Environment(\.cardStyle) private var cs
         @ObservedObject private var expansion = HubExpansion.shared
+        @ObservedObject private var fill = HubFill.shared
 
         init(model: NotionHubModel, cal: CalendarModel?, maxRows: Int?, excludeToday: Bool, nearOnly: Bool) {
             self.model = model; self.cal = cal; self.maxRows = maxRows; self.excludeToday = excludeToday; self.nearOnly = nearOnly
@@ -113,11 +114,14 @@ struct UpcomingEventsCard: View {
             let all = UpcomingEventsCard.items(model: model, cal: cal, excludeToday: excludeToday)
             let cut = nearOnly ? HubNear.events(model, items: all, maxRows: maxRows ?? 8) : nil
             let isOpen = expansion.isOpen("events")
-            let rows = cut.map { $0.shown(open: isOpen) } ?? Array(all.prefix(maxRows ?? max(model.cfg.eventsMaxRows, 6)))
+            let e = fill.extra["events"] ?? 0
+            let rows = cut.map { $0.shown(open: isOpen, extra: e) } ?? Array(all.prefix(maxRows ?? max(model.cfg.eventsMaxRows, 6)))
+            // 채움(HubFill)으로 내일 뒤 행이 더해지면 '오늘·내일' 이 거짓말이 되므로 '~M.d'(보인 마지막 행 날짜) (0.38.0 C3)
+            let filledTo = cut.flatMap { c in !isOpen && rows.count > c.near.count ? rows.last.map { "~" + Hub.shortDay($0.date) } : nil }
             VStack(alignment: .leading, spacing: cs.gap) {
                 HStack(spacing: 6) {
                     SectionTitle(text: excludeToday ? "다가오는 일정 · 내일부터 \(model.cfg.eventsDays)일"
-                                 : (nearOnly && !isOpen ? "다가오는 일정 · 오늘·내일" : "다가오는 일정 · \(model.cfg.eventsDays)일"))
+                                 : (nearOnly && !isOpen ? "다가오는 일정 · " + (filledTo ?? "오늘·내일") : "다가오는 일정 · \(model.cfg.eventsDays)일"))
                     Spacer(minLength: 0)
                     // 허브(큰 글자)는 행마다 출처 꼬리표가 있어 머리 설명을 뺀다 — 좁은 열에서 제목과 겹치지 않게
                     if !nearOnly { Text("Notion Schedule + CSNL·SLab 캘린더 · GRM 제외").font(.hub(cs.tag - 0.5)).foregroundStyle(Hub.text3).lineLimit(1) }
@@ -161,7 +165,7 @@ struct UpcomingEventsCard: View {
                             Text("+\(all.count - rows.count)건 더").font(.hub(cs.aux - 0.5)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                         }.buttonStyle(.plain)
                     }
-                    if let cut { MoreToggle(key: "events", more: cut.more) }
+                    if let cut { MoreToggle(key: "events", more: cut.toggleCount(open: isOpen, extra: e)) }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))

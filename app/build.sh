@@ -43,6 +43,7 @@ $PB -c "Add :DeskHubBuilt string $(date '+%Y-%m-%d %H:%M')" "$APP/Contents/Info.
 [ -f Resources/pipelines.json ] && cp Resources/pipelines.json "$APP/Contents/Resources/pipelines.json"
 [ -f Resources/apps.json ] && cp Resources/apps.json "$APP/Contents/Resources/apps.json"
 [ -f Resources/scoreboard-sample.json ] && cp Resources/scoreboard-sample.json "$APP/Contents/Resources/scoreboard-sample.json"
+[ -f Resources/research-topics.json ] && cp Resources/research-topics.json "$APP/Contents/Resources/research-topics.json"
 echo 'APPL????' > "$APP/Contents/PkgInfo"
 codesign --force --deep --sign - "$APP" 2>&1 | grep -v 'replacing existing signature' || true
 # 리뷰 라운드 배포 (리뷰 방식 개선 B1, 2026-10-15): `./build.sh install publish` 또는 `./build.sh publish`

@@ -103,7 +103,8 @@ enum PipelineEngine {
                 let latest = m.papers.compactMap(\.sentAt).max()
                 let mine = m.papers.filter { me.isEmpty || $0.researcher == me }
                 let reacted = mine.filter { p in (m.paperComments[p.id] ?? []).contains { $0.isReaction && (me.isEmpty || $0.who == me) } }.count
-                let notes = m.papers.reduce(0) { $0 + (m.paperComments[$1.id] ?? []).filter { !$0.isReaction }.count }
+                // 댓글 = 사람이 쓴 댓글만 — '같이 읽자' 제안·취소는 세지 않는다 (0.39.0 C5)
+                let notes = m.papers.reduce(0) { $0 + (m.paperComments[$1.id] ?? []).filter(\.isNote).count }
                 let cells = def.stages.map { s -> (PipelineDef.Stage, StageState) in
                     switch s.id {
                     case "produce":

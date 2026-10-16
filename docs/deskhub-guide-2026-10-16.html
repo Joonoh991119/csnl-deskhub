@@ -34,15 +34,15 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.37.0 · 2026년 10월 16일 · 절 제목을 누르면 펼쳐집니다</div>
-<p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 읽기만 하는 화면이라 어디를 눌러도 자료가 바뀌지 않습니다.</p>
+<div class="sub">연구실 바탕화면 대시보드 · 0.39.0 · 2026년 10월 16일 · 절 제목을 누르면 펼쳐집니다</div>
+<p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
 <summary><span class="chev"></span>설치 (5분, Intel·Apple Silicon 모두)</summary>
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/tag/v0.37.0">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.37.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.39.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -70,6 +70,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <tr><td>2</td><td>공정 보드</td><td>어디서 막혔는지. 공정이 행, 단계가 칸</td></tr>
 <tr><td>3</td><td>안내판</td><td>멀리서도 읽히게. 큰 시계·마감·오늘 일정</td></tr>
 </table>
+<div class="note">탭 줄의 <b>연구</b> = 분야 최근 이슈(bioRxiv) + 논문 추천·반응·댓글·같이 읽자</div>
 </div>
 </details>
 
@@ -81,12 +82,14 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </details>
 
 <details>
-<summary><span class="chev"></span>이니셜 확인, 학회 관심 체크, 논문 반응</summary>
+<summary><span class="chev"></span>이니셜 확인, 학회 관심 체크, 논문 반응·같이 읽자·댓글</summary>
 <div class="body">
 <ul>
 <li><b>이니셜 확인(처음 한 번)</b> — 관제탑(숫자 1) 맨 위나 메뉴 막대 작은 창 위쪽의 "반응·댓글에 붙일 이니셜을 골라 주세요" 줄에서 본인 이니셜을 누릅니다. 공용 맥에서는 꼭 확인하세요.</li>
 <li><b>학회 관심 체크</b> — 랩 허브·관제탑의 학회 행에서 '관심'을 누르면 내 이니셜 칩이 붙고, 누가 관심 있는지 모두에게 보입니다. 6초 안에 '되돌리기'로 취소됩니다.</li>
-<li><b>논문 추천 반응</b> — 논문 카드의 읽겠음·읽었음·관심없음 단추. 다시 누르면 취소됩니다.</li>
+<li><b>논문 추천 반응</b> — 논문 카드의 읽겠음·읽었음·관심없음 단추. 누르는 즉시 남고, 한 번 더 누르면 취소됩니다. Notion 은 댓글을 지울 수 없어 취소 기록이 함께 남습니다.</li>
+<li><b>같이 읽자</b>(연구 탭) — 논문 행 끝 단추. 6초 뒤 남고, 그 안에 '되돌리기'로 취소됩니다. 남은 뒤에는 한 번 더 누르면 취소(취소 기록이 남음). 두 명 이상이면 '모임 후보'가 붙습니다(알림은 없음).</li>
+<li><b>댓글</b> — 논문 카드의 댓글 칸. 보내는 즉시 Notion 에 남고 지울 수 없습니다.</li>
 </ul>
 </div>
 </details>
@@ -100,11 +103,13 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <tr><td>GRM 순번, 회의록 초안, Paper Blitz 기록</td><td>Notion · 녹취 요약 · 발표 파일</td><td><span class="tag">실제</span> 매주 자동 정리</td></tr>
 <tr><td>그랜트·학회 마감, 학회 관심자, 리마인더</td><td>연구실 일정 파일 · Notion 학회 목록</td><td><span class="tag">실제</span></td></tr>
 <tr><td>진행·준비 중 실험(Prolific)</td><td>Prolific 연구 목록</td><td><span class="tag">실제</span> 진행·준비 중만</td></tr>
+<tr><td>분야 최근 이슈(연구 탭)</td><td>bioRxiv neuroscience, 하루 두 번, 관심 주제 초안으로 거름</td><td><span class="tag">실제</span> 최근 7일 새 프리프린트</td></tr>
+<tr><td>Members 탭 논문 반응 열</td><td>Notion 논문 추천 댓글, 최근 28일</td><td><span class="tag">실제</span> 화면에 '실제'로 표시</td></tr>
 <tr><td>연구원별 프로젝트 이름, GitHub 링크</td><td>저장소 폴더 이름 · 링크 목록</td><td><span class="tag ex">예시</span> 이름과 링크만</td></tr>
 <tr><td>논문 추천 목록</td><td>Notion 추천 기록(6월 이후 새 추천 없음)</td><td><span class="tag ex">예시</span> 입력 방식 결정 뒤 재가동</td></tr>
 <tr><td>Members 탭의 활동 현황판(Claude 사용량 · GitHub 반영 횟수)</td><td>표본 자료</td><td><span class="tag ex">예시</span> 화면에 '예시'로 표시</td></tr>
 </table>
-<div class="note">한 줄로: 일정·마감·GRM·회의록·Paper Blitz·그랜트·학회·실험은 실제 자료, 사람별 활동 현황과 논문 추천 일부는 앞으로 채울 자리를 예시로 보여 주는 것입니다.</div>
+<div class="note">한 줄로: 일정·마감·GRM·회의록·Paper Blitz·그랜트·학회·실험·분야 최근 이슈·Members 논문 반응은 실제 자료, 사람별 활동 현황과 논문 추천 일부는 앞으로 채울 자리를 예시로 보여 주는 것입니다.</div>
 </div>
 </details>
 
@@ -113,7 +118,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 0.37.0(범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.39.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>

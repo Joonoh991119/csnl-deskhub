@@ -6,26 +6,59 @@ import AppKit
 
 // MARK: - Notion 댓글 (반응·댓글 저장소)
 
-/// 논문 추천 페이지의 Notion 댓글. 본문 "[이니셜] 내용" — 내용이 반응 이모지 하나면 반응, 아니면 댓글.
-/// 통합(claude bot)이 쓰므로 누가 남겼는지는 이니셜로 적는다. Notion API 는 댓글 삭제가 없어 반응은 더하기만 된다.
+/// 논문 추천 페이지의 Notion 댓글. 본문 "[이니셜] 내용" — 내용이 반응 이모지 하나면 반응, '같이 읽자' 면 제안(0.39.0 C5), 아니면 댓글.
+/// 통합(claude bot)이 쓰므로 누가 남겼는지는 이니셜로 적는다. Notion API 는 댓글 삭제가 없어 반응·제안은 더하기만 되고 취소는 취소 댓글로 남긴다.
 struct PaperComment: Identifiable, Hashable {
     let id: String; let who: String; let text: String; let created: Date?
+    /// 세 반응 — 의미 불변(관제탑·팝오버 '반응 없음'·전광판 논문 반응이 이것만 센다)
     var isReaction: Bool { HubPrefs.reactionEmojis.contains(text) }
-    /// "[BHL] ✖👍" — Notion API 에 댓글 삭제가 없어 취소는 취소 댓글로 남긴다 (BHL R1 10-15)
-    var isCancel: Bool { text.hasPrefix(HubPrefs.cancelMark) && HubPrefs.reactionEmojis.contains(String(text.dropFirst(HubPrefs.cancelMark.count))) }
+    /// '같이 읽자' 제안 (0.39.0 C5, TALK) — 반응으로 세지 않고, 댓글로도 세지 않는다
+    var isProposal: Bool { text == HubPrefs.talkText }
+    /// "[BHL] ✖👍" · "[BHL] ✖같이 읽자" — Notion API 에 댓글 삭제가 없어 취소는 취소 댓글로 남긴다 (BHL R1 10-15, 0.39.0 C5)
+    var isCancel: Bool {
+        guard text.hasPrefix(HubPrefs.cancelMark) else { return false }
+        let rest = cancelled
+        return HubPrefs.reactionEmojis.contains(rest) || rest == HubPrefs.talkText
+    }
     var cancelled: String { String(text.dropFirst(HubPrefs.cancelMark.count)) }
+    /// 사람이 쓴 댓글 — 반응·제안·취소가 아닌 것 (댓글 수·댓글 칸 목록)
+    var isNote: Bool { !isReaction && !isProposal && !isCancel }
 
-    /// 사람·이모지별로 가장 나중 것만 반영: 반응 뒤 취소면 둘 다 뺀다. 취소 댓글은 화면에 안 보인다.
+    /// "[XX] 내용" → 이니셜(대문자)·내용. 이니셜이 없으면 who 빈 값 — comments(page:)·드라이런 파일·text-check 가 함께 쓴다
+    static func parse(raw: String, id: String, created: Date?) -> PaperComment? {
+        let raw = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        var who = "", text = raw
+        if let r = raw.range(of: "^\\[([A-Za-z]{2,4})\\]\\s*", options: .regularExpression) {
+            who = raw[r].trimmingCharacters(in: CharacterSet(charactersIn: "[] ")).uppercased(); text = String(raw[r.upperBound...])
+        }
+        return PaperComment(id: id, who: who, text: text, created: created)
+    }
+
+    /// 사람·토큰(이모지·'같이 읽자')별로 가장 나중 것만 반영: 반응·제안 뒤 취소면 둘 다 뺀다. 취소 댓글은 화면에 안 보인다.
     static func settle(_ cs: [PaperComment]) -> [PaperComment] {
         let ordered = cs.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
-        var live: [String: PaperComment] = [:]   // "who|emoji" → 살아 있는 반응
+        var live: [String: PaperComment] = [:]   // "who|토큰" → 살아 있는 반응·제안
         var out: [PaperComment] = []
         for c in ordered {
-            if c.isReaction { live[c.who + "|" + c.text] = c }
+            if c.isReaction || c.isProposal { live[c.who + "|" + c.text] = c }
             else if c.isCancel { live[c.who + "|" + c.cancelled] = nil }
             else { out.append(c) }
         }
         return out + live.values.sorted { ($0.created ?? .distantPast) < ($1.created ?? .distantPast) }
+    }
+
+    /// settle 뒤 값에서 '같이 읽자' 제안자 — 이니셜 있는 것만, 중복 없이 가나다 (이니셜 없는 제안은 누구인지 몰라 세지 않음)
+    static func proposers(_ settled: [PaperComment]) -> [String] {
+        var xs = Array(Set(settled.filter { $0.isProposal && !$0.who.isEmpty }.map(\.who))); xs.sort(); return xs
+    }
+    /// 제안자 2명 이상 = 모임 후보(계산만, 알림 없음)
+    static let meetupMin = 2
+    /// text-check comment·[논문 소통] 공용 한 줄 — '반응 n · 같이 BHL,JOP · 댓글 n[ · 모임 후보]'
+    static func talkLine(_ settled: [PaperComment]) -> String {
+        let ps = proposers(settled)
+        return "반응 \(settled.filter(\.isReaction).count) · 같이 " + (ps.isEmpty ? "—" : ps.joined(separator: ","))
+            + " · 댓글 \(settled.filter(\.isNote).count)" + (ps.count >= meetupMin ? " · 모임 후보" : "")
     }
 }
 
@@ -41,14 +74,8 @@ extension NotionAPI {
         }
         let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let parsed: [PaperComment] = ((obj["results"] as? [[String: Any]]) ?? []).compactMap { c in
-            let raw = NotionAPI.richText(c["rich_text"]).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !raw.isEmpty else { return nil }
-            var who = "", text = raw
-            if let r = raw.range(of: "^\\[([A-Za-z]{2,4})\\]\\s*", options: .regularExpression) {
-                who = raw[r].trimmingCharacters(in: CharacterSet(charactersIn: "[] ")).uppercased(); text = String(raw[r.upperBound...])
-            }
-            return PaperComment(id: c["id"] as? String ?? UUID().uuidString, who: who, text: text,
-                                created: (c["created_time"] as? String).flatMap { iso.date(from: $0) })
+            PaperComment.parse(raw: NotionAPI.richText(c["rich_text"]), id: c["id"] as? String ?? UUID().uuidString,
+                               created: (c["created_time"] as? String).flatMap { iso.date(from: $0) })
         }
         return PaperComment.settle(parsed)
     }
@@ -75,10 +102,14 @@ enum HubPrefs {
     static let reactionEmojis = ["👍", "✅", "🙅"]
     static let reactionLabels = ["👍": "읽겠음", "✅": "읽었음", "🙅": "관심없음"]
     static let cancelMark = "✖"
+    /// 논문 소통 '같이 읽자' (0.39.0 C5) — 댓글 '[이니셜] 같이 읽자', 취소 '[이니셜] ✖같이 읽자'
+    static let talkText = "같이 읽자"
     /// 이 맥에서 사람이 직접 확인한 이니셜인가. .env 의 MY_INIT 도, 이전 버전이 UserDefaults 에 남긴 값도(BHL 맥의 SYJ — #21 10-15 17:26)
     /// 한 번은 확인받는다 → 확인 플래그를 따로 둔다. 스냅샷용 DESKHUB_ME 만 예외.
     static var meChosen: Bool {
         get {
+            // 시험 훅 (0.39.0 C0): DESKHUB_ME_CHOSEN=0 → 이니셜 미확인 상태를 스냅샷에서 재현 (DESKHUB_ME 보다 먼저, UserDefaults 쓰지 않음)
+            if ProcessInfo.processInfo.environment["DESKHUB_ME_CHOSEN"] == "0" { return false }
             if let v = ProcessInfo.processInfo.environment["DESKHUB_ME"], !v.isEmpty { return true }
             return UserDefaults.standard.bool(forKey: "DeskHub.meConfirmed")
         }
@@ -367,7 +398,10 @@ struct PaperRecBoard: View {
     var probeKey: String? = nil
     /// 랩 허브만 — 7일 안에 보낸 추천(없으면 티어 순 2)만 내용 높이로, 나머지는 '▸ 더 보기' 를 누르면 지금처럼 스크롤 칸 (0.37.0 C2)
     var nearOnly = false
+    /// 연구 탭만 — 반응 줄 끝 '같이 읽자' 단추·제안자·모임 후보 (0.39.0 C5). 허브·관제탑·공정 보드·나 뷰는 false 그대로(열 높이 불변)
+    var talk = false
     @ObservedObject private var expansion = HubExpansion.shared
+    @ObservedObject private var fill = HubFill.shared
     @State private var openComments: String? = nil
     @State private var draft: [String: String] = [:]
     @State private var askWho = false
@@ -390,6 +424,22 @@ struct PaperRecBoard: View {
             }
     }
 
+    /// 이니셜 고르기 칸이 보이는가 — 본문 표시 조건. 채움 보류(holdOn)는 이 중 askWho 로 새로 열려 높이가 바뀐 경우만 쓴다 (0.39.0 C0, 검증 1·리뷰 2)
+    private var whoPickerShown: Bool { askWho || pickerStanding }
+    /// 이니셜 미확인(me 빈 값·!meChosen)이라 늘 떠 있는 고르기 칸 — 측정 높이에 이미 들어 있는 안정 레이아웃
+    private var pickerStanding: Bool { me.isEmpty || !HubPrefs.meChosen }
+    /// 지금 그려진 행 — 접힘이면 가까운 것 + 채움 행, 아니면 보기 대상 전부. 댓글 칸이 열린 행이 여기 없으면(필터 변경·재조회·7일 창 밖) 칸은 화면에 없다
+    private var drawnIDs: Set<String> {
+        if nearOnly && !expansion.isOpen("papers") {
+            return Set(HubNear.papers(model, visible: visible).shown(open: false, extra: fill.extra["papers"] ?? 0).map(\.id))
+        }
+        return Set(visible.map(\.id))
+    }
+    /// 열1 을 잠깐 늘리는 것이 실제로 보이는가 — 사용자가 연 이니셜 고르기(askWho) 또는 그려진 행의 댓글 칸 (0.38.0 리뷰 medium: openComments != nil 이면 칸이 사라져도 보류가 남았음).
+    /// 이니셜 미확인(me 빈 값·!meChosen)으로 늘 떠 있는 고르기 칸은 측정 높이에 포함된 안정 레이아웃이라 보류하지 않는다 — 보류하면 공용 맥에서 열1 채움이 영영 결정되지 않음 (0.39.0 검증 1).
+    /// 그 칸이 이미 떠 있을 때 반응·댓글·'나:' 를 눌러 askWho 가 켜져도 높이 변화가 없으니 보류하지 않는다 (리뷰 2)
+    private var holdOn: Bool { (askWho && !pickerStanding) || (openComments.map { drawnIDs.contains($0) } ?? false) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             HStack(spacing: 8) {
@@ -409,14 +459,21 @@ struct PaperRecBoard: View {
                 }
                 .buttonStyle(.plain).help("반응·댓글에 붙는 이니셜 (이 맥에만 저장) · 눌러서 바꾸기")
             }
-            if askWho || me.isEmpty || !HubPrefs.meChosen { whoPicker }
+            if whoPickerShown { whoPicker }
             let all = visible
             let cut = nearOnly ? HubNear.papers(model, visible: all) : nil
             if let cut, !expansion.isOpen("papers") {
-                // 접힘: 스크롤 없이 내용 높이 — 열 끝까지 늘지 않는다
+                // 접힘: 스크롤 없이 내용 높이 — 열 끝까지 늘지 않는다. 열 바닥이 비면 다음 추천을 더 (HubFill, 0.38.0 C3)
+                let e = fill.extra["papers"] ?? 0
+                let rows = cut.shown(open: false, extra: e)
                 VStack(spacing: 0) {
-                    list(cut.near)
-                    MoreToggle(key: "papers", more: cut.more)
+                    // 보인 행 높이 실측 → 채움이 추정(135×배율) 대신 이 평균으로 정한다 (검증 1 — 1.3배에서 넣었다 넘쳐 뺐음)
+                    list(rows).background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { let h = g.size.height; MainActor.assumeIsolated { HubFill.shared.rowsMeasured("papers", height: h, rows: rows.count) } }
+                            .onChange(of: g.size.height) { _, h in MainActor.assumeIsolated { HubFill.shared.rowsMeasured("papers", height: h, rows: rows.count) } }
+                    })
+                    MoreToggle(key: "papers", more: cut.toggleCount(open: false, extra: e))
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -433,6 +490,11 @@ struct PaperRecBoard: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: nearOnly && !expansion.isOpen("papers") ? nil : .infinity, alignment: .top)
+        // 댓글 칸·이니셜 고르기가 열1 을 잠깐 늘리는 동안 채움 넘침 고침을 멈춘다 — 그 사이 뺀 행이 그날 내내 안 돌아오던 것 (검증 1 리뷰).
+        // 0.39.0 C0: 높이를 바꾸는 것만 센다 — 새로 연 고르기 칸·그려진 행의 댓글 칸. 이니셜 미확인으로 늘 떠 있는 고르기 칸(askWho 가 켜져도)과
+        // 사라진 행의 댓글 칸은 보류하지 않음 (검증 1·리뷰 2). initial 로 처음부터
+        .onChange(of: holdOn, initial: true) { _, on in if nearOnly { HubFill.shared.setHold("papers-ui", col: "1", on) } }
+        .onDisappear { if nearOnly { HubFill.shared.setHold("papers-ui", col: "1", false) } }
     }
 
     private func list(_ rows: [PaperRec]) -> some View {
@@ -473,7 +535,7 @@ struct PaperRecBoard: View {
     @ViewBuilder
     private func row(_ p: PaperRec) -> some View {
         let comments = model.paperComments[p.id] ?? []
-        let reactions = comments.filter(\.isReaction), notes = comments.filter { !$0.isReaction }
+        let reactions = comments.filter(\.isReaction), notes = comments.filter(\.isNote)
         VStack(alignment: .leading, spacing: 6) {
             Button { model.openInApp(id: p.id) } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -528,6 +590,9 @@ struct PaperRecBoard: View {
                         .padding(.leading, 4)
                 }
                 .buttonStyle(.plain).help("댓글 보기·남기기")
+                if talk {
+                    TalkControls(model: model, commits: model.talkCommits, paper: p, proposers: PaperComment.proposers(comments), me: me) { askWho = true }
+                }
             }
             .padding(.leading, cs.col(30))
             if openComments == p.id {
@@ -552,7 +617,51 @@ struct PaperRecBoard: View {
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
     }
 
-    private func setFilter(_ v: String) { filter = v; HubPrefs.paperFilter = v }
+    /// 보기를 바꾸면 열린 댓글 칸을 닫는다 (0.39.0 C0 — 안 보이는 행의 칸이 열1 보류를 잡고 있지 않게)
+    private func setFilter(_ v: String) {
+        filter = v; HubPrefs.paperFilter = v
+        openComments = nil
+    }
+
+    /// '같이 읽자' 단추 + 제안자 + 모임 후보 칩 (0.39.0 C5, 연구 탭만). 대기 중(6초)은 시계 표시 — 되돌리기는 연구 탭 오른쪽 칸 아래 줄
+    private struct TalkControls: View {
+        @ObservedObject var model: NotionHubModel
+        @ObservedObject var commits: DelayedCommit
+        let paper: PaperRec
+        let proposers: [String]
+        let me: String
+        let needWho: () -> Void
+        @Environment(\.cardStyle) private var cs
+        var body: some View {
+            let mine = !me.isEmpty && proposers.contains(me.uppercased())
+            let pending = commits.isPending(NotionHubModel.talkID(paper))
+            Button {
+                guard !me.isEmpty, HubPrefs.meChosen else { needWho(); return }
+                model.toggleTalk(paper)
+            } label: {
+                HStack(spacing: 3) {
+                    if pending { Image(systemName: "clock").font(.hub(cs.tag - 1)) }
+                    Text(HubPrefs.talkText).font(.hub(cs.tag, weight: .medium))
+                }
+                .lineLimit(1).fixedSize()
+                .foregroundStyle(Hub.text2)
+                .padding(.horizontal, 6).padding(.vertical, 2)
+                .overlay(Capsule().stroke(mine ? Hub.ink : Hub.divider, lineWidth: 1))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("6초 뒤 Notion 댓글로 남습니다(지울 수 없음) — 그 안에 되돌리기 · 이니셜은 자기 신고" + (mine ? " · 다시 누르면 취소" : ""))
+            if !proposers.isEmpty {
+                Text("· " + proposers.joined(separator: "·")).font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+            }
+            if proposers.count >= PaperComment.meetupMin {
+                Text("모임 후보").font(.hub(cs.tag, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Hub.fillNeutral))
+                    .help("같이 읽자 \(proposers.count)명 — 계산만, 알림 없음")
+            }
+        }
+    }
 
     private func react(_ p: PaperRec, _ e: String, already: Bool) {
         guard !me.isEmpty, HubPrefs.meChosen else { askWho = true; return }
@@ -571,16 +680,18 @@ struct PaperRecBoard: View {
 /// 최신 원고 — Publications(Stage) + OpenAlex(지정 저자의 최근 프리프린트·논문)
 struct LatestManuscripts: View {
     @ObservedObject var model: NotionHubModel
-    /// 랩 허브만 — 30일 안 2편, 나머지는 '▸ 더 보기' (0.37.0 C2)
+    /// 랩 허브만 — 30일 안 2편, 나머지는 '▸ 더 보기' (0.37.0 C2). 열 바닥이 비면 다음 원고를 더 (HubFill, 0.38.0 C3)
     var nearOnly = false
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
+    @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             SectionTitle(text: "최신 원고 · " + model.cfg.manuscriptAuthors.keys.sorted().joined(separator: "·"), trailing: "Publications") { model.openInApp(id: model.cfg.publicationsDB) }
             VStack(spacing: 0) {
                 let cut = nearOnly ? HubNear.preprints(model) : nil
-                let rows = cut.map { $0.shown(open: expansion.isOpen("preprints")) } ?? Array(model.preprints.prefix(4))
+                let open = expansion.isOpen("preprints"), e = fill.extra["preprints"] ?? 0
+                let rows = cut.map { $0.shown(open: open, extra: e) } ?? Array(model.preprints.prefix(4))
                 if rows.isEmpty && model.manuscripts.isEmpty {
                     Text(model.preprintsLoading ? "OpenAlex 에서 찾는 중…" : "최근 원고 없음").font(.hub(cs.body)).foregroundStyle(Hub.text2)
                         .padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
@@ -604,7 +715,7 @@ struct LatestManuscripts: View {
                     .buttonStyle(.plain).help(r.url?.absoluteString ?? r.title)
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "preprints", more: cut.more) }
+                if let cut { MoreToggle(key: "preprints", more: cut.toggleCount(open: open, extra: e)) }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -615,31 +726,78 @@ struct LatestManuscripts: View {
 
 /// 허브 가운데 세 열의 빈 면 측정 (R-J1, 0.36.0) — 열마다 (내용 높이, 보이는 높이)를 GeometryReader 배경으로 적고,
 /// --snapshot 이 windows.txt 에 'hub-cols: 1 빈 Npt · 2 빈 Npt|스크롤 +Npt · 3 빈 Npt|스크롤 +Npt' 로 쓴다(빈 = max(0, 보이는 − 내용)). 허브가 안 보이면 '—'
+/// 0.38.0 C3: 값마다 적은 Dashboard(소유자 토큰, 환경 hubProbeOwner)를 함께 둔다 — 글자 배율을 바꾸면 창 본문이 다시 만들어지는데,
+/// 옛 Dashboard 의 onDisappear 가 새 Dashboard 가 이미 적은 값까지 지워 1.3배 hub-cols 가 '—' 였다. 이제 clear(owner:) 는 제가 적은 값만 지운다.
+/// 기록할 때마다 HubFill.measured 로 채움 결정을 깨운다
 @MainActor
 enum HubLayoutProbe {
     enum Part { case content, visible }
-    private static var content: [String: CGFloat] = [:]
-    private static var visible: [String: CGFloat] = [:]
-    static func record(_ key: String, _ part: Part, _ h: CGFloat) {
-        switch part { case .content: content[key] = h; case .visible: visible[key] = h }
+    private static var content: [String: (h: CGFloat, owner: UUID?)] = [:]
+    private static var visible: [String: (h: CGFloat, owner: UUID?)] = [:]
+    static func record(_ key: String, _ part: Part, _ h: CGFloat, owner: UUID? = nil) {
+        switch part { case .content: content[key] = (h, owner); case .visible: visible[key] = (h, owner) }
+        HubFill.shared.measured(col: key, part: part)
     }
-    static func clear() { content = [:]; visible = [:] }
+    /// 그 Dashboard 가 적은 값만 지운다 (다른 소유자가 덮어쓴 값은 그대로)
+    static func clear(owner: UUID) {
+        content = content.filter { $0.value.owner != owner }
+        visible = visible.filter { $0.value.owner != owner }
+    }
+    /// 열의 (내용, 보이는) 높이 — 둘 다 있을 때만 (HubFill)
+    static func value(_ key: String) -> (content: CGFloat, visible: CGFloat)? {
+        guard let c = content[key]?.h, let v = visible[key]?.h else { return nil }
+        return (c, v)
+    }
     static var line: String {
         "hub-cols: " + ["1", "2", "3"].map { k -> String in
-            guard let c = content[k], let v = visible[k] else { return "\(k) —" }
+            guard let c = content[k]?.h, let v = visible[k]?.h else { return "\(k) —" }
             // 스크롤이면 넘친 양도 적는다(다음 라운드에 카드 이동 여유 판단용, 검증 1)
             return c > v + 0.5 ? "\(k) 스크롤 +\(Int((c - v).rounded()))pt" : "\(k) 빈 \(Int((v - c).rounded()))pt"
         }.joined(separator: " · ")
     }
 }
 
+/// ViewThatFits 가 고른 갈래 기록 (0.38.0 C2) — --snapshot 이 windows.txt 에 'choices: <키> <값> · …'(없으면 'choices: —') 로 쓴다.
+/// ViewThatFits 는 고른 쪽만 그리므로 그 갈래의 onAppear 가 기록한다. 다음 조정이 그림 눈대중이 아니라 이 줄로 (계획 0.38.0 §5 ⑤)
+@MainActor
+enum LayoutChoice {
+    private static var values: [String: String] = [:]
+    static func record(_ key: String, _ value: String) { values[key] = value }
+    static var line: String {
+        "choices: " + (values.isEmpty ? "—" : values.keys.sorted().map { "\($0) \(values[$0] ?? "")" }.joined(separator: " · "))
+    }
+}
+
 extension View {
-    /// 높이 측정 배경 (HubLayoutProbe) — key 가 nil 이면 아무것도 안 한다
+    /// 이 갈래가 그려지면 LayoutChoice 에 기록 — key 가 nil 이면 아무것도 안 한다
+    func layoutChoice(_ key: String?, _ value: String) -> some View {
+        background(Color.clear.onAppear { if let key { MainActor.assumeIsolated { LayoutChoice.record(key, value) } } })
+    }
+
+    /// 높이 측정 배경 (HubLayoutProbe) — key 가 nil 이면 아무것도 안 한다. 소유자는 환경 hubProbeOwner (Dashboard)
     func hubProbe(_ key: String?, _ part: HubLayoutProbe.Part) -> some View {
-        background(GeometryReader { g in
+        modifier(HubProbeModifier(key: key, part: part))
+    }
+}
+
+/// HubLayoutProbe 소유자 토큰 — Dashboard 가 환경으로 내려 준다 (0.38.0 C3)
+private struct HubProbeOwnerKey: EnvironmentKey { static let defaultValue: UUID? = nil }
+extension EnvironmentValues {
+    var hubProbeOwner: UUID? {
+        get { self[HubProbeOwnerKey.self] }
+        set { self[HubProbeOwnerKey.self] = newValue }
+    }
+}
+
+private struct HubProbeModifier: ViewModifier {
+    let key: String?
+    let part: HubLayoutProbe.Part
+    @Environment(\.hubProbeOwner) private var owner
+    func body(content: Content) -> some View {
+        content.background(GeometryReader { g in
             Color.clear
-                .onAppear { if let key { let h = g.size.height; MainActor.assumeIsolated { HubLayoutProbe.record(key, part, h) } } }
-                .onChange(of: g.size.height) { _, h in if let key { MainActor.assumeIsolated { HubLayoutProbe.record(key, part, h) } } }
+                .onAppear { if let key { let h = g.size.height; MainActor.assumeIsolated { HubLayoutProbe.record(key, part, h, owner: owner) } } }
+                .onChange(of: g.size.height) { _, h in if let key { MainActor.assumeIsolated { HubLayoutProbe.record(key, part, h, owner: owner) } } }
         })
     }
 }
@@ -650,10 +808,11 @@ extension View {
 struct BlitzCompact: View {
     @ObservedObject var model: NotionHubModel
     var fill: Bool = true
-    /// 랩 허브만 — 최신 회차 첫 3편(내 발표 먼저), 나머지는 '▸ 더 보기' (0.37.0 C2)
+    /// 랩 허브만 — 최신 회차 첫 3편(내 발표 먼저), 나머지는 '▸ 더 보기' (0.37.0 C2). 열 바닥이 비면 다음 편을 더 (HubFill, 0.38.0 C3)
     var nearOnly = false
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
+    @ObservedObject private var hubFill = HubFill.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
@@ -665,7 +824,7 @@ struct BlitzCompact: View {
             } else {
                 VStack(spacing: 0) {
                     list
-                    if nearOnly { MoreToggle(key: "blitz", more: HubNear.blitz(model, me: HubPrefs.me).more) }
+                    if nearOnly { MoreToggle(key: "blitz", more: HubNear.blitz(model, me: HubPrefs.me).toggleCount(open: expansion.isOpen("blitz"), extra: hubFill.extra["blitz"] ?? 0)) }
                 }
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
             }
@@ -730,7 +889,7 @@ struct BlitzCompact: View {
             if model.blitz.isEmpty {
                 Text(model.blitzLoading ? "불러오는 중…" : "지난 Paper Blitz 없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2)
             }
-            let papers = nearOnly ? HubNear.blitz(model, me: HubPrefs.me).shown(open: expansion.isOpen("blitz")) : model.blitz
+            let papers = nearOnly ? HubNear.blitz(model, me: HubPrefs.me).shown(open: expansion.isOpen("blitz"), extra: hubFill.extra["blitz"] ?? 0) : model.blitz
             ForEach(papers) { p in
                 Button {
                     if let n = p.notionID, model.blitzSource == "Notion" { model.openInApp(id: n) } else if let d = p.doi { NSWorkspace.shared.open(d) }
@@ -801,10 +960,11 @@ struct GrantsSection: View {
     @ObservedObject var model: NotionHubModel
     /// 관제탑 레일: 적색 대신 ink — 같은 마감이 경보 열에 이미 적색으로 있으므로 (검증 1, 화면당 적색 ≤3)
     var quiet = false
-    /// 랩 허브만 — 마감 D≤7 만, 나머지(D>7·미정·'확인 필요')는 '▸ 더 보기' (0.37.0 C2)
+    /// 랩 허브만 — 마감 D≤7 만, 나머지(D>7·미정·'확인 필요')는 '▸ 더 보기' (0.37.0 C2). 열 바닥이 비면 다음 그랜트를 더 — 날짜 있는 것 먼저, 미정은 무채색 (HubFill, 0.38.0 C3)
     var nearOnly = false
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
+    @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             SectionTitle(text: "그랜트 · 보고와 지원", trailing: "NAS") {
@@ -816,8 +976,12 @@ struct GrantsSection: View {
                         .font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 let cut = nearOnly ? HubNear.grants(model) : nil
-                let rows = cut.map { $0.shown(open: expansion.isOpen("grants")) } ?? model.grants
+                let open = expansion.isOpen("grants"), e = fill.extra["grants"] ?? 0
+                let rows = cut.map { $0.shown(open: open, extra: e) } ?? model.grants
+                // 채움(HubFill)으로 보인 행 — 접힘 기준 밖이라 '확인 필요' 를 적색 없이 (검증 1: 미정 그랜트도 채움 후보로, 적색 예산은 그대로)
+                let nearIDs = Set(cut?.near.map(\.id) ?? [])
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, g in
+                    let filled = cut != nil && !open && !nearIDs.contains(g.id)
                     Button {
                         let p = model.cfg.nasGRMRoot.replacingOccurrences(of: "/GRM", with: "") + "/" + g.folder
                         if FileManager.default.fileExists(atPath: p) { NSWorkspace.shared.open(URL(fileURLWithPath: p)) }
@@ -841,8 +1005,10 @@ struct GrantsSection: View {
                                 // 일정 미정 항목은 마지막 확인일을 보이고, 14일 넘으면 적색 '확인 필요' (#15, 주간 파이프라인 grants 단계도 로그에 남김)
                                 if g.due == nil {
                                     let stale = g.needsCheck(today: model.today)
+                                    // 채움 행은 무채색(Hub.text2) — 같은 행을 '▸ 더 보기' 로 펼치면 지금처럼 적색
                                     Text(stale ? "확인 필요 · 마지막 확인 " + (g.checkedAt.map(Hub.day) ?? "기록 없음") : "마지막 확인 " + (g.checkedAt.map(Hub.day) ?? ""))
-                                        .font(.hub(cs.tag, weight: stale ? .semibold : .regular)).foregroundStyle(stale ? (quiet ? Hub.ink : Hub.signal) : Hub.text3)
+                                        .font(.hub(cs.tag, weight: stale && !filled ? .semibold : .regular))
+                                        .foregroundStyle(stale ? (filled ? Hub.text2 : (quiet ? Hub.ink : Hub.signal)) : Hub.text3)
                                 }
                             }
                             Spacer(minLength: 0)
@@ -853,7 +1019,7 @@ struct GrantsSection: View {
                     .help([g.agency, g.folder].filter { !$0.isEmpty }.joined(separator: " · "))
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "grants", more: cut.more) }
+                if let cut { MoreToggle(key: "grants", more: cut.toggleCount(open: open, extra: e)) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))

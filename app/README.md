@@ -16,13 +16,13 @@
 ## 이전 구성 (config v8, 2026-10-12)
 | 슬롯 | 폭 | 내용 |
 |---|---|---|
-| `calendar` 오늘 일정 | 1/3 | 네이티브 하루 타임라인. 10~20시 강조(큰 글씨·밴드), 그 밖 시간은 압축. 현재 시각 선, 종일 일정 칩, 겹침 열 배치. **표시 캘린더는 <연구실 메일> 의 "CSNL Calendar"·"SLab Calendar" 만** (`calendar.includeCalendars`, 부분 일치·대소문자 무시) |
+| `calendar` 오늘 일정 | 1/3 | 네이티브 하루 타임라인. 10~20시 강조(큰 글씨·밴드), 그 밖 시간은 압축. 현재 시각 선, 종일 일정 칩, 겹침 열 배치. **표시 캘린더는 lab-calendar@example.com 의 "CSNL Calendar"·"SLab Calendar" 만** (`calendar.includeCalendars`, 부분 일치·대소문자 무시) |
 | `csnl-hub` CSNL | 2/3 | Notion API 로 직접 읽는 통합 대시보드. 위→아래: **다음 GRM 한 줄**(날짜·D-day·발표자·발표 노트/초록/슬라이드) / **Members 칩**(다음 발표자 네이비, 휴직 outline) / 3열 = **지난 Paper Blitz**(멤버별 제목·"첫저자 et al., 연도, 저널"·DOI) · **할 일**(Schedule 의 마감 Type, 우선도·마감 순, ○ → 완료) + **오늘의 실험**(SLab 예약·자원 예약 Running·Prolific 활성 study) + 일정 2주 4행 + GRM 자료 · 회의록(제목에서 유형 접두사를 pill 로, 결정이 있으면 결정 우선) / 하단 = **논문 진행**(Publications 의 Stage·Deadline·저널·저자 이니셜) · 다가오는 학회 · 논문 추천. 색은 네이비·녹색·적색 세 가지(적색은 D-3 이내·마감·오류에만). 탭 `Members`·`CSNL GRM`·`CSNL` 은 카드 안 웹뷰 |
 
 예비 위젯(코드만 있음, 슬롯에 `type` 으로 추가하면 생김): `notion`(단일 페이지 웹뷰), `web`(아무 URL), `nas`(NAS 탐색기), `plaud`, `claude`.
 
 ### 캘린더 데이터 소스 (둘 중 하나, 최초 1회)
-1. **EventKit** — 시스템 설정 > 인터넷 계정 > Google 에 <연구실 메일> 추가하고 '캘린더' 켜기 → 1~2분 뒤 자동 표시 (권한 창 '허용'). 이름 필터로 두 캘린더만 남김.
+1. **EventKit** — 시스템 설정 > 인터넷 계정 > Google 에 lab-calendar@example.com 추가하고 '캘린더' 켜기 → 1~2분 뒤 자동 표시 (권한 창 '허용'). 이름 필터로 두 캘린더만 남김.
 2. **ICS** — Google Calendar 설정 > 각 캘린더 > "iCal 형식의 비공개 주소" 를 `calendar.icsURLs` 에 넣기. RRULE(DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL/COUNT/UNTIL/BYDAY/BYMONTHDAY), EXDATE, RECURRENCE-ID 지원.
 소스가 없으면 안내 오버레이가 뜬다. `calendar.mode` = `native`(기본) | `auto`(소스 없으면 Google 웹) | `web`.
 

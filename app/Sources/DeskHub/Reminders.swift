@@ -94,6 +94,8 @@ struct RemindersSection: View {
     /// 랩 허브만 — 확정 D≤7(지난 것 포함)·제안 D≤7 2개, 나머지는 '▸ 더 보기' (0.37.0 C2)
     let nearOnly: Bool
     @ObservedObject private var expansion = HubExpansion.shared
+    /// 열 바닥이 비면 다음 리마인더를 더 (HubFill, 0.38.0 C3)
+    @ObservedObject private var fill = HubFill.shared
     init(model: NotionHubModel, nearOnly: Bool = false) {
         self.model = model; self.nearOnly = nearOnly
         _commits = ObservedObject(wrappedValue: model.reminderCommits)
@@ -124,7 +126,8 @@ struct RemindersSection: View {
             }
             VStack(spacing: 0) {
                 let cut = nearOnly ? HubNear.reminders(model) : nil
-                let lines = cut?.shown(open: expansion.isOpen("reminders"))
+                let open = expansion.isOpen("reminders"), e = fill.extra["reminders"] ?? 0
+                let lines = cut?.shown(open: open, extra: e)
                 let rows = lines.map { $0.filter { !$0.proposal }.map(\.item) } ?? Array(model.confirmedReminders.prefix(6))
                 if rows.isEmpty {
                     Text(model.loading ? "불러오는 중…" : "등록된 리마인더 없음")
@@ -180,7 +183,7 @@ struct RemindersSection: View {
                     }
                     .padding(.bottom, 4)
                 }
-                if let cut { MoreToggle(key: "reminders", more: cut.more) }
+                if let cut { MoreToggle(key: "reminders", more: cut.toggleCount(open: open, extra: e)) }
                 // 되돌리기 바는 카드 끝 제 줄에 — 겹치면 '▸ 더 보기'·마지막 행과 포개진다 (검증 1). 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
             }

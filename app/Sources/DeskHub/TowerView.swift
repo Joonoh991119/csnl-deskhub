@@ -337,7 +337,8 @@ struct TowerView: View {
 
     // MARK: 참조 레일
 
-    private struct RailItem: Identifiable { let id: String; let title: String; let summary: String; let fresh: Freshness?; let link: HubLink?; var est: CGFloat = 0 }
+    /// chips = 접힌 줄 요약 뒤 관심 이니셜 (학회 줄만, 0.38.0 C4)
+    private struct RailItem: Identifiable { let id: String; let title: String; let summary: String; let fresh: Freshness?; let link: HubLink?; var est: CGFloat = 0; var chips: [String] = [] }
     /// 열 채우기 (N1, 결정 3): 기본은 관련 항목을 점수 순으로 열 높이가 맞는 동안 펼친다. DESKHUB_RAIL_FILL=0 이면 열마다 최고 점수 하나만.
     private static let fillLandscape: Bool = ProcessInfo.processInfo.environment["DESKHUB_RAIL_FILL"] != "0"
 
@@ -361,7 +362,9 @@ struct TowerView: View {
             RailItem(id: "blitz", title: "Paper Blitz", summary: (model.blitzDate.map(Hub.day) ?? "—") + " · \(model.blitz.count)편", fresh: model.blitzFreshness, link: model.blitzDeckPath.map(HubLink.nas)),
             RailItem(id: "experiments", title: "오늘의 실험", summary: "\(model.experiments.count)건" + (model.prolificNote != nil ? " · Prolific 미연결" : ""), fresh: nil, link: .notion(model.cfg.slabDB)),
             RailItem(id: "grants", title: "그랜트", summary: "\(model.grants.count)건" + (checks > 0 ? " · 확인 필요 \(checks)" : ""), fresh: nil, link: .nas((model.cfg.grantsFile as NSString).deletingLastPathComponent)),
-            RailItem(id: "conferences", title: "학회", summary: "\(model.conferences.count)건 · " + conf, fresh: nil, link: .notion(model.cfg.conferencesDB)),
+            // 접힌 줄 칩 = 요약에 쓴 첫 학회의 관심 이니셜 (0.38.0 C4 — 펼치면 카드 안 칩·'관심' 단추가 있으므로 줄에서는 뺀다)
+            RailItem(id: "conferences", title: "학회", summary: "\(model.conferences.count)건 · " + conf, fresh: nil, link: .notion(model.cfg.conferencesDB),
+                     chips: model.conferences.first.map { model.interestNames($0) } ?? []),
             RailItem(id: "preprints", title: "최신 원고", summary: "\(model.preprints.count)편" + (model.preprints.first.map { " · " + $0.title } ?? ""), fresh: nil, link: .notion(model.cfg.publicationsDB)),
             RailItem(id: "members", title: "멤버·프로젝트", summary: "\(model.members.filter(\.active).count)명 · 프로젝트 \(model.projects.count)", fresh: nil, link: .notion(model.cfg.membersDB)),
             RailItem(id: "apps", title: "만든 앱", summary: MadeApps.summary, fresh: nil, link: nil),
@@ -476,7 +479,7 @@ struct TowerView: View {
             ForEach(items) { it in
                 let on = expanded.contains(it.id)
                 VStack(alignment: .leading, spacing: 0) {
-                    railLine(it)
+                    railLine(it, chipLimit: stretch ? 2 : 3)
                     if on {
                         railContent(it.id, rows: items.count, stretch: stretch, est: it.est).padding(.horizontal, 6).padding(.bottom, 8)
                             .transition(.opacity)
@@ -492,11 +495,14 @@ struct TowerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
-    private func railLine(_ it: RailItem) -> some View {
+    /// chipLimit — 세로 1열(stretch)은 2, 가로 2열은 3 (요약이 '…' 로만 남지 않게)
+    private func railLine(_ it: RailItem, chipLimit: Int = 3) -> some View {
         HStack(spacing: 8) {
             Image(systemName: expanded.contains(it.id) ? "chevron.down" : "chevron.right").font(.hub(10, weight: .bold)).foregroundStyle(Hub.text3).frame(width: 12)
             Text(it.title).font(.hub(13, weight: .semibold)).frame(width: Hub.s(84), alignment: .leading)
             Text(it.summary).font(.hub(12.5)).foregroundStyle(Hub.text2).lineLimit(1)
+            // 접혔을 때만 관심 칩 — 펼친 학회 카드에는 행마다 칩·'관심' 단추가 있다 (0.38.0 C4)
+            if !it.chips.isEmpty && !expanded.contains(it.id) { InterestChips(names: it.chips, limit: chipLimit) }
             if let f = it.fresh { FreshnessTag(f: f) }
             Spacer(minLength: 4)
             if let l = it.link {

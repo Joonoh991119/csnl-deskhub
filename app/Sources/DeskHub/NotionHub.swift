@@ -178,6 +178,44 @@ struct MeetingNote: Identifiable, Hashable {
     var highlights: [String] = []
 }
 
+/// 드라이런 훅 DESKHUB_NOTION_WRITE=dry:<경로> (0.39.0 C5) — 반응·댓글·'같이 읽자' 쓰기를 Notion POST 대신 이 파일에 {page,text,at} JSON 한 줄로.
+/// 읽기(loadPaperComments·addPaperComment)는 이 줄을 페이지별로 PaperComment.parse 해 Notion 값과 합친 뒤 다시 settle — 재시작해도 남는다. 시험 전용(scratch 경로만)
+enum NotionDryRun {
+    static var path: String? {
+        guard let v = ProcessInfo.processInfo.environment["DESKHUB_NOTION_WRITE"], v.hasPrefix("dry:") else { return nil }
+        let p = String(v.dropFirst(4))
+        return p.isEmpty ? nil : (p as NSString).expandingTildeInPath
+    }
+    private static var iso: ISO8601DateFormatter { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f }
+    static func append(page: String, text: String, path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        let line = try JSONSerialization.data(withJSONObject: ["page": page, "text": text, "at": iso.string(from: Date())], options: [.sortedKeys])
+        var d = (try? Data(contentsOf: url)) ?? Data()
+        if let last = d.last, last != 0x0A { d.append(0x0A) }
+        d.append(line); d.append(0x0A)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try d.write(to: url, options: .atomic)
+    }
+    /// 페이지 → 그 페이지의 드라이런 댓글(settle 전). id = 'dry:<줄 번호>' — 파일은 덧붙이기만 하므로 안정
+    static func comments(path: String) -> [String: [PaperComment]] {
+        guard let s = try? String(contentsOfFile: path, encoding: .utf8) else { return [:] }
+        let f = iso
+        var out: [String: [PaperComment]] = [:]
+        for (i, line) in s.split(separator: "\n").enumerated() {
+            guard let o = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+                  let page = o["page"] as? String, let text = o["text"] as? String,
+                  let c = PaperComment.parse(raw: text, id: "dry:\(i)", created: (o["at"] as? String).flatMap { f.date(from: $0) }) else { continue }
+            out[page, default: []].append(c)
+        }
+        return out
+    }
+    /// base(settle 뒤 값, 이전에 합친 드라이런 줄 포함 가능) + 드라이런 줄 → 같은 id 는 드라이런 쪽으로 한 번만, 다시 settle
+    static func merge(_ base: [PaperComment], _ dry: [PaperComment]) -> [PaperComment] {
+        let ids = Set(dry.map(\.id))
+        return PaperComment.settle(base.filter { !ids.contains($0.id) } + dry)
+    }
+}
+
 @MainActor
 final class NotionHubModel: ObservableObject {
     @Published var members: [Member] = []
@@ -193,6 +231,8 @@ final class NotionHubModel: ObservableObject {
     @Published var experimentsNote: String?
     /// Prolific 연결 상태 — 미연결·조회 실패는 '오늘의 실험' 카드 안에 표시 (#17, 실험 없음과 구분). nil = 연결됨 또는 꺼짐
     @Published var prolificNote: String?
+    /// 마지막 Prolific 조회 성공 시각(실제 시각) — 실패해도 지난 행이 남아 있으면 '아래는 HH:mm 결과' (0.38.0 C5, M-PROLIFIC)
+    private(set) var prolificOKAt: Date?
     @Published var manuscripts: [Manuscript] = []
     @Published var manuscriptsNote: String?
     @Published var blitz: [BlitzPaper] = []
@@ -232,6 +272,26 @@ final class NotionHubModel: ObservableObject {
     /// 최신 원고 (OpenAlex — notionHub.manuscriptAuthors)
     @Published var preprints: [PreprintRow] = []
     @Published var preprintsLoading = false
+    /// 분야 최근 이슈 (0.39.0 C2, ResearchFeed.swift) — bioRxiv neuroscience v1, 날짜 내림차순(캐시 14일 전체 — 화면·덤프는 7일 구간)
+    @Published var feed: [FeedItem] = []
+    @Published var feedLoading = false
+    /// 마지막 받기 성공·시도 (실제 시각)
+    @Published var feedOKAt: Date?
+    @Published var feedTriedAt: Date?
+    /// 받기 실패 안내 — 목록은 그대로(캐시). 적색 아님
+    @Published var feedNote: String?
+    /// 마지막 실패 이유 (툴팁·덤프)
+    @Published var feedError: String?
+    /// 지금 목록의 출처 — network · fixture · cache · none
+    @Published var feedOrigin = "none"
+    /// 마지막 받기의 호출 수 · 이 세션의 네트워크 받기 횟수
+    @Published var feedLastCalls = 0
+    @Published var feedRuns = 0
+    /// 모든 쪽을 읽은 날('yyyy-MM-dd') — 오늘·어제는 늘 다시 받는다
+    @Published var feedFetchedDays: [String] = []
+    private var feedCacheRead = false
+    /// 마지막 네트워크 받기가 빠진 날(오늘·어제 밖)을 하나도 채우지 못했나 — 그러면 12시간 쉰다(10분마다 상한까지 헛도는 것 막기, 0.39.0 검증 1)
+    private var feedStalled = false
     /// 그랜트 (SSOT grants_schedule.json)
     @Published var grants: [GrantRow] = []
     @Published var memberLinks = MemberLinks()
@@ -247,6 +307,8 @@ final class NotionHubModel: ObservableObject {
     @Published var interestTargets: [String: Bool] = [:]
     /// 관심 표시·해제의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다
     let interestCommits = DelayedCommit(seconds: 6)
+    /// 논문 소통 '같이 읽자' 의 6초 미룸 (0.39.0 C5) — Notion 댓글은 지울 수 없어 그 안에 되돌리기. 되돌리기 줄은 연구 탭 오른쪽 칸 아래에만
+    let talkCommits = DelayedCommit(seconds: 6)
     /// Members 현황판 Milestone 열 (0.37.0 C7, MembersBoard.swift) — 이니셜 → NAS MM 최신 파일. nil = MM 폴더 없음(NAS 끊김) → 열 숨김
     @Published var milestones: [String: MilestoneFile]? = nil
     /// 허브의 오늘 캘린더. @Published 가 아니라 보드·관제탑 본체·팝오버는 이 모델만 관찰한다 →
@@ -450,11 +512,16 @@ final class NotionHubModel: ObservableObject {
     /// 논문 댓글 마지막 조회 시각 — 가벼운 갱신은 이보다 commentsTTL 이 지났을 때만 댓글을 다시 읽는다
     private var paperCommentsAt: Date?
     static let commentsTTL: TimeInterval = 600
+    /// 논문 댓글을 실제로 읽은 시각(조회 끝) — 전광판 '논문 반응' 열이 읽기 전이나 첫 조회가 모두 실패했을 때 0 대신 '—' 를 보이게 (0.39.0 C4)
+    @Published private(set) var paperCommentsReadAt: Date?
 
     /// light = 팝오버 열기 재조회: Notion DB 쿼리 약 14개 + NAS 파일. 댓글은 10분 TTL, Blitz(Notion·NAS·pptx)는 건너뜀
     func refresh(light: Bool = false) async {
         // 겹친 호출(주기 루프·'r' 키·메뉴 갱신·팝오버 열기)은 한 번만 — 진행 중이면 그 조회가 곧 끝나므로 건너뛴다
         guard !loading else { return }
+        // 분야 최근 이슈 (0.39.0 C2) — Notion 토큰과 무관하게 api 가드 앞에서 띄운다. '다 옴' 대기 목록에는 넣지 않는다
+        // (최소 9초 걸리는 호출이 settledAt·관제탑 기본 펼침·허브 채움을 늦추지 않게). 자체 TTL(성공 12시간·실패 1시간)
+        if !feedLoading { Task { @MainActor [weak self] in await self?.loadFeed() } }
         guard let api else { tokenMissing = true; return }
         loading = true
         refreshStartedAt = Date()
@@ -702,8 +769,20 @@ final class NotionHubModel: ObservableObject {
     }
 
     /// 논문 추천 각 페이지의 댓글(반응 포함). 실패한 페이지(429·일시 오류)는 이전 값을 유지한다 — 통째로 바꾸면 반응 배지·'반응 n/10' 이 0 으로 꺼진다 (검증 1)
+    /// 드라이런 훅(DESKHUB_NOTION_WRITE=dry:<경로>)이면 그 파일 줄을 페이지별로 합쳐 다시 settle — 재시작해도 남는다 (0.39.0 C5)
     func loadPaperComments() async {
-        guard let api else { return }
+        let dry = NotionDryRun.path
+        guard let api else {
+            // 훅이면 api 가드를 건너뛴다 — Notion 없이 드라이런 줄만
+            if let dry {
+                let d = NotionDryRun.comments(path: dry)
+                var next = paperComments
+                for id in papers.map(\.id) { if let cs = d[id] { next[id] = NotionDryRun.merge(next[id] ?? [], cs) } }
+                paperComments = next
+                paperCommentsReadAt = Date()
+            }
+            return
+        }
         paperCommentsAt = Date()
         let ids = papers.map(\.id)
         var out: [String: [PaperComment]] = [:]
@@ -715,16 +794,45 @@ final class NotionHubModel: ObservableObject {
         let prev = paperComments
         var next: [String: [PaperComment]] = [:]
         for id in ids { if let cs = out[id] ?? prev[id] { next[id] = cs } }
+        if let dry {
+            let d = NotionDryRun.comments(path: dry)
+            for id in ids { if let cs = d[id] { next[id] = NotionDryRun.merge(next[id] ?? [], cs) } }
+        }
         paperComments = next
+        if !out.isEmpty || ids.isEmpty { paperCommentsReadAt = Date() }
     }
 
-    /// 반응·댓글 남기기 — Notion 댓글로 "[이니셜] 내용"
+    /// 반응·댓글 남기기 — Notion 댓글로 "[이니셜] 내용". 드라이런 훅이면 POST 대신 파일에 한 줄(모든 반응·댓글·'같이 읽자' 쓰기가 여기로)
     func addPaperComment(page: String, text: String) async {
+        if let dry = NotionDryRun.path {
+            do { try NotionDryRun.append(page: page, text: text, path: dry) }
+            catch { self.error = "반응·댓글 저장 실패(드라이런): \(error.localizedDescription)"; return }
+            paperComments[page] = NotionDryRun.merge(paperComments[page] ?? [], NotionDryRun.comments(path: dry)[page] ?? [])
+            return
+        }
         guard let api else { return }
         do {
             try await api.addComment(page: page, text: text)
             if let cs = try? await api.comments(page: page) { paperComments[page] = cs }
         } catch { self.error = "반응·댓글 저장 실패: \(error.localizedDescription)" }
+    }
+
+    /// '같이 읽자' 대기 id — 단추·덤프·--key talk-undo 가 같은 값
+    static func talkID(_ p: PaperRec) -> String { "talk-" + p.id }
+
+    /// '같이 읽자' 단추·--key talk:<제목 일부> (0.39.0 C5) — 이니셜 미확인이면 아무것도 안 함(단추 쪽이 이니셜 고르기를 연다).
+    /// 대기 중이면 되돌리기, 아니면 내 제안이 살아 있는지 보고 '[me] 같이 읽자' / '[me] ✖같이 읽자' 를 6초 뒤 남긴다
+    func toggleTalk(_ p: PaperRec) {
+        let me = HubPrefs.me.uppercased()
+        guard !me.isEmpty, HubPrefs.meChosen else { return }
+        let id = Self.talkID(p)
+        if talkCommits.isPending(id) { talkCommits.undo(id); return }
+        let mine = PaperComment.proposers(paperComments[p.id] ?? []).contains(me)
+        let text = "[\(me)] " + (mine ? HubPrefs.cancelMark : "") + HubPrefs.talkText
+        UsageLog.action("talk")
+        talkCommits.schedule(id: id, label: String(p.title.prefix(28)) + " · " + (mine ? "같이 읽자 취소" : "같이 읽자")) { [weak self] in
+            Task { @MainActor [weak self] in await self?.addPaperComment(page: p.id, text: text) }
+        }
     }
 
     /// 최신 원고 — OpenAlex 는 하루에 한 번
@@ -735,6 +843,75 @@ final class NotionHubModel: ObservableObject {
         let rows = await OpenAlex.latest(authors: cfg.manuscriptAuthors, days: cfg.manuscriptLookbackDays)
         preprintsLoading = false
         if !rows.isEmpty { preprints = rows; preprintsFetchedAt = Date() }
+    }
+
+    /// 분야 최근 이슈 받기 (0.39.0 C2) — 캐시를 먼저 보이고, 성공 뒤 12시간(받을 날이 오늘·어제뿐이거나 지난 받기가 빠진 날을 못 채웠을 때)·
+    /// 실패 뒤 1시간 안에는 다시 받지 않는다. 호출 상한(10)에 걸려 빠진 날이 남으면 다음 갱신(10분)에서 오늘·어제와 빠진 날만 이어 받는다 (검증 1).
+    /// 실패해도 목록은 그대로 두고 feedNote. 픽스처 훅은 한 세션에 한 번, 호출 0
+    func loadFeed() async {
+        guard !feedLoading else { return }
+        let env = ProcessInfo.processInfo.environment
+        let cacheURL = FeedCache.url
+        let today = HubClock.today
+        if !feedCacheRead {
+            feedCacheRead = true
+            if let u = cacheURL, let c = FeedCache.load(u) {
+                feed = BioRxivFeed.sorted(c.items.filter { $0.version == "1" })
+                feedFetchedDays = c.fetchedDays; feedOKAt = c.okAt; feedTriedAt = c.triedAt
+                if !c.items.isEmpty || c.okAt != nil { feedOrigin = "cache" }
+                if let t = c.triedAt, t > (c.okAt ?? .distantPast) { feedNote = Self.feedFailNote(c.okAt) }
+            }
+        }
+        if let fx = env["DESKHUB_FEED_FIXTURE"], !fx.isEmpty {
+            guard feedOrigin != "fixture" else { return }
+            guard let r = BioRxivFeed.fixture(path: fx) else { feedError = "픽스처를 읽지 못함 — \(fx)"; feedNote = Self.feedFailNote(feedOKAt); return }
+            applyFeed(r, cacheURL: cacheURL, today: today, origin: "fixture")
+            return
+        }
+        let days = BioRxivFeed.daysToFetch(today: today, fetched: Set(feedFetchedDays))
+        let missing = days.filter { BioRxivFeed.isSettled($0, today: today) }
+        let now = Date()
+        if let ok = feedOKAt, now.timeIntervalSince(ok) < 12 * 3600, missing.isEmpty || feedStalled { return }
+        if let t = feedTriedAt, t > (feedOKAt ?? .distantPast), now.timeIntervalSince(t) < 3600 { return }
+        feedLoading = true
+        let r: BioRxivFeed.Result
+        if env["DESKHUB_FEED_SIM"] == "offline" {
+            r = BioRxivFeed.Result(error: "시험(DESKHUB_FEED_SIM=offline)")
+        } else {
+            r = await BioRxivFeed.fetch(days: days)
+            feedRuns += 1
+        }
+        feedLoading = false
+        feedStalled = r.error == nil && !missing.isEmpty && Set(r.completedDays).isDisjoint(with: missing)
+        applyFeed(r, cacheURL: cacheURL, today: today, origin: "network")
+    }
+
+    /// 받은 결과를 합친다 — v1 만·DOI 병합·14일 지난 것 지움, 다 받은 날 기록(오늘·어제 제외 = 확정된 날만), 캐시(있으면) atomic 쓰기
+    private func applyFeed(_ r: BioRxivFeed.Result, cacheURL: URL?, today: Date, origin: String) {
+        let now = Date()
+        feedLastCalls = r.calls
+        feedTriedAt = now
+        let cut = FeedCache.cutoff(today: today)
+        if !r.items.isEmpty { feed = BioRxivFeed.merge(feed, r.items).filter { $0.date >= cut } }
+        // 오늘·어제는 끝까지 받아도 확정하지 않는다 — 다음 갱신에서 다시 받고 DOI 병합으로 중복 없음 (리뷰 2)
+        feedFetchedDays = BioRxivFeed.settled(Array(Set(feedFetchedDays).union(r.completedDays)), today: today).filter { $0 >= cut }.sorted(by: >)
+        if let e = r.error {
+            feedError = e
+            feedNote = Self.feedFailNote(feedOKAt)
+            if !r.items.isEmpty { feedOrigin = origin }
+        } else {
+            feedOKAt = now; feedNote = nil; feedError = nil; feedOrigin = origin
+        }
+        if let u = cacheURL {
+            FeedCache.save(FeedCacheFile(okAt: feedOKAt, triedAt: feedTriedAt, fetchedDays: feedFetchedDays, items: feed), to: u, today: today)
+        }
+    }
+
+    /// 'bioRxiv 받기 실패 — 아래는 마지막 갱신 M.d HH:mm 결과' (받은 적 없으면 '연결되면 자동으로 다시 받습니다')
+    static func feedFailNote(_ ok: Date?) -> String {
+        guard let ok else { return "bioRxiv 받기 실패 — 연결되면 자동으로 다시 받습니다" }
+        let f = DateFormatter(); f.dateFormat = "M.d HH:mm"
+        return "bioRxiv 받기 실패 — 아래는 마지막 갱신 \(f.string(from: ok)) 결과"
     }
 
     /// 저자 relation id → 이니셜
@@ -770,9 +947,16 @@ final class NotionHubModel: ObservableObject {
             prolificNote = "Prolific 미연결 — 이 맥에 토큰 없음 (\(prolific.tokenEnvKey))"
             experiments.removeAll { $0.source == "Prolific" }
         case .error(let e):
-            prolificNote = "Prolific 조회 실패: \(e)"
+            // 지난 Prolific 행이 남아 있으면(행 보존, 0.37.0 리뷰 2) 그 행이 언제 결과인지 앞에 — 이유는 뒤(한 줄에서 잘려도 앞이 보이게) (0.38.0 C5)
+            if let t = prolificOKAt, experiments.contains(where: { $0.source == "Prolific" }) {
+                let f = DateFormatter(); f.dateFormat = "HH:mm"
+                prolificNote = "Prolific 조회 실패 · 아래는 \(f.string(from: t)) 결과 — \(e)"
+            } else {
+                prolificNote = "Prolific 조회 실패: \(e)"
+            }
         case .ok(let list):
             prolificNote = nil
+            prolificOKAt = Date()
             experiments.removeAll { $0.source == "Prolific" }
             // 진행(ACTIVE)·준비(UNPUBLISHED) 중만 — 랩장 10-16 18:12 'Prolific은 현재 draft나 active인 것들로', 옛 PAUSED 실험(BYL 19/20) 제외.
             // config 의 prolific.showStatuses 는 읽지 않는다(Config.swift·config.json 그대로, 계획 0.37.0 §4-2). 전체 조회 폴백(studies/?limit=50)도 여기서 걸러진다
@@ -1288,6 +1472,8 @@ struct NotionHubWidget: View {
     /// 글자 배율·색 프리셋 (0.37.0 C3) — 바뀌면 탭 줄+본문만 .id 로 다시 만든다(머리·'글자' 판·고른 탭은 그대로)
     @ObservedObject private var display = HubDisplay.shared
     static let todayTab = 900
+    /// '연구' 탭 (0.39.0 C1, RT-TAB) — config 밖 가상 탭: 분야 최근 이슈 + 논문 추천 전체 (ResearchTab.swift). 탭 줄에 늘 보인다
+    static let researchTab = 901
     /// 'CSNL GRM' 탭은 웹뷰 대신 발표 순번 화면 (랩장 2026-10-14, #18 — 순번을 알기 위한 탭)
     /// 'Members' 탭은 웹뷰 대신 연구원 현황판 (0.37.0 C7 — 탭 이름·설정 그대로, 탭 대체 아님)
     static func isNative(_ t: HubTab) -> Bool { t.title == "CSNL GRM" || t.title == "Members" }
@@ -1309,8 +1495,12 @@ struct NotionHubWidget: View {
                 VStack(spacing: 0) {
                     tabBar
                     Divider().opacity(0.5)
+                    // 가상 탭(900·901)은 tabs[tab-1] 을 읽는 분기보다 앞에 있어야 한다 (0.39.0 C1)
                     if tab == 0 { HubViewSwitch(model: model) }
                     else if tab == Self.todayTab, let cal = model.todayCalendar { TodayView(cal: cal) }
+                    else if tab == Self.researchTab { ResearchTabView(model: model) }
+                    // 안전 가드 — 캘린더 없는 '오늘'(900) 등 config 밖 번호는 고른 뷰로 (tabs[899] 충돌 방지)
+                    else if tab > tabs.count { HubViewSwitch(model: model) }
                     else if tabs[tab - 1].title == "Members" { MembersBoardView(model: model, notionURL: URL(string: tabs[tab - 1].url)) }
                     else if Self.isNative(tabs[tab - 1]) { GRMOrderView(model: model, notionURL: URL(string: tabs[tab - 1].url)) }
                     else {
@@ -1324,13 +1514,24 @@ struct NotionHubWidget: View {
                 }
             }
             .onReceive(bus.$event.dropFirst().compactMap { $0 }) { e in selectTab(e.key) }   // 구독 때 받는 지난 값은 건너뜀
+            // 고른 탭 이름을 windows.txt choices 'tab <이름>' 으로 (0.39.0 C1 — 스냅샷이 어느 탭인지 글로 확인)
+            .onChange(of: tab, initial: true) { _, t in LayoutChoice.record("tab", tabName(t)) }
         }
     }
 
-    /// 'tab:Members' · 'tab:0'(고른 뷰) · 'tab:2' — 제목(표시 이름 포함)이나 번호
+    /// 탭 번호 → 탭 줄 표시 이름 (choices 기록용)
+    private func tabName(_ t: Int) -> String {
+        if t == 0 { return views.mode.title }
+        if t == Self.todayTab { return "오늘" }
+        if t == Self.researchTab { return "연구" }
+        return t >= 1 && t <= tabs.count ? Self.tabLabel(tabs[t - 1]) : "\(t)"
+    }
+
+    /// 'tab:Members' · 'tab:0'(고른 뷰) · 'tab:2' · 'tab:연구'|'tab:901' — 제목(표시 이름 포함)이나 번호
     private func selectTab(_ key: String) {
         guard key.hasPrefix("tab:") else { return }
         let q = String(key.dropFirst(4))
+        if q == "연구" || Int(q) == Self.researchTab { tab = Self.researchTab; return }
         if let n = Int(q) { if n == 0 || (1...tabs.count).contains(n) { tab = n }; return }
         if q == "오늘", model.todayCalendar != nil { tab = Self.todayTab; return }
         if let i = tabs.firstIndex(where: { $0.title == q || Self.tabLabel($0) == q }) { tab = i + 1 }
@@ -1341,9 +1542,11 @@ struct NotionHubWidget: View {
             tabButton(0, views.mode.title, views.mode.symbol)
             ViewModeMenu { tab = 0 }.padding(.trailing, 4)
             if model.todayCalendar != nil { tabButton(Self.todayTab, "오늘", "calendar.day.timeline.left") }
+            tabButton(Self.researchTab, "연구", "books.vertical")
             ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in tabButton(i + 1, Self.tabLabel(t), Self.tabSymbol(t)) }
             Spacer()
-            if tab > 0 && tab != Self.todayTab && !Self.isNative(tabs[tab - 1]) {
+            // 웹 도구 막대는 config 웹 탭에서만 — 가상 탭(900·901)은 tabs 범위 밖이라 먼저 거른다 (0.39.0 C1, 901 이면 tabs[900] 충돌)
+            if tab > 0 && tab <= tabs.count && !Self.isNative(tabs[tab - 1]) {
                 let c = tabControllers[tab - 1]
                 HStack(spacing: 4) {
                     IconButton(symbol: "house", help: "페이지 처음으로") { c.home() }
@@ -1622,6 +1825,8 @@ struct ProlificClient {
 struct Dashboard: View {
     @ObservedObject var model: NotionHubModel
     @ObservedObject var expansion = HubExpansion.shared
+    /// HubLayoutProbe 소유자 토큰 (0.38.0 C3) — 배율 변경으로 본문이 다시 만들어질 때 옛 Dashboard 가 새 값을 지우지 않게
+    @State private var probeOwner = UUID()
 
     var body: some View {
         ZStack {
@@ -1669,9 +1874,17 @@ struct Dashboard: View {
             }
             .padding(HubSpace.outer)
             .environment(\.cardStyle, .large)
+            .environment(\.hubProbeOwner, probeOwner)
             if model.tokenMissing { tokenMissingOverlay }
         }
-        .onDisappear { HubLayoutProbe.clear() }
+        // 접힘 빈 면 채우기(HubFill, 0.38.0 C3) — 데이터 다 옴·캘린더 첫 조회·펼침이 바뀔 때 한 번 더 본다(측정이 바뀔 때는 probe 가 깨운다)
+        .onAppear { HubFill.shared.attach(model) }
+        .onChange(of: model.settledAt) { _, _ in HubFill.shared.poke() }
+        .onChange(of: model.loading) { _, _ in HubFill.shared.poke() }
+        .onChange(of: model.todayCalendar?.isSettled ?? false) { _, _ in HubFill.shared.poke() }
+        // 펼침·접힘은 모든 열을 '바뀐 뒤 측정 대기'로 — 애니메이션 중간·옛 높이로 정하거나 빼지 않게 (0.39.0 C0)
+        .onChange(of: expansion.open) { _, _ in HubFill.shared.expansionChanged() }
+        .onDisappear { HubLayoutProbe.clear(owner: probeOwner) }
     }
 
     /// 열1 — 논문 추천 + 최신 원고 + 만든 앱. 추천을 펼치면 0.36.0 처럼 추천 스크롤 칸이 열을 채우고(빈 면 = 그 칸, probe "1"),

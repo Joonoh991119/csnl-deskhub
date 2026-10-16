@@ -285,6 +285,24 @@ struct NearCut<T> {
     func hidden(open: Bool) -> Int { open ? 0 : more }
 }
 
+extension NearCut where T: Identifiable {
+    /// 채움(HubFill, 0.38.0 C3) 반영 — 펼침이면 full, 접힘이면 near + near 밖 앞 extra 개(full 의 원래 순서 — HubNear.union 과 같은 규칙)
+    func shown(open: Bool, extra: Int) -> [T] {
+        if open || extra <= 0 { return shown(open: open) }
+        let ids = Set(near.map { AnyHashable($0.id) })
+        var room = extra
+        return full.filter { x in
+            if ids.contains(AnyHashable(x.id)) { return true }
+            if room > 0 { room -= 1; return true }
+            return false
+        }
+    }
+    /// 접힘에서 숨은 수(채움으로 보인 것 뺌) — text.txt '숨김'
+    func hidden(open: Bool, extra: Int) -> Int { open ? 0 : max(0, more - max(0, extra)) }
+    /// MoreToggle 에 넘길 수 — 접힘이면 남은 수('▸ 더 보기 · n개', 0 이면 바 없음), 펼침이면 more('▾ 접기' 가 보이게)
+    func toggleCount(open: Bool, extra: Int) -> Int { open ? more : hidden(open: false, extra: extra) }
+}
+
 /// 순수 함수 — 카드마다 (model, 지금) → (보일 것, 펼칠 것, 메모). 뷰와 text.txt [허브 카드] 가 같은 함수를 쓴다.
 /// 공통 규칙: 가까운 것이 0개인데 자료가 있으면 가장 가까운 1개(카드가 빈 것처럼 보이지 않게). 기준값은 계획 0.37.0 §2 C2 표 — 교수님 사용 뒤 조정(§4-3)
 @MainActor
@@ -403,14 +421,18 @@ enum HubNear {
     // 만든 앱 — 머리 한 줄만 · 펼침 전체
     static func apps(_ apps: [MadeApp]) -> NearCut<MadeApp> { NearCut(near: [], full: apps, note: nil) }
 
-    /// text.txt [허브 카드] — 카드마다 '<key> · 보임 n · 숨김 k · 펼침 on|off · <보인 행의 기준값>' (+ ' (가장 가까운 1)')
+    /// text.txt [허브 카드] — 카드마다 '<key> · 보임 n · 숨김 k · 펼침 on|off · <보인 행의 기준값>' (+ ' · 채움 +k' 0.38.0 C3) (+ ' (가장 가까운 1)')
     static func dumpLines(_ model: NotionHubModel) -> [String] {
         let ex = HubExpansion.shared
-        func line<T>(_ key: String, _ c: NearCut<T>, _ basis: (T) -> String) -> String {
+        let fill = HubFill.shared
+        func line<T: Identifiable>(_ key: String, _ c: NearCut<T>, _ basis: (T) -> String) -> String {
             let open = ex.isOpen(key)
-            let shown = c.shown(open: open)
+            let e = fill.extra[key] ?? 0
+            let shown = c.shown(open: open, extra: e)
+            let filled = open ? 0 : min(e, c.more)
             let vals = shown.map(basis).joined(separator: ", ")
-            return "\(key) · 보임 \(shown.count) · 숨김 \(c.hidden(open: open)) · 펼침 \(open ? "on" : "off") · \(vals.isEmpty ? "—" : vals)" + (c.note.map { " (\($0))" } ?? "")
+            return "\(key) · 보임 \(shown.count) · 숨김 \(c.hidden(open: open, extra: e)) · 펼침 \(open ? "on" : "off") · \(vals.isEmpty ? "—" : vals)"
+                + (filled > 0 ? " · 채움 +\(filled)" : "") + (c.note.map { " (\($0))" } ?? "")
         }
         let me = HubPrefs.me
         let items = UpcomingEventsCard.items(model: model, cal: model.todayCalendar, excludeToday: false)
@@ -427,6 +449,245 @@ enum HubNear {
             line("preprints", preprints(model)) { r in r.date.map(Hub.shortDay) ?? "—" },
             line("apps", apps(MadeApps.load().apps)) { $0.name },
         ]
+    }
+}
+
+// MARK: - 허브 접힘 빈 면 채우기 (0.38.0 C3, H-FOLD — 0.37.0 접힘에서 세 열 바닥 305~392pt 가 비었음)
+
+/// 열마다 남는 높이(HubLayoutProbe 실측)로 '다음으로 가까운 행'을 카드당 ≤3 더 보인다 — 관제탑 decideExpansion 처럼 데이터가 다 온 뒤·실측 높이·하루 한 번, 단 행 단위.
+/// 결정 키 = (오늘, 글자 배율, 열 높이 20pt 단위) — 같으면 다시 정하지 않는다(10분 갱신마다 행이 흔들리지 않게), 바뀌면 그 열을 0 으로 되돌린 뒤 다음 측정에서 다시.
+/// 결정 뒤 그 열이 넘치면(스크롤) 마지막에 더한 행 하나씩 뺀다(줄기만 하므로 수렴). 펼친 카드가 있는 열은 정하지도 고치지도 않는다(사용자가 연 것).
+/// 잠깐 늘어나는 것(되돌리기 토스트 6초·논문 댓글 칸·'나:' 고르기)이 떠 있는 열도 정하지도 고치지도 않는다 — 토스트 때문에 뺀 행이
+/// 그날 내내 돌아오지 않던 것(검증 1 리뷰). 행 높이는 추정 상수(rowH) 대신 실측 평균이 있으면 그것(논문 추천 — 1.3배에서 135×1.3 로 넣었다가 넘쳐 뺐음, 검증 1).
+/// 끄기·비교: DESKHUB_HUB_FILL=0. windows.txt 'hub-fill: …' — 열마다 '<카드> +n', 남은 행이 있는데 한 행도 더 안 들어가는 카드는 '(안 맞음 <카드>[ 행 Npt])'
+@MainActor
+final class HubFill: ObservableObject {
+    static let shared = HubFill()
+    static let enabled = ProcessInfo.processInfo.environment["DESKHUB_HUB_FILL"] != "0"
+    /// 열 → 채움 후보(우선순위 순, 시간에 민감한 것 먼저). 실험(준비 중 초안)·회의록(최근 1)·만든 앱(머리 한 줄)은 0.37.0 '가까운 것' 예외 규칙대로 제외
+    static let candidates: [(col: String, keys: [String])] = [("1", ["preprints", "papers"]), ("2", ["events", "reminders", "grants"]), ("3", ["conferences", "blitz"])]
+    /// 열 → 그 열의 모든 카드(HubExpansion 키) — 하나라도 펼쳐져 있으면 그 열은 건드리지 않는다
+    static let columnCards: [String: [String]] = ["1": ["papers", "preprints", "apps"], "2": ["reminders", "experiments", "events", "grants"], "3": ["minutes", "blitz", "conferences"]]
+    /// 행 높이 추정 (1.0배, CardStyle.large — 0.37.0 그림 실측). × HubDisplay.scale. qa 가 잰 값으로 이 한 곳만 고친다
+    static let rowH: [String: CGFloat] = ["events": 30, "reminders": 32, "grants": 66, "conferences": 66, "blitz": 42, "preprints": 62, "papers": 135]
+    /// 카드당 더하는 행 상한
+    static let cap = 3
+
+    /// 카드 키 → 더 보일 행 수 (접힘일 때만 쓰임)
+    @Published private(set) var extra: [String: Int] = [:]
+    private weak var model: NotionHubModel?
+    private var decided: [String: (key: String, at: Date)] = [:]
+    /// 열 → 더한 순서 (넘침 고침은 뒤에서 하나씩)
+    private var added: [String: [String]] = [:]
+    /// 열의 extra 를 바꾼 때 — 그 뒤 내용 높이 측정이 올 때까지(최대 1초) 결정·고침을 미룬다(바뀌기 전 높이로 정하지 않게)
+    private var changedAt: [String: Date] = [:]
+    private var waiting: [String: String] = [:]
+    private var queued = false
+    private var retryQueued = false
+    /// 카드 → 보인 행의 실측 평균 높이(그때 배율) — rowsMeasured. 있으면 rowH 추정 대신 쓴다
+    private var measuredRowH: [String: (h: CGFloat, scale: CGFloat)] = [:]
+    /// 열 → 잠깐 열린 것(논문 댓글 칸·이니셜 고르기 'papers-ui', 학회 이니셜 확인 줄 'conf-me') — setHold. 되돌리기 토스트는 model 의 DelayedCommit 을 직접 본다
+    private var holds: [String: Set<String>] = [:]
+    /// 열 → 마지막으로 본 측정 서명(내용·보이는 높이 반올림)과 처음 본 때 — 같은 값이 0.5초 넘게 이어질 때만 결정·넘침 고침 (0.39.0 C0, 리뷰 0.38.0 medium).
+    /// 펼침·접힘 애니메이션 중간 값, 접은 직후 펼친 상태에서 잰 묵은 값으로 행을 빼던 경로를 막는다
+    private var seen: [String: (sig: String, at: Date)] = [:]
+
+    /// Dashboard 가 나타날 때
+    func attach(_ m: NotionHubModel) { model = m; poke() }
+
+    /// 카드의 접힘 목록(보인 행들) 높이 — 행 수로 나눈 평균을 그 카드의 행 높이로 (지금은 논문 추천만 단다: 행마다 이유·반응 줄 수가 달라 추정이 크게 틀림)
+    func rowsMeasured(_ key: String, height: CGFloat, rows: Int) {
+        guard rows > 0, height > 0 else { return }
+        measuredRowH[key] = (height / CGFloat(rows), HubDisplay.scale)
+    }
+
+    /// 잠깐 열린 것이 열을 늘리는 동안 그 열의 결정·넘침 고침을 멈춘다. 닫히면 한 번 다시 본다
+    func setHold(_ id: String, col: String, _ on: Bool) {
+        var h = holds[col] ?? []
+        if on { h.insert(id) } else { h.remove(id) }
+        guard h != (holds[col] ?? []) else { return }
+        holds[col] = h.isEmpty ? nil : h
+        if !on { poke() }
+    }
+
+    /// 열이 잠깐 늘어나 있는가 — 열2 할 일 되돌리기 토스트(끝남·아님), 열3 학회 관심 토스트, 열1 논문 댓글 칸·'나:' 고르기
+    private func transient(_ col: String, _ m: NotionHubModel) -> Bool {
+        if !(holds[col] ?? []).isEmpty { return true }
+        switch col {
+        case "2": return !m.reminderCommits.pending.isEmpty
+        case "3": return !m.interestCommits.pending.isEmpty
+        default: return false
+        }
+    }
+
+    /// 카드의 행 높이 — 같은 배율의 실측 평균이 있으면 그것, 없으면 추정 × 배율
+    private func rowHeight(_ key: String, scale: CGFloat) -> CGFloat {
+        if let r = measuredRowH[key], abs(r.scale - scale) < 0.01 { return r.h }
+        return (Self.rowH[key] ?? 60) * scale
+    }
+
+    /// 허브 카드를 펼치거나 접었을 때 (Dashboard onChange(of: expansion.open)) — 모든 열을 '바뀐 뒤 측정 대기'로 두고 다시 본다.
+    /// 다음 내용 높이 측정(또는 1초)까지 정하지도 빼지도 않는다 — 애니메이션 중간·옛 높이로 고치지 않게 (0.39.0 C0)
+    func expansionChanged() {
+        let now = Date()
+        for c in Self.candidates { changedAt[c.col] = now }
+        poke()
+    }
+
+    /// HubLayoutProbe.record 가 부른다 — 내용 높이가 새로 왔으면 그 열의 '바뀐 뒤 측정 대기'를 푼다
+    func measured(col: String, part: HubLayoutProbe.Part) {
+        guard Self.columnCards[col] != nil else { return }
+        if part == .content { changedAt[col] = nil }
+        poke()
+    }
+
+    /// 다음 런루프에서 한 번 — 측정·데이터·캘린더·펼침이 바뀔 때
+    func poke() {
+        guard Self.enabled, !queued else { return }
+        queued = true
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            self.queued = false
+            for c in Self.candidates { self.step(c.col, c.keys) }
+        }
+    }
+
+    private func retryLater() {
+        guard !retryQueued else { return }
+        retryQueued = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            self?.retryQueued = false
+            self?.poke()
+        }
+    }
+
+    private func step(_ col: String, _ keys: [String]) {
+        guard let m = model else { waiting[col] = "허브 안 보임"; return }
+        if (Self.columnCards[col] ?? []).contains(where: { HubExpansion.shared.isOpen($0) }) { waiting[col] = "펼친 카드"; seen[col] = nil; return }
+        guard let v = HubLayoutProbe.value(col) else { waiting[col] = "측정 전"; return }
+        // 토스트·댓글 칸이 떠 있는 동안 잰 높이로는 정하지도 빼지도 않는다 — 닫히면 높이가 바뀌어 probe 가 다시 깨운다(토스트는 6초 뒤 한 번 더 확인)
+        if transient(col, m) {
+            seen[col] = nil
+            if decided[col] == nil { waiting[col] = "잠깐 열린 줄" }
+            if (holds[col] ?? []).isEmpty { retryLater() }
+            return
+        }
+        if let t = changedAt[col] {
+            if Date().timeIntervalSince(t) < 1.0 { retryLater(); return }
+            changedAt[col] = nil
+        }
+        // 측정 안정화 (0.39.0 C0) — 같은 (내용, 보이는) 높이를 0.5초 넘게 두 번 본 뒤에만 결정·넘침 고침. 아니면 서명을 갈아 넣고 1.1초 뒤 다시
+        let sig = "\(Int(v.content.rounded())) \(Int(v.visible.rounded()))"
+        let now = Date()
+        if let s = seen[col], s.sig == sig {
+            if now.timeIntervalSince(s.at) < 0.5 { waiting[col] = "확인 대기"; retryLater(); return }
+        } else {
+            seen[col] = (sig, now)
+            waiting[col] = "확인 대기"
+            retryLater()
+            return
+        }
+        let scale = HubDisplay.scale
+        let key = "\(Int(HubClock.today.timeIntervalSince1970)) \(String(format: "%.1f", Double(scale))) \(Int((v.visible / 20).rounded()))"
+        if let d = decided[col] {
+            if d.key == key {
+                // 넘침 고침 — 갱신 중(행이 잠깐 바뀜)에는 하지 않는다
+                if v.content > v.visible + 0.5, !m.loading, var a = added[col], let last = a.popLast() {
+                    added[col] = a
+                    setExtra(last, (extra[last] ?? 1) - 1, col: col)
+                }
+                return
+            }
+            // 키가 바뀜 → 0 으로 되돌리고 다음 측정에서 다시 정한다
+            decided[col] = nil
+            added[col] = []
+            if keys.contains(where: { (extra[$0] ?? 0) > 0 }) {
+                for k in keys { setExtra(k, 0, col: col) }
+                waiting[col] = "다시 재는 중"
+                return
+            }
+        }
+        guard m.settledDay == HubClock.today, !m.loading, m.lastUpdated != nil else { waiting[col] = "Notion 갱신 중"; return }
+        guard m.todayCalendar?.isSettled != false else { waiting[col] = "캘린더 첫 조회 전"; return }
+        let cards = keys.map { (key: $0, more: Self.fillable($0, m), rowH: rowHeight($0, scale: scale)) }
+        let order = Self.planOrder(free: v.visible - v.content, cards: cards, margin: 16 * scale, cap: Self.cap)
+        let counts = Self.counts(order)
+        for k in keys { setExtra(k, counts[k] ?? 0, col: col) }
+        added[col] = order
+        decided[col] = (key, Date())
+        waiting[col] = nil
+    }
+
+    private func setExtra(_ k: String, _ n: Int, col: String) {
+        guard (extra[k] ?? 0) != n else { return }
+        if n <= 0 { extra[k] = nil } else { extra[k] = n }
+        changedAt[col] = Date()
+    }
+
+    /// 순수 함수 — 우선순위 순 라운드로빈(한 바퀴에 카드마다 +1), 카드마다 min(cap, more) 까지, 남는 높이 − 행 높이 ≥ margin 일 때만. 더한 순서를 돌려준다
+    static func planOrder(free: CGFloat, cards: [(key: String, more: Int, rowH: CGFloat)], margin: CGFloat, cap: Int = 3) -> [String] {
+        var left = free, n: [String: Int] = [:], out: [String] = []
+        var progress = true
+        while progress {
+            progress = false
+            for c in cards {
+                let have = n[c.key] ?? 0
+                guard have < min(cap, c.more), c.rowH > 0, left - c.rowH >= margin else { continue }
+                left -= c.rowH; n[c.key] = have + 1; out.append(c.key); progress = true
+            }
+        }
+        return out
+    }
+    /// planOrder 의 카드별 수
+    static func plan(free: CGFloat, cards: [(key: String, more: Int, rowH: CGFloat)], margin: CGFloat, cap: Int = 3) -> [String: Int] {
+        counts(planOrder(free: free, cards: cards, margin: margin, cap: cap))
+    }
+    private static func counts(_ order: [String]) -> [String: Int] { order.reduce(into: [:]) { $0[$1, default: 0] += 1 } }
+
+    /// 카드의 채울 수 있는 행 수 — 허브 카드와 같은 인자(일정 maxRows 8 · 학회 maxRows 5).
+    /// 그랜트는 미정도 (날짜 있는 것이 앞, GrantsFile 정렬) — 채움으로 보인 미정 행은 '확인 필요' 를 적색 없이 무채색으로 그린다(GrantsSection).
+    /// 0.38.0 처음엔 날짜 있는 것만이라 숨은 그랜트 3건이 모두 미정인 날 열2 바닥 255pt 가 비었다(검증 1)
+    static func fillable(_ key: String, _ m: NotionHubModel) -> Int {
+        switch key {
+        case "events": return HubNear.events(m, items: UpcomingEventsCard.items(model: m, cal: m.todayCalendar, excludeToday: false)).more
+        case "reminders": return HubNear.reminders(m).more
+        case "grants": return HubNear.grants(m).more
+        case "conferences": return HubNear.conferences(m, limit: min(m.cfg.conferencesCount, 5)).more
+        case "blitz": return HubNear.blitz(m, me: HubPrefs.me).more
+        case "papers": return HubNear.papers(m, visible: PaperRecBoard.visible(m, who: PaperRecBoard.who(filter: HubPrefs.paperFilter, me: HubPrefs.me))).more
+        case "preprints": return HubNear.preprints(m).more
+        default: return 0
+        }
+    }
+
+    /// windows.txt — 'hub-fill: 1 preprints +1 papers +2 · 2 events +3 grants +2 · 3 conferences +3 (결정 HH:mm:ss · 1.0배)' / '꺼짐' / '대기(<이유>)'
+    var line: String {
+        guard Self.enabled else { return "hub-fill: 꺼짐" }
+        if decided.isEmpty {
+            let reasons = Set(Self.candidates.map { waiting[$0.col] ?? "측정 전" })
+            if reasons.count == 1, let r = reasons.first { return "hub-fill: 대기(\(r))" + holdsText }
+        }
+        var last: Date? = nil
+        let parts = Self.candidates.map { c -> String in
+            guard let d = decided[c.col] else { return "\(c.col) 대기(\(waiting[c.col] ?? "측정 전"))" }
+            if last.map({ d.at > $0 }) ?? true { last = d.at }
+            let s = c.keys.compactMap { k in (extra[k] ?? 0) > 0 ? "\(k) +\(extra[k] ?? 0)" : nil }
+            // 남은 행이 있는데 상한(min(3, 남은 수)) 아래에서 멈춘 카드 = 다음 한 행이 남는 높이에 안 들어감(계획 또는 넘침 고침)
+            let unfit = model.map { m in c.keys.filter { k in let e = extra[k] ?? 0; return e < min(Self.cap, Self.fillable(k, m)) } } ?? []
+            // 실측 행 높이가 있으면 함께 — qa 가 '빈 높이 < 행 높이 + 여백' 을 바로 대조 (예 '(안 맞음 papers 행 212pt)')
+            let unfitText = unfit.map { k in measuredRowH[k].flatMap { abs($0.scale - HubDisplay.scale) < 0.01 ? "\(k) 행 \(Int($0.h.rounded()))pt" : nil } ?? k }
+            return "\(c.col) " + (s.isEmpty ? "없음" : s.joined(separator: " ")) + (unfit.isEmpty ? "" : " (안 맞음 " + unfitText.joined(separator: " ") + ")")
+        }
+        let f = DateFormatter(); f.dateFormat = "HH:mm:ss"
+        let tail: String = last.map { " (결정 \(f.string(from: $0)) · " + String(format: "%.1f배", Double(HubDisplay.scale)) + ")" } ?? ""
+        return "hub-fill: " + parts.joined(separator: " · ") + tail + holdsText
+    }
+
+    /// ' · 보류 1:papers-ui 3:conf-me' — 지금 걸린 보류(열 순서, id 정렬). 없으면 빈 문자열 (0.39.0 C0, qa 가 보류를 windows.txt 로 확인)
+    private var holdsText: String {
+        let parts = holds.keys.sorted().flatMap { col in (holds[col] ?? []).sorted().map { "\(col):\($0)" } }
+        return parts.isEmpty ? "" : " · 보류 " + parts.joined(separator: " ")
     }
 }
 
@@ -630,5 +891,24 @@ struct InitialChip: View {
             .overlay(Capsule().stroke(mine ? Hub.ink : Color.clear, lineWidth: 1.5))
             .foregroundStyle(mine ? Hub.ink : Hub.text2)
             .help(mine ? "\(text) · 나 — 관심 표시함" : "\(text) · 관심 표시함")
+    }
+}
+
+/// 학회 관심 이니셜 칩 묶음 (0.38.0 C4, CI-VIEWS) — InitialChip 앞 limit 개 + 넘치면 '+n'(Hub.text2). 안내판 학회 행·관제탑 접힌 학회 레일 줄 공용.
+/// 이름은 늘 model.interestNames(_:) 한 소스(허브·관제탑·안내판 같은 값, 6초 대기 중이면 바뀔 상태). 보기만 — 토글은 허브·관제탑 학회 카드의 '관심' 단추
+struct InterestChips: View {
+    let names: [String]
+    var me: String = HubPrefs.me.uppercased()
+    var limit: Int = 3
+    @Environment(\.cardStyle) private var cs
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(names.prefix(limit)), id: \.self) { n in InitialChip(text: n, mine: !me.isEmpty && n == me) }
+            if names.count > limit {
+                Text("+\(names.count - limit)").font(.hub(cs.tag - 0.5, weight: .semibold, design: .rounded)).foregroundStyle(Hub.text2)
+            }
+        }
+        .fixedSize()
+        .help("관심 표시 · " + names.joined(separator: ", "))
     }
 }

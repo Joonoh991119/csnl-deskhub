@@ -1,0 +1,55 @@
+{
+  "note": "분야 최근 이슈(연구 탭) 관심 주제 초안 — 근거는 연구실 논문 제목(plugins/report/data/publications.seed.json). 연구실 확인 전(결정 D-2). phrases = 대소문자 무시·하이픈은 공백·단어 경계·끝 s 허용, caseSensitive = 원문 그대로(앞뒤가 글자·숫자·'-' 아님 — LC-MS 제외), exclude 가 일치하면 그 주제를 뺀다. 이 맥에서 바꾸려면 ~/Library/Application Support/DeskHub/research-topics.json 에 사본 (0.39.0 C3)",
+  "status": "draft",
+  "topics": [
+    {
+      "id": "decision",
+      "title": "지각 결정",
+      "phrases": ["perceptual decision", "decision-making", "evidence accumulation", "drift diffusion", "decision variable", "decision uncertainty", "decision confidence", "confidence judgment", "confidence rating"],
+      "caseSensitive": ["LIP"],
+      "exclude": []
+    },
+    {
+      "id": "wm",
+      "title": "작업기억",
+      "phrases": ["working memory", "attractor dynamics", "attractor network"],
+      "caseSensitive": [],
+      "exclude": []
+    },
+    {
+      "id": "history",
+      "title": "이력 효과",
+      "phrases": ["serial dependence", "history effect", "choice history", "history bias", "belief updating", "boundary updating"],
+      "caseSensitive": [],
+      "exclude": []
+    },
+    {
+      "id": "vision",
+      "title": "시각 피질",
+      "phrases": ["early visual cortex", "primary visual cortex", "visual cortex", "population receptive field", "spatial tuning", "orientation tuning"],
+      "caseSensitive": ["V1", "V2", "pRF"],
+      "exclude": []
+    },
+    {
+      "id": "arousal",
+      "title": "각성·동공",
+      "phrases": ["pupil", "pupillometry", "arousal", "locus coeruleus"],
+      "caseSensitive": ["LC"],
+      "exclude": []
+    },
+    {
+      "id": "model",
+      "title": "신경망 모델",
+      "phrases": ["recurrent neural network", "recurrent network", "neural population dynamics", "low-dimensional dynamics", "neural manifold"],
+      "caseSensitive": ["RNN", "RNNs"],
+      "exclude": []
+    },
+    {
+      "id": "memory",
+      "title": "해마·기억",
+      "phrases": ["episodic memory", "hippocampal replay", "place cell", "cortico-hippocampal", "spatial navigation"],
+      "caseSensitive": [],
+      "exclude": []
+    }
+  ]
+}

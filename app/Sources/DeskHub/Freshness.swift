@@ -42,6 +42,19 @@ extension NotionHubModel {
         return Freshness(state: behind ? .stale : .fresh, text: behind ? "지난 GRM 덱 없음?" : "최신",
                          help: behind ? "지난 GRM(\(lastGRM.map { Hub.day($0.date) } ?? "")) 의 PB 덱을 찾지 못함 — 휴강이거나 아직 안 올라옴" : "")
     }
+    /// 분야 최근 이슈 (0.39.0 C2): 받는 중 pending · 성공 24시간 안 fresh '마지막 갱신 HH:mm' · 실패 또는 24시간 넘음 stale '마지막 갱신 M.d HH:mm'. 무채색
+    var feedFreshness: Freshness? {
+        if feedLoading { return Freshness(state: .pending, text: "받는 중", help: "bioRxiv 에서 받는 중 (이 맥)") }
+        guard let ok = feedOKAt else { return nil }
+        let f = DateFormatter()
+        if feedNote == nil, Date().timeIntervalSince(ok) < 24 * 3600 {
+            f.dateFormat = "HH:mm"
+            return Freshness(state: .fresh, text: "마지막 갱신 " + f.string(from: ok), help: "bioRxiv 에서 받은 시각 (이 맥, 하루 두 번)")
+        }
+        f.dateFormat = "M.d HH:mm"
+        return Freshness(state: .stale, text: "마지막 갱신 " + f.string(from: ok),
+                         help: feedNote != nil ? "받기 실패 — 마지막으로 받은 목록을 보이는 중" : "24시간 넘게 새로 받지 못함")
+    }
     /// 논문 추천: 가장 최근 보낸 날짜가 10일 넘으면 stale
     var papersFreshness: Freshness? {
         guard let d = papers.compactMap(\.sentAt).max() else { return nil }

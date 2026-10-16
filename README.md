@@ -1,7 +1,7 @@
-# DeskHub — CSNL 바탕화면 대시보드 (0.37.0 공개 사본)
+# DeskHub — CSNL 바탕화면 대시보드 (0.39.0 공개 사본)
 
 연구실 일정·마감·GRM 발표 순번·회의록·Paper Blitz·그랜트·학회 마감을 맥 바탕화면(서브 모니터 배경)에 늘 띄워 두는 macOS 앱입니다. Intel·Apple Silicon 모두 지원합니다.
-이 저장소는 연구실 내부 저장소(csnl-admin)의 `plugins/deskhub` 를 0.37.0 시점에 복제한 **임시 공개 사본**입니다. 설치 파일 배포용이며, 개발·이슈는 내부 저장소에서 합니다.
+이 저장소는 연구실 내부 저장소(csnl-admin)의 `plugins/deskhub` 를 0.39.0 시점에 복제한 **임시 공개 사본**입니다. 설치 파일 배포용이며, 개발·이슈는 내부 저장소에서 합니다.
 
 ## 설치 (5분)
 **A. 연구실 공용 저장소(CSNL_new)가 연결된 맥**
@@ -9,7 +9,7 @@
 zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh
 ```
 **B. 저장소 없이 (GitHub 에서 받기)**
-1. [Releases](../../releases) 에서 `DeskHub-0.37.0.zip` 과 `install_professor.sh` 를 내려받아 **다운로드 폴더**에 둡니다.
+1. [Releases](../../releases) 에서 `DeskHub-0.39.0.zip` 과 `install_professor.sh` 를 내려받아 **다운로드 폴더**에 둡니다.
 2. 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄:
 ```
 zsh ~/Downloads/install_professor.sh <본인 이니셜>

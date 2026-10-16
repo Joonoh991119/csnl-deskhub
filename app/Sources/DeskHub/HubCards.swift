@@ -126,9 +126,12 @@ struct ExperimentsCard: View {
                         Text("Prolific").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text2).frame(width: cs.col(48), alignment: .leading)
                         Text(n).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
                         Spacer()
-                        // 토큰 없음 = 상태(무채색), 조회 실패 = 오류(적색) — 적색은 마감·오류에만 (R-L2, 0.36.0)
+                        // 토큰 없음 = 상태(무채색), 조회 실패 = 오류(적색) — 적색은 마감·오류에만 (R-L2, 0.36.0).
+                        // 지난 행이 남아 보이는 실패는 무채색 굵게 — 안내 줄의 'HH:mm 결과' 가 알리고, 마감 적색 3개인 날 4번째 적색이 되지 않게 (0.38.0 C5, 계획 §4-6)
                         if n.hasPrefix("Prolific 미연결") {
                             Text("미연결").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text2)
+                        } else if model.experiments.contains(where: { $0.source == "Prolific" }) {
+                            Text("조회 실패").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text)
                         } else {
                             Text("조회 실패").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.signal)
                         }
@@ -189,6 +192,8 @@ struct ConferencesCard: View {
     var nearOnly = false
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
+    /// 열 바닥이 비면 다음 학회를 더 (HubFill, 0.38.0 C3)
+    @ObservedObject private var fill = HubFill.shared
     /// 관심 표시·해제의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다 (리마인더와 같은 방식)
     @ObservedObject private var commits: DelayedCommit
 
@@ -219,7 +224,8 @@ struct ConferencesCard: View {
                 .help(model.conferenceInterestPath)
             }
             let cut = nearOnly ? HubNear.conferences(model, limit: min(model.cfg.conferencesCount, maxRows)) : nil
-            let rows = cut.map { $0.shown(open: expansion.isOpen("conferences")) }
+            let open = expansion.isOpen("conferences"), e = fill.extra["conferences"] ?? 0
+            let rows = cut.map { $0.shown(open: open, extra: e) }
                 ?? Array(model.conferences.prefix(min(model.cfg.conferencesCount, maxRows)))   // 바닥 줄이 가운데 칸을 누르지 않게 3행 (마감 가까운 순)
             VStack(spacing: 0) {
                 if rows.isEmpty {
@@ -234,7 +240,7 @@ struct ConferencesCard: View {
                     row(c)
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "conferences", more: cut.more) }
+                if let cut { MoreToggle(key: "conferences", more: cut.toggleCount(open: open, extra: e)) }
                 // 되돌리기 바는 카드 끝 제 줄에 — 겹치면 '▸ 더 보기' 글자와 포개진다 (검증 1). 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
             }
@@ -242,6 +248,12 @@ struct ConferencesCard: View {
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // 이니셜 확인 줄(MeConfirmBar)이 열3 을 늘리는 동안 채움 결정·넘침 고침을 멈춘다 (0.39.0 C0, 0.38.0 리뷰 medium) —
+        // transient() 분기가 아니라 hold 방식이라 줄이 떠 있는 동안 1.1초 폴링이 없다. 이니셜을 고르면 조건이 false → 풀림
+        .onChange(of: model.interestAskMe && !HubPrefs.meChosen, initial: true) { _, on in
+            if nearOnly { HubFill.shared.setHold("conf-me", col: "3", on) }
+        }
+        .onDisappear { if nearOnly { HubFill.shared.setHold("conf-me", col: "3", false) } }
     }
 
     private func confName(_ c: ConferenceRow) -> some View {
@@ -276,12 +288,16 @@ struct ConferencesCard: View {
                         VStack(alignment: .leading, spacing: 1) {
                             // 이름이 먼저 폭을 받는다 — 이름+꼬리표가 한 줄에 다 들어가면 한 줄(장소는 남는 폭에서 잘림),
                             // 아니면 꼬리표('형식'·'국제'·장소)를 둘째 줄로 내려 이름이 잘리지 않게 (검증 1: 'Cosyne...'·1.3배 'C...'·1.6배 'A I · M L')
+                            // 고른 갈래는 windows.txt 'choices: conf-row <학회> 한 줄|두 줄' (허브만, 0.38.0 C5)
+                            let choice: String? = nearOnly ? "conf-row " + InterestFile.displayName(c) : nil
                             ViewThatFits(in: .horizontal) {
                                 HStack(spacing: 6) { confName(c); confTags(c) }
+                                    .layoutChoice(choice, "한 줄")
                                 VStack(alignment: .leading, spacing: 1) {
                                     confName(c)
                                     if !c.format.isEmpty || c.international || !c.location.isEmpty { HStack(spacing: 6) { confTags(c) } }
                                 }
+                                .layoutChoice(choice, "두 줄")
                             }
                             if !c.title.isEmpty { Text(c.title).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1) }
                             if !c.deadlineLabel.isEmpty {
@@ -289,6 +305,9 @@ struct ConferencesCard: View {
                                     .font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
                             }
                         }
+                        // 이름 칸이 남는 폭을 먼저 받는다 — 장소(maxWidth .infinity) 때문에 이 칸과 아래 Spacer 가 같은 유연도가 되어 폭을 반씩 나눴고,
+                        // ViewThatFits 가 절반 폭으로 판정해 꼬리표를 둘째 줄로 자주 내렸다(1.0배 Cosyne, 추정 원인) (0.38.0 C5, M-VENUE)
+                        .layoutPriority(1)
                         Spacer(minLength: 4)
                     }
                     .contentShape(Rectangle())
