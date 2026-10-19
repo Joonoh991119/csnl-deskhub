@@ -32,10 +32,10 @@ struct NowNextCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text("오늘 · 지금과 다음").font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2)
+                Text(HubCardTitle.title("nownext")).font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                    .help(HubCardTitle.hint("nownext") ?? "")
                 if caption, let f = DataSources.calendarTag(cal) { FreshnessTag(f: f).layoutPriority(-1) }   // 라이브 '갱신 HH:mm' (허브만, 0.40.0 C3)
                 Spacer(minLength: 0)
-                Text("CSNL·SLab 캘린더").font(.hub(cs.tag - 0.5)).foregroundStyle(Hub.text3)
             }
             NowNextLine(cal: cal)
             if caption { Spacer(minLength: 0); SourceCaption(text: CardMetas.nownextCaption(cal)) }
@@ -124,8 +124,9 @@ struct UpcomingEventsCard: View {
             let filledTo = cut.flatMap { c in !isOpen && rows.count > c.near.count ? rows.last.map { "~" + Hub.shortDay($0.date) } : nil }
             VStack(alignment: .leading, spacing: cs.gap) {
                 HStack(spacing: 6) {
-                    SectionTitle(text: excludeToday ? "다가오는 일정 · 내일부터 \(model.cfg.eventsDays)일"
-                                 : (nearOnly && !isOpen ? "다가오는 일정 · " + (filledTo ?? "오늘·내일") : "다가오는 일정 · \(model.cfg.eventsDays)일"),
+                    // 범위 글(내일부터 n일 · 오늘·내일 · ~M.d · n일)은 도움말로 (0.42.0 C3, R9-a) — 같은 계산
+                    SectionTitle(card: "events", hint: "범위: " + (excludeToday ? "내일부터 \(model.cfg.eventsDays)일"
+                                 : (nearOnly && !isOpen ? (filledTo ?? "오늘·내일") : "\(model.cfg.eventsDays)일")) + " — Notion Schedule + CSNL·SLab 캘린더, GRM 제외",
                                  fresh: nearOnly ? model.cardTag("events") : nil)
                     Spacer(minLength: 0)
                     // 허브(큰 글자)는 행마다 출처 꼬리표가 있어 머리 설명을 뺀다 — 좁은 열에서 제목과 겹치지 않게

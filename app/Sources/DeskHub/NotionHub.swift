@@ -137,10 +137,13 @@ enum NotionQueryStats {
     static func add(query q: Int, pages p: Int) { lock.lock(); queries += q; pages += p; lock.unlock() }
     /// 갱신 본체 끝 — 지금 값을 '마지막 갱신' 으로
     static func settle() { lock.lock(); last = (queries, pages); lock.unlock() }
+    /// Courses 질의 수 (앱 시작 뒤 합계, 0.42.0 C4) — 6시간 캐시라 갱신을 여러 번 해도 늘지 않아야 한다
+    nonisolated(unsafe) private static var courses = 0
+    static func addCourses() { lock.lock(); courses += 1; lock.unlock() }
     static var line: String {
         lock.lock(); defer { lock.unlock() }
-        guard let l = last else { return "notion: 마지막 갱신 —" }
-        return "notion: 마지막 갱신 질의 \(l.queries) · 쪽 \(l.pages)"
+        guard let l = last else { return "notion: 마지막 갱신 — · Courses 질의 \(courses)(시작 뒤)" }
+        return "notion: 마지막 갱신 질의 \(l.queries) · 쪽 \(l.pages) · Courses 질의 \(courses)(시작 뒤)"
     }
 }
 
@@ -297,6 +300,20 @@ final class NotionHubModel: ObservableObject {
     var followupsLoadedOK = false
     /// 끝남·아님의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다
     let followupCommits = DelayedCommit(seconds: 6)
+    /// 시간표 (0.42.0 C4, Timetable.swift) — Notion Courses 지금 학기 행(정규화) · 못 읽은 행 수 · 읽기 실패 이유(적색 아님) · 6시간 캐시
+    @Published var courses: [CourseRow] = []
+    @Published var coursesUnparsed = 0
+    @Published var coursesNote: String?
+    @Published var coursesSource = "Notion"
+    var coursesFetchedAt: Date?
+    var coursesSemester: String?
+    /// 멤버 상태 (0.42.0 C5, MemberStatus.swift) — 이니셜 → 상태. 갱신 끝·1분 시계마다 updateMemberStatus 가 한 번 계산(화면 넷은 이것만 읽음)
+    @Published var memberStatus: [String: MemberStatusValue] = [:]
+    /// Joint projects (0.42.0 C6, JointProjects.swift) — plugin_status.json 행(스크립트가 씀, 앱은 읽기만) · 생성 시각 · 스크립트 오류 · 읽기 실패 이유
+    @Published var jointRows: [PluginStatusRow] = []
+    @Published var jointGenerated: Date?
+    @Published var jointErrors: [String] = []
+    @Published var jointNote: String? = "읽기 전"
     @Published var loading = false
     @Published var lastUpdated: Date?
     /// 한 번의 갱신이 다 끝난 때(실제 시각, 변화 알림용) — Notion·그랜트·리마인더·학회 합치기에 더해 그 갱신이 띄운 논문 댓글·Paper Blitz·Prolific·최신 원고까지.
@@ -423,6 +440,7 @@ final class NotionHubModel: ObservableObject {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard let self else { return }
                 self.now = HubClock.now
+                self.updateMemberStatus()   // 1분마다 조용히 (알림 없음, 0.42.0 C5)
             }
         }
     }
@@ -833,6 +851,12 @@ final class NotionHubModel: ObservableObject {
         await loadMilestones()
         // 일일 집계 (0.40.0 C2) — 이 맥의 latest.json 읽기만
         await loadMetrics()
+        // 시간표 (0.42.0 C4) — 학기 안일 때만, 6시간 캐시
+        await loadCourses(api)
+        // 멤버 상태 (0.42.0 C5) — 캘린더·Notion·SLab·수업·away 가 다 온 뒤 한 번
+        updateMemberStatus()
+        // Joint projects (0.42.0 C6) — NAS plugins/plugin_status.json 읽기만
+        await loadJointProjects()
         // GRM 회차 자료 지도 (0.40.0 C6) — NAS 목록은 기다리지 않는다('다 옴'·첫 그림을 늦추지 않게)
         loadGRMMap()
         // 여기까지가 갱신 본체. 따로 띄운 로더가 남았으면 그것들이 끝날 때, 아니면 지금 '다 옴'
@@ -1526,15 +1550,22 @@ struct SectionTitle: View {
     /// '내 것' 배지 카드 id — 꼬리표 옆 '새 n' 칩 (0.40.0 C4, A3-badge)
     var badge: String? = nil
     var action: (() -> Void)? = nil
+    /// 제목에서 뺀 설명 (0.42.0 C3, R9-a) — 제목에 마우스를 올리면
+    var hint: String? = nil
     /// 카드 글자 역할 (0.37.0) — 제목 = cs.title, 꼬리 링크 = cs.aux
     @Environment(\.cardStyle) private var cs
-    init(text: String, trailing: String? = nil, fresh: Freshness? = nil, badge: String? = nil, action: (() -> Void)? = nil) {
-        self.text = text; self.trailing = trailing; self.fresh = fresh; self.badge = badge; self.action = action
+    init(text: String, hint: String? = nil, trailing: String? = nil, fresh: Freshness? = nil, badge: String? = nil, action: (() -> Void)? = nil) {
+        self.text = text; self.hint = hint; self.trailing = trailing; self.fresh = fresh; self.badge = badge; self.action = action
+    }
+    /// 허브 카드 제목 표(HubCardTitle)에서 — 제목 + 도움말(hint 를 주면 그것으로 바꿈)
+    init(card id: String, hint: String? = nil, trailing: String? = nil, fresh: Freshness? = nil, badge: String? = nil, action: (() -> Void)? = nil) {
+        self.init(text: HubCardTitle.title(id), hint: hint ?? HubCardTitle.hint(id), trailing: trailing, fresh: fresh, badge: badge, action: action)
     }
     var body: some View {
         HStack(spacing: 6) {
             // 좁은 열에서 한 글자씩 꺾이지 않게 한 줄 + 제목이 꼬리표보다 먼저 폭을 받는다 (0.37.0 리뷰 2)
             Text(text).font(.hub(cs.title, weight: .semibold)).foregroundStyle(Hub.text2).tracking(0.3).lineLimit(1).layoutPriority(1)
+                .help(hint ?? "")
             if let f = fresh { FreshnessTag(f: f) }
             if let b = badge { SeenBadge(card: b) }
             Spacer()
@@ -1613,7 +1644,7 @@ struct NotionHubWidget: View {
     var body: some View {
         WidgetChrome(style: WidgetStyle(kind: .notionhub, title: title),
                      subtitle: model.lastUpdated.map { "Notion · 갱신 " + Hub.time($0) } ?? "Notion") {
-            IconButton(symbol: "textformat.size", help: "글자 크기·색 (이 맥에만 저장)", label: "글자") {
+            IconButton(symbol: "textformat.size", help: "Display — 글자 크기·색 (이 맥에만 저장)", label: "Display") {
                 withAnimation(.easeOut(duration: 0.12)) { display.panelOpen.toggle() }
             }
             IconButton(symbol: "arrow.clockwise", help: "지금 새로고침") { Task { await model.refresh() } }
@@ -1976,11 +2007,16 @@ struct Dashboard: View {
                 // 회의록은 최근 하나(펼치기), 아래 줄: 최신 원고 · 다가오는 학회 · 지난 Paper Blitz
                 // 다음 GRM 과 오늘 캘린더(지금·다음)는 다른 카드로 (#13 JYK — 한 카드에 섞이면 헷갈림)
                 // 0.37.0 (랩장 10-16 18:12): 여백 12 → 8(HubSpace), 글자는 CardStyle.large(제목 16·본문 15·보조 14), 윗줄 두 칸 300 → 320
+                // 0.42.0 C5 (R9-c, 결정 D-12): [Next GRM + Now·Next 세로 쌓기 320 | Members 카드 넓게] — 같은 카드 셋, 배치만
                 HStack(alignment: .top, spacing: HubSpace.column) {
                     // 카드 끝 캡션 '출처 · 기준 · n · 정의 id' (0.40.0 C2, A1) — 윗줄 세 카드는 허브에서만
-                    CompactGRMBar(model: model, caption: true).frame(width: 320).frame(maxHeight: .infinity)
-                    if let cal = model.todayCalendar { NowNextCard(cal: cal, caption: true).frame(width: 320).frame(maxHeight: .infinity) }
-                    MembersProjectsStrip(model: model, caption: true).frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: HubSpace.card) {
+                        CompactGRMBar(model: model, caption: true)
+                        if let cal = model.todayCalendar { NowNextCard(cal: cal, caption: true) }
+                    }
+                    // 글자 배율만큼 넓힘 — 고정 320 은 1.6배에서 내용이 넘쳐 왼쪽이 잘렸다('ext GRM', 0.42.0 C5 검증 1)
+                    .frame(width: Hub.s(320))
+                    MembersCard(model: model).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // 가운데 3열 (R-J1, 0.36.0 — 열 바닥 빈 면에 묻혀 있던 카드를 올림, 결정 D5):
@@ -1994,7 +2030,9 @@ struct Dashboard: View {
                         VStack(alignment: .leading, spacing: HubSpace.card) {
                             RemindersSection(model: model, nearOnly: true, quiet: true); AppsScriptSection(model: model); ExperimentsCard(model: model, nearOnly: true)
                             EquipmentCard(model: model)   // 장비 예약 6줄 · 닫기 누락 (0.40.0 C5, A5)
-                            UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true); GrantsSection(model: model, quiet: true, nearOnly: true)   // 메일 초안 버튼은 할 일 바로 아래 (스크롤 없이 보이게)   // GRM 자료 칸은 뺌 (랩장 의견 2026-10-13)
+                            UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true)
+                            ClassesCard(model: model)   // 오늘·이번 주 수업 (0.42.0 C4, R1) — Upcoming 바로 아래
+                            GrantsSection(model: model, quiet: true, nearOnly: true)   // 메일 초안 버튼은 할 일 바로 아래 (스크롤 없이 보이게)   // GRM 자료 칸은 뺌 (랩장 의견 2026-10-13)
                         }
                         .hubProbe("2", .content)
                     }
@@ -2041,6 +2079,7 @@ struct Dashboard: View {
                 PaperRecBoard(model: model, probeKey: "1", nearOnly: true, fold: true)
                 LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                 AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)   // 만든 앱 (랩장 10-16) — 열2 끝에서 열1 바닥으로
+                JointProjectsCard(model: model).fixedSize(horizontal: false, vertical: true)   // Joint projects (0.42.0 C6, R9-d) — 좌측 하단
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         } else {
@@ -2049,6 +2088,7 @@ struct Dashboard: View {
                     PaperRecBoard(model: model, nearOnly: true, fold: true)
                     LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                     AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)
+                    JointProjectsCard(model: model).fixedSize(horizontal: false, vertical: true)
                 }
                 .hubProbe("1", .content)
             }

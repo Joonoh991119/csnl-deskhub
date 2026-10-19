@@ -113,7 +113,7 @@ struct RemindersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "리마인더 · 컨펌한 것만", trailing: "NAS", fresh: nearOnly ? model.cardTag("reminders") : nil, badge: nearOnly ? "rem-mine" : nil) {
+            SectionTitle(card: "reminders", trailing: "NAS", fresh: nearOnly ? model.cardTag("reminders") : nil, badge: nearOnly ? "rem-mine" : nil) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: (model.remindersPath as NSString).deletingLastPathComponent))
             }
             if let why = model.remindersLocked {

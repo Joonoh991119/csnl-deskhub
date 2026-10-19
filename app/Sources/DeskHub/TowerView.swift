@@ -135,31 +135,30 @@ struct TowerView: View {
             }
             .frame(width: tall ? nil : alertWidth - 12, alignment: .leading)
             if let cal = model.todayCalendar { NowNextBand(cal: cal) } else { Spacer() }
-            roster
+            // 로스터가 먼저 폭을 받는다 — NowNextBand(유연한 Spacer·막대)가 먼저 차지해 'Filter by person' 라벨이 늘 빠지던 것 (0.42.0 C5 검증 1)
+            roster.layoutPriority(1)
         }
         .frame(height: 38)
     }
 
-    /// 로스터 띠 — 이니셜을 누르면 10분 동안 그 사람 기준 (다시 누르면 해제)
+    /// 로스터 띠 — 이니셜을 누르면 10분 동안 그 사람 기준 (다시 누르면 해제).
+    /// 0.42.0 C5 (#24): 'Filter by person' 라벨 + 상태 아이콘 + 내 칩 ink 테두리 — Timetable 과 같은 PersonFilterChips. 폭이 모자라면 라벨 → 'Filter' → 없음
     private var roster: some View {
         let active = (target != nil && (targetUntil.map { model.now < $0 } ?? false)) ? target : nil
+        let people = model.members.filter { $0.active && !$0.initials.isEmpty && $0.order < 99 }
+        let me = HubPrefs.me
         return HStack(spacing: 3) {
-            if let t = active { Text("대상 \(t)").font(.hub(11, weight: .bold)).foregroundStyle(Hub.ink).padding(.trailing, 4) }
-            ForEach(model.members.filter { $0.active && !$0.initials.isEmpty && $0.order < 99 }) { m in
-                let on = active == m.initials
-                Text(m.initials).font(.hub(10.5, weight: .bold, design: .rounded))
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(on ? Hub.ink : Hub.surface))
-                    .foregroundStyle(on ? Hub.onAccent : Hub.text2)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if on { target = nil; targetUntil = nil }
-                        else { target = m.initials; targetUntil = Date().addingTimeInterval(600) }
-                    }
-                    .help("\(m.name) 기준으로 10분 보기 — 내 것 정렬·내 차례")
-            }
+            if let t = active { Text("대상 \(t)").font(.hub(11, weight: .bold)).foregroundStyle(Hub.ink).padding(.trailing, 4).fixedSize() }
+            PersonFilterChips(people: people.map(\.initials),
+                              selected: Binding(get: { active }, set: { v in target = v; targetUntil = v == nil ? nil : Date().addingTimeInterval(600) }),
+                              me: me, fontSize: 10.5,
+                              badge: { ini in AnyView(MemberStatusIcon(status: model.status(of: ini), mine: ini.uppercased() == me.uppercased(), size: 9.5)) },
+                              help: { ini in
+                                  let m = people.first { $0.initials == ini }
+                                  let st = model.status(of: ini).map { " · " + $0.help } ?? ""
+                                  return (ini.uppercased() == me.uppercased() && !me.isEmpty ? "나 (\(ini))" : (m?.name ?? ini)) + st + (active == ini ? " · 다시 누르면 해제" : " — 10분 동안 이 사람 기준(내 것 정렬·내 차례)")
+                              })
         }
-        .fixedSize()
     }
 
     private func counter(_ mark: String, _ n: Int, strong: Bool) -> some View {
@@ -367,29 +366,29 @@ struct TowerView: View {
         let items: [RailItem] = [
             // 꼬리표는 모두 model.cardTag — 허브 카드 머리·[꼬리표] 덤프와 같은 함수 (0.40.0 C3, A2)
             // 생산자가 멈췄으면 '새 추천 없음 (6.1~)' — 펼쳐도 한 줄(fold), 자동 펼침 후보에서 빠짐(est 0) (0.40.0 C8, R4)
-            RailItem(id: "papers", title: "논문 추천",
+            RailItem(id: "papers", title: "Papers",
                      summary: model.papersStopped ? "새 추천 없음 (\(model.papersStoppedSince)~)" : "\(mine.count)편" + (me.isEmpty ? "" : " · \(me)") + " · 반응 없음 \(unreacted)",
                      fresh: model.cardTag("papers"), link: .notion(model.cfg.paperRecDB)),
-            RailItem(id: "minutes", title: "회의록", summary: firstMin, fresh: model.cardTag("minutes"), link: .notion(model.cfg.meetingNotesDB)),
+            RailItem(id: "minutes", title: "Minutes", summary: firstMin, fresh: model.cardTag("minutes"), link: .notion(model.cfg.meetingNotesDB)),
             // 미팅 후속 (0.41.0 C5) — 사람별 남은 수만(항목 글 없음). 관련도 0 · est 0 이라 자동으로 펴지 않는다
-            RailItem(id: "followups", title: "미팅 후속", summary: model.followupRailSummary(), fresh: model.cardTag("followups"), link: nil),
+            RailItem(id: "followups", title: "Follow-ups", summary: model.followupRailSummary(), fresh: model.cardTag("followups"), link: nil),
             // 캘린더 첫 조회 전에는 '0건' 대신 불러오는 중 (0.37.0 C6 검증 1)
-            RailItem(id: "events", title: "내일부터 \(model.cfg.eventsDays)일",
+            RailItem(id: "events", title: "Upcoming",
                      summary: model.todayCalendar?.isSettled == false ? "캘린더 불러오는 중…"
-                        : "\(events.count)건" + (events.first.map { " · 다음 " + Hub.relative($0.start, now: model.now) + " " + Hub.canonicalNames($0.title) } ?? ""),
+                        : "내일부터 \(model.cfg.eventsDays)일 · \(events.count)건" + (events.first.map { " · 다음 " + Hub.relative($0.start, now: model.now) + " " + Hub.canonicalNames($0.title) } ?? ""),
                      fresh: model.cardTag("events"), link: .notion(model.cfg.eventsDB)),
             RailItem(id: "blitz", title: "Paper Blitz", summary: (model.blitzDate.map(Hub.day) ?? "—") + " · \(model.blitz.count)편", fresh: model.cardTag("blitz"), link: model.blitzDeckPath.map(HubLink.nas)),
-            RailItem(id: "experiments", title: "오늘의 실험", summary: "\(model.experiments.count)건" + (model.prolificNote != nil ? " · Prolific 미연결" : ""), fresh: model.cardTag("experiments"), link: .notion(model.cfg.slabDB)),
-            RailItem(id: "grants", title: "그랜트", summary: "\(model.grants.count)건" + (checks > 0 ? " · 확인 필요 \(checks)" : ""), fresh: model.cardTag("grants"), link: .nas((model.cfg.grantsFile as NSString).deletingLastPathComponent)),
+            RailItem(id: "experiments", title: "Experiments", summary: "\(model.experiments.count)건" + (model.prolificNote != nil ? " · Prolific 미연결" : ""), fresh: model.cardTag("experiments"), link: .notion(model.cfg.slabDB)),
+            RailItem(id: "grants", title: "Grants", summary: "\(model.grants.count)건" + (checks > 0 ? " · 확인 필요 \(checks)" : ""), fresh: model.cardTag("grants"), link: .nas((model.cfg.grantsFile as NSString).deletingLastPathComponent)),
             // 접힌 줄 칩 = 요약에 쓴 첫 학회의 관심 이니셜 (0.38.0 C4 — 펼치면 카드 안 칩·'관심' 단추가 있으므로 줄에서는 뺀다)
-            RailItem(id: "conferences", title: "학회", summary: "\(model.conferences.count)건 · " + conf, fresh: model.cardTag("conferences"), link: .notion(model.cfg.conferencesDB),
+            RailItem(id: "conferences", title: "Conferences", summary: "\(model.conferences.count)건 · " + conf, fresh: model.cardTag("conferences"), link: .notion(model.cfg.conferencesDB),
                      chips: model.conferences.first.map { model.interestNames($0) } ?? []),
-            RailItem(id: "preprints", title: "최신 원고", summary: "\(model.preprints.count)편" + (model.preprints.first.map { " · " + $0.title } ?? ""), fresh: model.cardTag("preprints"), link: .notion(model.cfg.publicationsDB)),
-            RailItem(id: "members", title: "멤버·프로젝트", summary: "\(model.members.filter(\.active).count)명 · 프로젝트 \(model.projects.count)", fresh: model.cardTag("members"), link: .notion(model.cfg.membersDB)),
-            RailItem(id: "apps", title: "만든 앱", summary: MadeApps.summary, fresh: model.cardTag("apps"), link: nil),
-            RailItem(id: "tools", title: "도구", summary: "메일 초안 4 · GRM 안내·공지·청소·휴가", fresh: nil, link: nil),
+            RailItem(id: "preprints", title: "Preprints", summary: "\(model.preprints.count)편" + (model.preprints.first.map { " · " + $0.title } ?? ""), fresh: model.cardTag("preprints"), link: .notion(model.cfg.publicationsDB)),
+            RailItem(id: "members", title: "Members", summary: "\(model.members.filter(\.active).count)명 · 프로젝트 \(model.projects.count)", fresh: model.cardTag("members"), link: .notion(model.cfg.membersDB)),
+            RailItem(id: "apps", title: "Apps", summary: MadeApps.summary, fresh: model.cardTag("apps"), link: nil),
+            RailItem(id: "tools", title: "Tools", summary: "메일 초안 4 · GRM 안내·공지·청소·휴가", fresh: nil, link: nil),
             // 자료 상태 (0.40.0 C3, A2) — 원천 정렬 표 + 위생 목록. 관련도 0 이라 자동으로 펴지 않는다
-            RailItem(id: "datastate", title: "자료 상태", summary: DataSources.summary(model), fresh: nil, link: nil),
+            RailItem(id: "datastate", title: "Data status", summary: DataSources.summary(model), fresh: nil, link: nil),
         ]
         // 펼쳤을 때 내용 높이 추정(pt) — 가로 2열 채우기 판단용 (행 높이 × 줄 수 + 제목)
         let est: [String: CGFloat] = [

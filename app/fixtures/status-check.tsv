@@ -1,0 +1,37 @@
+# DeskHub --text-check fixtures/status-check.tsv (0.42.0 C5, R2) — 멤버 상태 MemberStatus.resolve (모델·화면 넷과 같은 함수)
+# 입력 'now=;ini=;cal=제목@HH:mm-HH:mm|제목@종일;notion=제목@HH:mm|제목@종일;slab=이니셜/프로젝트/시간/상태|…;class=이니셜/과목/수업시간|…;away=이니셜:라벨;members=…'
+# 기대 'kind · why · ~HH:mm(종일이면 ~M.d)' 또는 '—'. 우선순위 away > meeting > experiment > class, 끝 시각은 경계 밖(now == end 면 아님)
+# 종류마다
+mstatus	now=2026-10-15T17:00;ini=SMJ;cal=SMJ 휴가@종일	away · SMJ 휴가 · ~10.15
+mstatus	now=2026-10-15T17:00;ini=SMJ;away=SMJ:휴가	away · 휴가
+mstatus	now=2026-10-15T17:00;ini=JOP;cal=Meeting: JOP@16:30-17:30	meeting · Meeting: JOP · ~17:30
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트 · 3회차/16:00 - 18:00/확정	experiment · SLab · 시험 프로젝트 · ~18:00
+mstatus	now=2026-10-15T17:00;ini=BYL;class=BYL/시험 과목 A/목 16:00-18:00	class · 시험 과목 A · ~18:00
+mstatus	now=2026-10-15T17:00;ini=JYK;cal=Meeting: JOP@16:30-17:30;slab=BHL/시험 프로젝트/16:00 - 18:00/확정	—
+# 겹침 셋 — 위의 것 하나
+mstatus	now=2026-10-15T17:00;ini=SMJ;cal=SMJ 연차@종일|Meeting: SMJ@16:30-17:30	away · SMJ 연차 · ~10.15
+mstatus	now=2026-10-15T17:00;ini=BHL;cal=MM BHL@16:30-17:30;slab=BHL/시험 프로젝트/16:00 - 18:00/확정	meeting · MM BHL · ~17:30
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트/16:00 - 18:00/확정;class=BHL/시험 과목 B/목 16:00-18:00	experiment · SLab · 시험 프로젝트 · ~18:00
+# 경계 — now == end 면 아님
+mstatus	now=2026-10-15T17:00;ini=JOP;cal=Meeting: JOP@16:00-17:00	—
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트/15:00 - 17:00/확정	—
+# 이니셜 없는 GRM 시각 일정 → 활성 멤버 전원 · 이니셜이 있으면 그 사람만 · 종일 GRM 은 meeting 아님
+mstatus	now=2026-10-15T17:00;ini=MSY;cal=GRM@16:00-18:00	meeting · GRM · ~18:00
+mstatus	now=2026-10-15T17:00;ini=MSY;cal=GRM - BHL@16:00-18:00	—
+mstatus	now=2026-10-15T17:00;ini=BHL;cal=GRM - BHL@종일	—
+# 이니셜은 토큰 단위로 정확히 — 'Meeting: BHL' 이 BYL 에 붙지 않음, 'MMR' 은 MM 아님
+mstatus	now=2026-10-15T17:00;ini=BYL;cal=Meeting: BHL@16:30-17:30	—
+mstatus	now=2026-10-15T17:00;ini=BHL;cal=Meeting: BHL@16:30-17:30	meeting · Meeting: BHL · ~17:30
+mstatus	now=2026-10-15T17:00;ini=JOP;cal=MMR JOP@16:30-17:30	—
+mstatus	now=2026-10-15T17:00;ini=JOP;cal=JOP 미팅@16:30-17:30	meeting · JOP 미팅 · ~17:30
+# Notion 'Meeting: XX' 은 끝 시각이 없다 → 시작 + 60분 (결정 D-6)
+mstatus	now=2026-10-15T17:00;ini=JOP;notion=Meeting: JOP@16:30	meeting · Meeting: JOP · ~17:30
+mstatus	now=2026-10-15T17:00;ini=JOP;notion=Meeting: JOP@16:00	—
+# 휴일엔 수업 없음 (2026-10-09 한글날, 번들 semesters.json)
+mstatus	now=2026-10-09T17:00;ini=BYL;class=BYL/시험 과목 A/금 16:00-18:00	—
+# SLab 취소·no_show·완료는 실험 중 아님 (확정만)
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트/16:00 - 18:00/취소	—
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트/16:00 - 18:00/no_show	—
+mstatus	now=2026-10-15T17:00;ini=BHL;slab=JOP/시험 프로젝트/16:00 - 18:00/확정	—
+# 휴가 키워드가 있어도 이니셜이 없으면 그 사람에게 붙지 않음
+mstatus	now=2026-10-15T17:00;ini=SMJ;cal=연구실 워크숍@종일	—

@@ -40,7 +40,7 @@ enum StatusLine {
         var out: [BandMark] = []
         for g in m.grants { if let d = g.due, inWindow(d) {
             let dir = m.cfg.nasGRMRoot.replacingOccurrences(of: "/GRM", with: "") + "/" + g.folder
-            out.append(BandMark(id: "grant-" + g.id, title: g.title, date: d, confirmed: true,
+            out.append(BandMark(id: "grant-" + g.id, title: g.title, date: AlertEngine.grantDue(title: g.title, dueNote: g.dueNote, day: d).due, confirmed: true,
                                 link: .nas(!g.folder.isEmpty && FileManager.default.fileExists(atPath: dir) ? dir : grantsDir)))
         } }
         for c in m.conferences { if let d = c.deadline, inWindow(d) {
@@ -101,7 +101,7 @@ enum StatusLine {
     /// 실제 폭(NSFont 13×배율, 숫자 굵게와 같은 semibold 로 넉넉히)으로 갈래를 고른다 — 420pt 미만은 M·S 만. 하나도 안 맞으면 (S, 잘림)
     static let horizontalPadding: CGFloat = 24
     static func measure(_ s: String, size: CGFloat) -> CGFloat {
-        ceil((s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width)
+        ceil((s as NSString).size(withAttributes: [.font: HubDisplay.nsFont(size: size, weight: .semibold)]).width)
     }
     static func variant(width: CGFloat, scale: CGFloat, parts: Parts, chips: [String] = []) -> (variant: Variant, fits: Bool) {
         // 뷰와 같은 자리 — 좌우 여백 24 + 오른쪽 띠 화살표(HStack 간격 8 이 Spacer 양쪽에 두 번 = 16, 10pt 굵은 글리프 ≈ 11pt × 배율 → 12 × 배율)

@@ -50,3 +50,15 @@ fu-mm	me=JOP;today=2026-10-15;events=2026-10-15 Milestone (JOP)	2026-10-15
 fu-mm	me=SJK;today=2026-10-15;events=2026-10-20 SK 마일스톤 미팅	2026-10-20
 fu-mm	me=BHL;today=2026-10-15;events=2026-10-20 MM BYL|2026-10-22 MM, BHL	2026-10-22
 fu-mm	me=JOP;today=2026-10-15;events=2026-10-20 JOP 개인 면담	—
+# fu-orphan: 출처 바뀜 (0.42.0 C2, R6) — 'orphan=yyyy-MM-dd|빈;status=' → 남음 · 숨김(옛 결과의 제안은 '남은' 에서 뺌) · 끝남 · 버림
+fu-orphan	orphan=2026-10-10;status=proposed	숨김
+fu-orphan	orphan=2026-10-10;status=confirmed	남음
+fu-orphan	orphan=2026-10-10;status=done	끝남
+fu-orphan	orphan=2026-10-10;status=dismissed	버림
+fu-orphan	orphan=;status=proposed	남음
+# fu-aka: 같은 글의 옛 id 상태 이어받기 — 'aka=옛id,…;rows=id:상태@at|…' (항목 fu-new). id 행이 먼저, 없으면 aka 행 중 가장 늦은 at
+fu-aka	aka=fu-old;rows=fu-old:confirmed@2026-10-10T10:00:00+09:00	confirmed
+fu-aka	aka=fu-old;rows=	proposed
+fu-aka	aka=fu-old;rows=fu-old:confirmed@2026-10-10T10:00:00+09:00|fu-new:done@2026-10-09T10:00:00+09:00	done
+fu-aka	aka=fu-a,fu-b;rows=fu-a:confirmed@2026-10-10T10:00:00+09:00|fu-b:done@2026-10-12T10:00:00+09:00	done
+fu-aka	aka=;rows=fu-old:confirmed@2026-10-10T10:00:00+09:00	proposed

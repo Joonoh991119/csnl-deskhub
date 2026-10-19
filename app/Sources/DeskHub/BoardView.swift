@@ -13,7 +13,7 @@ import AppKit
 struct BoardItem: Identifiable {
     enum Kind { case event, deadline, grm, conference, experiment, undated }
     let id: String
-    let date: Date?
+    var date: Date?
     var hasTime: Bool = true
     var end: Date? = nil
     let what: String
@@ -64,6 +64,10 @@ struct BoardView: View {
     @ObservedObject var model: NotionHubModel
     @State private var open: String? = nil
     @State private var didAutoOpen = false
+    /// 표 실측 (0.42.0 C1 검증 1) — 보이는 칸 높이와 내용 높이. 차이가 '표 아래 빈 면'. 행당 46pt 추정이 실제보다 커서
+    /// 가로 1313×1155(13행) 에서 빈 면이 절반인데도 300 미만으로 셈해 안 펼치던 것
+    @State private var tableViewportH: CGFloat = 0
+    @State private var tableContentH: CGFloat = 0
     @ObservedObject private var commits: DelayedCommit
     init(model: NotionHubModel) { self.model = model; _commits = ObservedObject(wrappedValue: model.reminderCommits) }
     /// 거리 사다리 (D10): 포인터가 움직이면 near, 3분 무입력이면 far (멀리서 3항목 + 큰 보드 3행). DESKHUB_IDLE=far|near 로 고정
@@ -119,8 +123,14 @@ struct BoardView: View {
         }
         for g in model.grants {
             guard let d = g.due, d >= todayStart else { continue }
-            if out.contains(where: { $0.kind == .deadline && $0.date.map { c.isDate($0, inSameDayAs: d) } == true }) { continue }
-            out.append(BoardItem(id: "grant-" + g.id, date: Phase.deadlineTime(g.title, day: d), hasTime: false, what: "◆ " + g.title, kind: .deadline, mine: isMine(g.title)))
+            let gd = AlertEngine.grantDue(title: g.title, dueNote: g.dueNote, day: d)
+            if let i = out.firstIndex(where: { $0.kind == .deadline && $0.date.map { c.isDate($0, inSameDayAs: d) } == true }) {
+                // 같은 날 리마인더 마감이 이미 있으면 그 행을 쓰되, 리마인더 제목에 시각이 없고 그랜트(dueNote)에 있으면 그 시각으로 —
+                // 팝오버·상태 한 줄(AlertEngine)과 같은 남은 시간 (0.42.0 검증 2 리뷰, #39)
+                if gd.hasTime && !AlertEngine.grantDue(title: out[i].what, day: d).hasTime { out[i].date = gd.due; out[i].hasTime = true }
+                continue
+            }
+            out.append(BoardItem(id: "grant-" + g.id, date: gd.due, hasTime: gd.hasTime, what: "◆ " + g.title, kind: .deadline, mine: isMine(g.title)))
         }
         let byDate: (BoardItem, BoardItem) -> Bool = { ($0.date ?? .distantFuture) < ($1.date ?? .distantFuture) }
         let rows = out.sorted(by: byDate)
@@ -228,6 +238,8 @@ struct BoardView: View {
         let f = farData(d, now: now)
         section("far 급한 마감:", f.urgent.map { "\(clean($0.what)) [\(status($0, now: now).0)]" })
         section("far 오늘 남은 일정:", f.today.map(todayLine))
+        // 안내판 아코디언 (0.42.0 C1, #41) — 지금 펼친 칸과 누가 펼쳤나(자동 · 논문 멈춤 | 자동 | 사용자). 안내판을 아직 안 그렸으면 '없음'
+        lines.append("안내판 아코디언: " + BoardAccordion.dumpValue)
         return lines.joined(separator: "\n")
     }
 
@@ -351,20 +363,49 @@ struct BoardView: View {
             // 세로·높은 화면(5K)은 아래 빈 면이 크므로 논문 추천을 처음부터 펼쳐 둔다
             // 표 아래가 300pt 넘게 남으면 논문 추천을 처음부터 펼쳐 둔다 (R2-01: 가로 1313×1155 에서도 아래 절반이 비었음)
             .onAppear { autoOpen(tall: tall, h: h, rows: tableRows) }
-            // 데이터 로드 전에 나타나면(기본 뷰) 행 0 으로 판정해 버림 → Notion 이 온 뒤 한 번 더 (리뷰 2)
+            // 데이터 로드 전에 나타나면(기본 뷰) 행 0 으로 판정해 버림 → Notion 이 온 뒤 한 번 더 (리뷰 2).
+            // 실측 높이는 데이터가 그려진 다음 레이아웃에서 바뀌므로 그 변화와 settledAt 에서도 다시 본다 (검증 1)
             .onChange(of: model.lastUpdated) { _, _ in autoOpen(tall: tall, h: h, rows: tableRows) }
+            .onChange(of: model.settledAt) { _, _ in autoOpen(tall: tall, h: h, rows: tableRows) }
+            .onChange(of: tableContentH) { _, _ in autoOpen(tall: tall, h: h, rows: tableRows) }
+            .onChange(of: tableViewportH) { _, _ in autoOpen(tall: tall, h: h, rows: tableRows) }
         }
     }
 
     /// 오른쪽 표의 행 수 (autoOpen 추정용) — 표는 내일부터(later)와 날짜 없는 것(tail). GRM 띠는 표 밖
     private func tableRowCount(_ data: BoardData) -> Int { data.later.count + data.tail.count }
 
-    /// 표 아래가 300pt 넘게 남으면(또는 세로) 논문 추천을 처음부터 펼친다 — Notion 데이터가 온 뒤 한 번만 확정
+    /// 표 아래가 300pt 넘게 남으면(또는 세로) 아코디언 한 칸을 처음부터 펼친다 — Notion 데이터가 온 뒤 한 번만 확정.
+    /// 사용자가 이미 고른 펼침(open != nil)은 건드리지 않는다
     private func autoOpen(tall: Bool, h: CGFloat, rows: Int) {
         guard !didAutoOpen, model.lastUpdated != nil else { return }
+        // 캘린더가 아직이면 행이 늘어날 수 있다 — 끝난 뒤(실측이 다시 바뀜) 결정
+        if model.todayCalendar?.isSettled == false { return }
+        // 한 런루프 뒤 실측값으로 — 데이터가 막 바뀐 이 순간의 높이는 이전 레이아웃 값
+        DispatchQueue.main.async { decideAutoOpen(tall: tall, h: h, rows: rows) }
+    }
+
+    private func decideAutoOpen(tall: Bool, h: CGFloat, rows: Int) {
+        guard !didAutoOpen, open == nil else { return }
+        let measured = tableViewportH > 0 && tableContentH > 0
+        if !tall && !measured { return }   // 실측 전엔 결정하지 않음 (onChange 가 다시 부름)
         didAutoOpen = true
-        let est = h - CGFloat(rows + 1) * 46 - 120
-        if open == nil && (tall || est > 300) { open = "papers" }
+        // 표 아래 빈 면 = 보이는 칸 - 내용. 실측이 없을 때만 예전 추정(세로는 est 를 안 봄)
+        let est = measured ? tableViewportH - tableContentH : h - CGFloat(rows + 1) * 46 - 120
+        guard open == nil, let k = Self.autoOpenKey(tall: tall, est: est, papersStopped: model.papersStopped,
+                                                    hasMinutes: !model.minutes.isEmpty, hasBlitz: !model.blitz.isEmpty) else { return }
+        open = k
+        BoardAccordion.record(k, how: k != "papers" && model.papersStopped ? .autoStopped : .auto)
+    }
+
+    /// 자동 펼침 칸 (0.42.0 C1, #41) — 조건(세로 또는 남는 높이 > 300)이 맞으면 papers(멈춤 아님) → minutes(회의록 있음) → blitz(있음) 순 첫 것.
+    /// 논문 추천이 멈추면 펼쳐도 한 줄이라 아래 절반이 비던 것을 다음 카드가 채운다
+    static func autoOpenKey(tall: Bool, est: CGFloat, papersStopped: Bool, hasMinutes: Bool, hasBlitz: Bool) -> String? {
+        guard tall || est > 300 else { return nil }
+        if !papersStopped { return "papers" }
+        if hasMinutes { return "minutes" }
+        if hasBlitz { return "blitz" }
+        return nil
     }
 
     // MARK: 왼쪽 열 (near) — ① 시계 ② 마감 ③ 오늘 일정. 글자는 BoardType 셋만, 색은 Hub.text·Hub.ink (첫 마감 D≤3 만 Hub.signal)
@@ -512,11 +553,20 @@ struct BoardView: View {
                     ForEach(data.tail) { it in RowDivider(); boardRow(it, now: now, dim: true, showWho: showWho) }
                 }
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Hub.surface))
+                .background(GeometryReader { g in
+                    Color.clear.onAppear { tableContentH = g.size.height }
+                        .onChange(of: g.size.height) { _, n in tableContentH = n }
+                })
                 .overlay(alignment: .bottom) { UndoToast(commits: commits).padding(8) }
                 // 끝난 행은 1.5초 페이드로 퇴장 (위치 이동 애니메이션 없음)
                 .animation(.easeOut(duration: 1.5), value: rows.map(\.id))
             }
             .frame(maxHeight: open == nil ? .infinity : min(rowsH, height * 0.55))
+            .background(GeometryReader { g in
+                // 접힌 상태(open == nil)의 보이는 칸 = 표 머리 아래부터 아코디언 머리 위까지 — 빈 면 실측용
+                Color.clear.onAppear { if open == nil { tableViewportH = g.size.height } }
+                    .onChange(of: g.size.height) { _, n in if open == nil { tableViewportH = n } }
+            })
             accordion.padding(.top, 2).frame(maxHeight: open == nil ? nil : .infinity, alignment: .top)
             HStack(spacing: 10) {
                 // 무엇의 시각인지 혼자서도 읽히게 — 'Notion 갱신 HH:mm' (UX smartwatch-19)
@@ -651,7 +701,7 @@ struct BoardView: View {
                         .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(open == k ? Hub.ink.opacity(0.14) : Hub.surface))
                         .foregroundStyle(open == k ? Hub.ink : Hub.text2)
                         .contentShape(Rectangle())
-                        .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { open = open == k ? nil : k } }
+                        .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { open = open == k ? nil : k }; BoardAccordion.record(open, how: .user) }
                 }
             }
             if let k = open {
@@ -672,4 +722,14 @@ struct BoardView: View {
             }
         }
     }
+}
+
+/// 안내판 아코디언 상태 기록 (0.42.0 C1) — 뷰의 @State 를 --dump-phase 가 읽을 수 있게 펼칠 때마다 적는다(화면과 같은 값)
+@MainActor
+enum BoardAccordion {
+    enum How: String { case autoStopped = "자동 · 논문 멈춤", auto = "자동", user = "사용자" }
+    private(set) static var key: String? = nil
+    private(set) static var how: How? = nil
+    static func record(_ k: String?, how h: How) { key = k; how = k == nil ? nil : h }
+    static var dumpValue: String { key.map { k in k + (how.map { " (\($0.rawValue))" } ?? "") } ?? "없음" }
 }

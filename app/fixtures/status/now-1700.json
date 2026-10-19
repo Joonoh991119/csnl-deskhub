@@ -1,0 +1,21 @@
+{
+ "_note": "DeskHub 0.42.0 C5 상태 아이콘 스냅샷 입력 — DESKHUB_STATUS_FIXTURE=fixtures/status/now-1700.json DESKHUB_NOW=2026-10-15T17:00 DESKHUB_ME=JOP. 기대: JOP meeting · BHL experiment · BYL class · SMJ away · 나머지 —. 제목·프로젝트·과목은 가짜, 피험자 칸 없음",
+ "calendar": [
+  {"title": "Meeting: JOP", "start": "2026-10-15T16:30", "end": "2026-10-15T17:30"},
+  {"title": "Meeting: BHL", "start": "2026-10-15T15:00", "end": "2026-10-15T16:00"},
+  {"title": "SMJ 휴가", "start": "2026-10-15", "end": "2026-10-17", "allDay": true},
+  {"title": "GRM - BHL", "start": "2026-10-15", "end": "2026-10-16", "allDay": true}
+ ],
+ "notion": [
+  {"title": "Meeting: SYJ", "start": "2026-10-15T15:30"}
+ ],
+ "slab": [
+  {"owner": "BHL", "project": "시험 프로젝트 · 3회차", "time": "16:00 - 18:00", "status": "확정"},
+  {"owner": "JYK", "project": "시험 프로젝트 · 1회차", "time": "16:00 - 18:00", "status": "취소"}
+ ],
+ "classes": [
+  {"init": "BYL", "course": "시험 과목 A", "start": "16:00", "end": "18:00"},
+  {"init": "MSY", "course": "시험 과목 B", "start": "18:00", "end": "20:50"}
+ ],
+ "away": {}
+}

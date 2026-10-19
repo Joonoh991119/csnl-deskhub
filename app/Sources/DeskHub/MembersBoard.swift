@@ -319,10 +319,11 @@ struct MembersBoardRow {
         let tally = ScoreboardLive.tally(model)
         let period = ScoreboardLive.period(today: HubClock.today)
         let rs = rows(model, sample: sample, tally: tally)
-        var cols = ["이니셜", "진행 프로젝트", "다음 GRM"]
+        // 머리 글은 영어 (0.42.0 C3, R3) — 열은 그대로
+        var cols = ["Initials", "Projects", "Next GRM"]
         if model.milestones != nil { cols.append("Milestone") }
-        cols.append("논문 반응(실제 \(period.label))")
-        cols.append("미팅 후속(실제)")
+        cols.append("Paper reactions(실제 \(period.label))")
+        cols.append("Follow-ups(실제)")
         cols += (sample?.columns ?? []).map { $0.title + "(예시)" }
         var out = ["열: " + cols.joined(separator: " · ")]
         if sample != nil { out.append("띠: " + band + " · " + bandAux) }
@@ -382,7 +383,8 @@ struct MembersBoardView: View {
         @Environment(\.cardStyle) private var cs
 
         // 열 폭 — 글자 배율을 따라 (CardStyle.col)
-        private var wIni: CGFloat { cs.col(54) }
+        /// 상태 아이콘 + 이니셜 (0.42.0 C5 — 54 → 70, 열은 그대로)
+        private var wIni: CGFloat { cs.col(70) }
         private var wGRM: CGFloat { cs.col(92) }
         private var wMM: CGFloat { cs.col(96) }
         private var wSample: CGFloat { cs.col(112) }
@@ -396,7 +398,7 @@ struct MembersBoardView: View {
             let liveMax = Swift.max(1, rows.compactMap(\.live).max() ?? 1)
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("연구원 현황판").font(.hub(cs.title + 2, weight: .bold))
+                    Text("Members board").font(.hub(cs.title + 2, weight: .bold))
                     Text("Members · 함께 보는 활동 흐름 — 평가·순위용 아님").font(.hub(cs.aux)).foregroundStyle(Hub.text3).lineLimit(1)
                     Spacer()
                     if let u = notionURL {
@@ -443,19 +445,19 @@ struct MembersBoardView: View {
 
         private var header: some View {
             HStack(spacing: 8) {
-                Text("이니셜").frame(width: wIni, alignment: .leading)
-                Text("진행 프로젝트").frame(maxWidth: .infinity, alignment: .leading)
-                Text("다음 GRM").frame(width: wGRM, alignment: .leading)
+                Text("Initials").frame(width: wIni, alignment: .leading)
+                Text("Projects").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Next GRM").frame(width: wGRM, alignment: .leading)
                 if model.milestones != nil { Text("Milestone").frame(width: wMM, alignment: .leading) }
                 HStack(spacing: 4) {
-                    Text("논문 반응").lineLimit(1).minimumScaleFactor(0.8)
+                    Text("Paper reactions").lineLimit(1).minimumScaleFactor(0.8)
                     RealChip(label: "실제 " + ScoreboardLive.period(today: HubClock.today).label)
                 }
                 .frame(width: wLive, alignment: .leading)
                 .help(ScoreboardLive.help)
                 // 미팅 후속 (0.41.0 C5) — 실제 열, 숫자만(막대·정렬·강조 없음)
                 HStack(spacing: 4) {
-                    Text("미팅 후속").lineLimit(1).minimumScaleFactor(0.8)
+                    Text("Follow-ups").lineLimit(1).minimumScaleFactor(0.8)
                     RealChip(label: "실제")
                 }
                 .frame(width: wFU, alignment: .leading)
@@ -476,8 +478,11 @@ struct MembersBoardView: View {
         private func row(_ r: MembersBoardRow, liveMax: Int) -> some View {
             HStack(spacing: 8) {
                 Button { model.openInApp(id: r.member.id) } label: {
-                    Text(r.member.initials.isEmpty ? "—" : r.member.initials).font(.hub(cs.body, weight: .bold, design: .rounded)).foregroundStyle(Hub.ink)
-                        .frame(width: wIni, alignment: .leading).contentShape(Rectangle())
+                    HStack(spacing: 4) {
+                        MemberStatusIcon(status: model.status(of: r.member.initials), mine: isMe(r.member.initials))
+                        Text(r.member.initials.isEmpty ? "—" : r.member.initials).font(.hub(cs.body, weight: .bold, design: .rounded)).foregroundStyle(Hub.ink)
+                    }
+                    .frame(width: wIni, alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help("Members 페이지 열기")
                 Text(r.projects.isEmpty ? "—" : r.projects).font(.hub(cs.aux)).foregroundStyle(r.projects.isEmpty ? Hub.text3 : Hub.text).lineLimit(1)

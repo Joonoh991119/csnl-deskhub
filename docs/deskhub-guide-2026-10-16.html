@@ -34,17 +34,36 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.41.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
+<div class="sub">연구실 바탕화면 대시보드 · 0.42.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
 <p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM(매주 연구실 미팅) 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기), 미팅 후속 체크(끝남·확정·아님·직접 적기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
+<summary><span class="chev"></span>0.42.0 에서 바뀐 것</summary>
+<div class="body">
+<ul>
+<li><b>카드 제목은 짧은 영어 제목만</b> — Next GRM · Now · Next · Members · Reminders · Mail drafts · Experiments · Equipment · Upcoming · Classes · Grants · Follow-ups · Minutes · Paper Blitz · Conferences · Papers · Preprints · Apps · Joint projects. 제목 뒤에 붙던 설명(예약 기준·갱신 시각·'보내지 않음'·이니셜 등)은 뺐고, 제목에 마우스를 올리면 보입니다. 갱신 시각과 개수는 카드 끝 한 줄에 그대로 있습니다.</li>
+<li><b>장비 예약(Equipment)은 한 줄로 접힘</b> — 평소에는 '사용 중 n · 닫기 누락 n' 한 줄입니다. 누르면 장비 6대의 지금·다음 예약 표가 펼쳐지고, 다시 누르면 접힙니다. 펼친 상태는 그 맥에 기억됩니다.</li>
+<li><b>Members 카드</b> — 허브 윗줄에 넓게 자리를 잡았습니다. 이름 앞에 지금 상태가 아이콘으로 보입니다: 비행기(휴가·출장) · 두 사람(미팅 중) · 플라스크(실험 중) · 책(수업 중). 아이콘에 마우스를 올리면 근거가 된 일정과 끝나는 시각이 나옵니다. 같은 아이콘이 Tower 와 Members 탭에도 붙습니다. 'Activity log'·'Claude usage' 칸은 자리만 있고 준비 중입니다.</li>
+<li><b>Joint projects</b> — 허브 왼쪽 열 아래의 새 카드입니다. 공동연구가 생기면 이 칸에 넣고, 지금은 연구실 플러그인(csnl-report · csnl-deskhub · csnl-paper-recommend 등)마다 한 줄씩 버전 · 담당 · 리뷰 완료(✓) · 리뷰 대기 이니셜을 보여 줍니다. 하루 한 번 GitHub 기록으로 새로 정리되고, 대기가 있는 줄이 위로 옵니다.</li>
+<li><b>Classes 카드와 Timetable 화면</b> — 허브 'Upcoming' 아래 Classes 카드에 오늘 수업(시간 · 과목 · 이니셜)과 이번 주 요일별 수업 수가 보입니다. 숫자 키 9 의 Timetable 화면은 요일 × 시간 격자이고, 'Filter by person' 칩으로 한 사람의 수업만 진하게 볼 수 있습니다. 내 수업은 테두리로 표시됩니다. 자료는 Notion 수업 목록(Courses)이며, 학기 밖이면 한 줄로 접힙니다.</li>
+<li><b>테마 7개 추가와 Font</b> — 메뉴 막대 → Theme 에 GitHub Primer · IBM Carbon · Radix Colors · Tokyo Night Day/Night · Catppuccin Frappé · Catppuccin Macchiato · Everforest 가 더해졌습니다. 테마·화면·메뉴 이름은 원래 영어 이름 그대로 씁니다. Display 판에 Font 줄(System · Pretendard · IBM Plex Sans KR · SUIT)이 생겼고 기본은 System 입니다.</li>
+<li><b>논문 반응 단추는 마우스를 올릴 때만</b> — 평소에는 내가 고른 반응 하나와 다른 사람 반응 수(예: 👍2 ✅1)만 보이고, 논문 줄에 마우스를 올리면 단추 셋과 댓글 단추가 나옵니다. 줄 높이는 그대로라 목록이 흔들리지 않습니다.</li>
+<li><b>Tower 'Filter by person'</b> — 맨 위 이니셜 칩 줄 앞에 'Filter by person' 이 붙고, 내 칩은 늘 테두리로 표시됩니다. 칩을 누르면 그 사람 것만 진하게 보입니다.</li>
+<li><b>연구비 마감 시각</b> — 연구비 일정 제목에 시각(예: 18:00)이 있으면 그 시각을 마감으로 봅니다. 오후에 아직 마감 전인데 '지남' 으로 뜨던 것을 고쳤습니다.</li>
+<li><b>Board 아래 빈 면</b> — Board(숫자 3) 화면에서 논문 추천이 멈춰 있으면 회의록(없으면 Paper Blitz)이 저절로 펼쳐져 아래 절반을 채웁니다. 직접 고른 펼침은 그대로 둡니다.</li>
+<li><b>Follow-ups '출처 바뀜'</b> — 회의록이 다시 정리돼 원래 줄이 사라진 제안은 지우지 않고 '출처 바뀜' 으로 남기며, 남은 개수에서는 뺍니다. 확정·끝남 기록이 없으면 30일 뒤 정리됩니다. 글이 같으면 이전 체크 상태를 이어받습니다.</li>
+</ul>
+</div>
+</details>
+
+<details>
 <summary><span class="chev"></span>0.41.0 에서 바뀐 것</summary>
 <div class="body">
 <ul>
-<li><b>미팅 후속 체크리스트</b> — 랩 허브 오른쪽 열 맨 위에 '미팅 후속' 카드가 생겼습니다. 미팅에서 나온 코멘트·다음 마일스톤·고칠 것·새 모델 제안·분석 계획이 제안으로 들어오고, 본인이 끝남·확정·아님을 고릅니다. 지도교수님과의 개인 미팅(MM)에서 나온 것은 직접 적습니다. 자세한 순서는 아래 체크리스트 절에 있습니다.</li>
+<li><b>미팅 후속 체크리스트</b> — Dashboard 오른쪽 열 맨 위에 미팅 후속(Follow-ups) 카드가 생겼습니다. 미팅에서 나온 코멘트·다음 마일스톤·고칠 것·새 모델 제안·분석 계획이 제안으로 들어오고, 본인이 끝남·확정·아님을 고릅니다. 지도교수님과의 개인 미팅(MM)에서 나온 것은 직접 적습니다. 자세한 순서는 아래 체크리스트 절에 있습니다.</li>
 <li><b>전날·당일 알림</b> — 내 다음 MM 이나 내 GRM 발표 전날과 당일에 맨 위 한 줄에 '미팅 후속 n · 내일 GRM' 이 뜹니다. 한 번 누르면 그날은 사라집니다.</li>
-<li><b>관제탑·Members 탭은 사람별 수만</b> — 관제탑의 '미팅 후속' 줄과 Members 탭의 '미팅 후속' 열에는 사람마다 남은 개수만 보입니다. 내용은 본인과 교수님 화면에만 있고, 평가에 쓰지 않습니다.</li>
-<li><b>GRM 자료 지도 한 줄</b> — 'CSNL GRM' 탭의 지난 회차 자료는 이번 주·지난주 한 줄로 줄였습니다. 전체 지도는 'GRM 주간' 화면에 있고, 줄 끝 '자세히' 를 누르면 바로 갑니다.</li>
+<li><b>Tower·Members 탭은 사람별 개수만</b> — Tower 의 'Follow-ups' 줄과 Members 탭의 '미팅 후속' 열에는 사람마다 남은 개수만 보입니다. 내용은 본인과 교수님 화면에만 있고, 평가에 쓰지 않습니다.</li>
+<li><b>GRM 자료 지도 한 줄</b> — 'CSNL GRM' 탭의 지난 회차 자료는 이번 주·지난주 한 줄로 줄였습니다. 전체 지도는 'GRM Weekly' 화면에 있고, 줄 끝 '자세히' 를 누르면 바로 갑니다.</li>
 </ul>
 </div>
 </details>
@@ -52,11 +71,11 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <details>
 <summary><span class="chev"></span>0.40.0 에서 바뀐 것</summary>
 <ul>
-<li><b>상태 한 줄</b> — 허브 맨 위 한 줄에 확정·예상 일정, 학회·연구비 마감, 멈춘 자료, 다음 GRM 이 모입니다. 마감 적색은 이 한 칸으로 모았고, 아래에 8주 마감 띠가 붙습니다. 나와 관련된 새 항목은 '새 n' 배지로 보입니다.</li>
-<li><b>자료 날짜 꼬리표</b> — 모든 카드 머리에 '내용 날짜 · 며칠 전' 이 붙습니다. 관제탑의 '자료 상태' 표에서 어느 자료가 멈췄는지와 고칠 곳(Notion 링크)을 봅니다.</li>
+<li><b>상태 한 줄</b> — Dashboard 맨 위 한 줄에 확정·예상 일정, 학회·연구비 마감, 멈춘 자료, 다음 GRM 이 모입니다. 마감 적색은 이 한 칸으로 모았고, 아래에 8주 마감 띠가 붙습니다. 나와 관련된 새 항목은 '새 n' 배지로 보입니다.</li>
+<li><b>자료 날짜 꼬리표</b> — 모든 카드 머리에 '내용 날짜 · 며칠 전' 이 붙습니다. Tower 의 'Data status' 표에서 어느 자료가 멈췄는지와 고칠 곳(Notion 링크)을 봅니다.</li>
 <li><b>장비 예약</b> — 장비 6대마다 지금·다음 예약이 한 줄씩 보이고, 기한이 지났는데 닫지 않은 예약은 따로 표시됩니다.</li>
 <li><b>GRM 자료 지도</b> — GRM 회차마다 슬라이드·녹취·회의록·Paper Blitz 가 있는지 점으로 보입니다. NAS 를 못 읽으면 '?' 로 표시합니다.</li>
-<li><b>공정 보드</b> — 실험마다 한 줄(SLab 은 '프로젝트 · n회차', 참여자 이름은 보이지 않음), Prolific 은 게시일·정원이 보입니다.</li>
+<li><b>Pipeline</b>(공정 보드) — 실험마다 한 줄(SLab 은 '프로젝트 · n회차', 참여자 이름은 보이지 않음), Prolific 은 게시일·정원이 보입니다.</li>
 <li><b>논문 추천</b> — 추천 자료가 오래 갱신되지 않으면 큰 자리가 한 줄로 접힙니다.</li>
 </ul>
 </details>
@@ -66,7 +85,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.41.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.42.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -76,7 +95,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <summary><span class="chev"></span>매일 쓰는 법은 두 가지뿐</summary>
 <div class="body">
 <ol>
-<li><b>그냥 봅니다.</b> 기본 화면 '랩 허브'가 연구실 전체를 세 열로 보여 주고, 카드마다 가까운 것만 먼저 보입니다. 더 보려면 카드 끝의 <span class="kbd">▸ 더 보기</span>.</li>
+<li><b>그냥 봅니다.</b> 기본 화면 'Dashboard' 가 연구실 전체를 세 열로 보여 주고, 카드마다 가까운 것만 먼저 보입니다. 더 보려면 카드 끝의 <span class="kbd">▸ 더 보기</span>.</li>
 <li><b>잠시 치우려면</b> <span class="kbd">⌃ ⌥ D</span>(컨트롤·옵션·D). 다시 누르면 돌아옵니다. 윈도우식 키보드는 Alt 가 옵션입니다.</li>
 </ol>
 <p>일정·논문·회의록을 클릭하면 Notion 이나 원본 파일이 열립니다. 메뉴 막대(화면 맨 위 오른쪽)의 DeskHub 아이콘을 누르면 '내 것'만 모은 작은 창이 뜹니다.</p>
@@ -84,24 +103,26 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </details>
 
 <details>
-<summary><span class="chev"></span>화면 네 가지 — 숫자 키 1~4</summary>
+<summary><span class="chev"></span>주요 화면 — 숫자 키 1~4, 9</summary>
 <div class="body">
-<p>대시보드를 한 번 클릭한 뒤 숫자 키를 누르면 바뀝니다. 고른 화면은 그 맥에 저장됩니다.</p>
+<p>대시보드를 한 번 클릭한 뒤 숫자 키를 누르면 바뀝니다. 고른 화면은 그 맥에 저장됩니다. 메뉴 막대 아이콘의 메뉴에서도 고를 수 있습니다.</p>
 <table>
 <tr><th>키</th><th>화면</th><th>언제</th></tr>
-<tr><td>4</td><td><b>랩 허브</b> (기본)</td><td>전체를 한 번에. 연구원·일정·마감·GRM·논문·실험·앱</td></tr>
-<tr><td>1</td><td>관제탑</td><td>지금 급한 것부터. 경보 먼저, 나머지는 접힘</td></tr>
-<tr><td>2</td><td>공정 보드</td><td>어디서 막혔는지. 공정이 행, 단계가 칸</td></tr>
-<tr><td>3</td><td>안내판</td><td>멀리서도 읽히게. 큰 시계·마감·오늘 일정</td></tr>
+<tr><td>4</td><td><b>Dashboard</b> (기본, 예전 '랩 허브')</td><td>전체를 한 번에. 연구원·일정·마감·GRM·논문·실험·수업·앱·플러그인</td></tr>
+<tr><td>1</td><td>Tower (예전 '관제탑')</td><td>지금 급한 것부터. 경보 먼저, 나머지는 접힘</td></tr>
+<tr><td>2</td><td>Pipeline (예전 '공정 보드')</td><td>어디서 막혔는지. 공정이 행, 단계가 칸</td></tr>
+<tr><td>3</td><td>Board (예전 '안내판')</td><td>멀리서도 읽히게. 큰 시계·마감·오늘 일정</td></tr>
+<tr><td>9</td><td>Timetable</td><td>이번 학기 연구원 수업 시간표. 'Filter by person' 으로 한 사람 강조</td></tr>
 </table>
 <div class="note">탭 줄의 <b>연구</b> = 분야 최근 이슈(bioRxiv) + 논문 추천·반응·댓글·같이 읽자</div>
 </div>
 </details>
 
 <details>
-<summary><span class="chev"></span>글자 크기와 색 바꾸기</summary>
+<summary><span class="chev"></span>글자 크기·색·글꼴·테마 바꾸기</summary>
 <div class="body">
-<p>랩 허브 머리의 <span class="kbd">가가</span> 단추를 누르면 작은 창이 뜹니다. 슬라이더로 글자 크기(0.9~1.6배), 단추로 색(기본 · 고대비 · 어두움)을 고릅니다. 모든 화면에 함께 적용되고 그 맥에 저장됩니다.</p>
+<p>Dashboard 머리의 <span class="kbd">Display</span> 단추를 누르면 작은 판이 뜹니다. Text size 슬라이더로 글자 크기(0.9~1.6배), Color 단추로 색(Default · High Contrast · Dark), Font 단추로 글꼴(System · Pretendard · IBM Plex Sans KR · SUIT)을 고릅니다. 모든 화면에 함께 적용되고 그 맥에 저장됩니다.</p>
+<p>테마(색 묶음)는 메뉴 막대 아이콘 → Theme 에서, 밝기는 Appearance(System · Light · Dark)에서 고릅니다.</p>
 </div>
 </details>
 
@@ -109,9 +130,9 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <summary><span class="chev"></span>이니셜 확인, 학회 관심 체크, 논문 반응·같이 읽자·댓글</summary>
 <div class="body">
 <ul>
-<li><b>이니셜 확인(처음 한 번)</b> — 관제탑(숫자 1) 맨 위나 메뉴 막대 작은 창 위쪽의 "반응·댓글에 붙일 이니셜을 골라 주세요" 줄에서 본인 이니셜을 누릅니다. 공용 맥에서는 꼭 확인하세요.</li>
-<li><b>학회 관심 체크</b> — 랩 허브·관제탑의 학회 행에서 '관심'을 누르면 내 이니셜 칩이 붙고, 누가 관심 있는지 모두에게 보입니다. 6초 안에 '되돌리기'로 취소됩니다.</li>
-<li><b>논문 추천 반응</b> — 논문 카드의 읽겠음·읽었음·관심없음 단추. 누르는 즉시 남고, 한 번 더 누르면 취소됩니다. Notion 은 댓글을 지울 수 없어 취소 기록이 함께 남습니다.</li>
+<li><b>이니셜 확인(처음 한 번)</b> — Tower(숫자 1) 맨 위나 메뉴 막대 작은 창 위쪽의 "반응·댓글에 붙일 이니셜을 골라 주세요" 줄에서 본인 이니셜을 누릅니다. 공용 맥에서는 꼭 확인하세요.</li>
+<li><b>학회 관심 체크</b> — Dashboard·Tower 의 학회 행에서 '관심'을 누르면 내 이니셜 칩이 붙고, 누가 관심 있는지 모두에게 보입니다. 6초 안에 '되돌리기'로 취소됩니다.</li>
+<li><b>논문 추천 반응</b> — 논문 줄에 마우스를 올리면 나오는 읽겠음·읽었음·관심없음 단추. 누르는 즉시 남고, 한 번 더 누르면 취소됩니다. Notion 은 댓글을 지울 수 없어 취소 기록이 함께 남습니다.</li>
 <li><b>같이 읽자</b>(연구 탭) — 논문 행 끝 단추. 6초 뒤 남고, 그 안에 '되돌리기'로 취소됩니다. 남은 뒤에는 한 번 더 누르면 취소(취소 기록이 남음). 두 명 이상이면 '모임 후보'가 붙습니다(알림은 없음).</li>
 <li><b>댓글</b> — 논문 카드의 댓글 칸. 보내는 즉시 Notion 에 남고 지울 수 없습니다.</li>
 </ul>
@@ -122,12 +143,13 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <summary><span class="chev"></span>미팅 후속 체크리스트 쓰는 법</summary>
 <div class="body">
 <ol>
-<li>랩미팅(GRM) 회의록이 정리되면 다음 날까지 '미팅 후속' 카드에 <b>제안</b>이 뜹니다. 회의록의 할 일·다음 안건·수정 방향 같은 줄에서 자동으로 뽑은 것이라 틀린 것도 섞일 수 있습니다.</li>
+<li>랩미팅(GRM) 회의록이 정리되면 다음 날까지 Follow-ups(미팅 후속) 카드에 <b>제안</b>이 뜹니다. 회의록의 할 일·다음 안건·수정 방향 같은 줄에서 자동으로 뽑은 것이라 틀린 것도 섞일 수 있습니다.</li>
 <li>줄 앞 <span class="kbd">○</span> 를 누르면 <b>끝남</b>(6초 안에 '되돌리기'), <span class="kbd">확정</span> 은 할 일로 남기기(누르는 즉시 저장), <span class="kbd">아님</span> 은 버리기(6초 안에 '되돌리기')입니다.</li>
 <li>지도교수님과의 개인 미팅(MM)은 기록이 거의 없어서 카드 아래 <span class="kbd">＋ MM 후속 적기</span> 로 한 줄씩 직접 적습니다. 종류(코멘트·다음 마일스톤·고칠 것·새 모델 제안·분석 계획·기타)를 고르고 엔터.</li>
 <li>다음 MM 이나 내 GRM 발표 전날·당일에 맨 위 한 줄에 '미팅 후속 n' 이 뜹니다. 누르면 그날은 사라지고 카드가 펼쳐집니다.</li>
-<li>항목 내용은 본인과 교수님 화면에만 보이고, 관제탑·Members 탭 같은 다른 화면에는 사람별 개수만 보입니다. 이니셜을 확인하지 않은 맥에서는 개수만 보입니다.</li>
+<li>항목 내용은 본인과 교수님 화면에만 보이고, Tower·Members 탭 같은 다른 화면에는 사람별 개수만 보입니다. 이니셜을 확인하지 않은 맥에서는 개수만 보입니다.</li>
 <li>'남은 ?' 가 보이면 연구실 공용 저장소(NAS) 연결을 확인합니다. 연결되지 않은 동안에는 체크 단추가 잠깁니다.</li>
+<li>회의록이 다시 정리돼 원래 줄이 사라진 제안은 '출처 바뀜' 으로 표시되고 남은 개수에서 빠지며, 본인 카드의 남은 항목 아래에 따로 보입니다. 할 일로 남길 것이면 '확정', 아니면 '아님' 을 누릅니다.</li>
 <li>끝남·아님을 누르고 6초 안에 앱을 끄면 저장되지 않습니다. 다시 켜서 한 번 더 누릅니다.</li>
 </ol>
 </div>
@@ -143,13 +165,17 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <tr><td>그랜트·학회 마감, 학회 관심자, 리마인더</td><td>연구실 일정 파일 · Notion 학회 목록</td><td><span class="tag">실제</span></td></tr>
 <tr><td>미팅 후속 제안·체크</td><td>GRM 회의록 녹취 요약 · MM 발표 파일 · 본인 체크</td><td><span class="tag">실제</span> 하루 한 번 새로 뽑음</td></tr>
 <tr><td>진행·준비 중 실험(Prolific)</td><td>Prolific 연구 목록</td><td><span class="tag">실제</span> 진행·준비 중만</td></tr>
+<tr><td>수업 시간(Classes · Timetable)</td><td>Notion 수업 목록(Courses), 이번 학기 · 휴일 반영</td><td><span class="tag">실제</span> 6시간마다 새로 읽음</td></tr>
+<tr><td>멤버 상태 아이콘(휴가·미팅·실험·수업)</td><td>연구실 캘린더 · Notion 일정표 · SLab 예약 · 수업 목록</td><td><span class="tag">실제</span> 제목에 이니셜이 있는 일정만</td></tr>
+<tr><td>Joint projects(플러그인 버전·리뷰)</td><td>GitHub 저장소 · 리뷰 이슈 · 담당자 표</td><td><span class="tag">실제</span> 하루 한 번 새로 정리</td></tr>
 <tr><td>분야 최근 이슈(연구 탭)</td><td>bioRxiv neuroscience, 하루 두 번, 관심 주제 초안으로 거름</td><td><span class="tag">실제</span> 최근 7일 새 프리프린트</td></tr>
 <tr><td>Members 탭 논문 반응 열</td><td>Notion 논문 추천 댓글, 최근 28일</td><td><span class="tag">실제</span> 화면에 '실제'로 표시</td></tr>
 <tr><td>연구원별 프로젝트 이름, GitHub 링크</td><td>저장소 폴더 이름 · 링크 목록</td><td><span class="tag ex">예시</span> 이름과 링크만</td></tr>
 <tr><td>논문 추천 목록</td><td>Notion 추천 기록(6월 이후 새 추천 없음)</td><td><span class="tag ex">예시</span> 입력 방식 결정 뒤 재가동</td></tr>
 <tr><td>Members 탭의 활동 현황판(Claude 사용량 · GitHub 반영 횟수)</td><td>표본 자료</td><td><span class="tag ex">예시</span> 화면에 '예시'로 표시</td></tr>
+<tr><td>Members 카드의 Activity log · Claude usage</td><td>출처 정하는 중</td><td><span class="tag ex">준비 중</span> 칸만 있음</td></tr>
 </table>
-<div class="note">한 줄로: 일정·마감·GRM·회의록·Paper Blitz·그랜트·학회·실험·분야 최근 이슈·Members 논문 반응은 실제 자료, 사람별 활동 현황과 논문 추천 일부는 앞으로 채울 자리를 예시로 보여 주는 것입니다.</div>
+<div class="note">한 줄로: 일정·마감·GRM·회의록·Paper Blitz·그랜트·학회·실험·수업·멤버 상태·플러그인 리뷰·분야 최근 이슈·Members 논문 반응은 실제 자료, 사람별 활동 현황과 논문 추천 일부는 앞으로 채울 자리를 예시로 보여 주는 것입니다.</div>
 </div>
 </details>
 
@@ -158,11 +184,12 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.41.0, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.42.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>
 <tr><td>미팅 후속에 '?' 가 보임, 체크 단추가 잠김</td><td>연구실 공용 저장소(NAS)를 읽지 못한 것입니다. Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span> 로 다시 연결하면 다음 갱신(10분 안)이나 <span class="kbd">r</span> 키로 돌아옵니다. 체크한 기록은 지워지지 않습니다.</td></tr>
+<tr><td>Classes 카드가 '학기 밖' 한 줄</td><td>오늘이 등록된 학기 기간 밖입니다(방학). 학기가 시작되면 저절로 펼쳐집니다.</td></tr>
 <tr><td>처음 30초 동안 '불러오는 중…'</td><td>정상입니다. 캘린더와 Notion 을 처음 읽는 중입니다.</td></tr>
 <tr><td>그 밖의 문제·바라는 점</td><td>GitHub csnl-admin 이슈 #21 에 적거나 봇 DM 에 답글로 남기면 바로 반영합니다. 터미널에 나온 글을 그대로 붙여 주시면 빠릅니다.</td></tr>
 </table>

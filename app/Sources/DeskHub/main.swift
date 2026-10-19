@@ -128,6 +128,16 @@ enum TextCheck {
             case _ where FollowupCheck.kinds.contains(kind): got = FollowupCheck.eval(kind, input, aliases: testAliases)
             // GRM 자료 지도 허브 한 줄 (0.41.0 C6, R2) — 'today=;rows=날짜 이니셜 ●○●–?|…;sched=날짜|…' → '이번 주 … · 지난주 …'. fixtures/grmweek-check.tsv
             case "grmweek": got = GRMMap.weekCheck(input)
+            // 연구비 마감 시각 (0.42.0 C1, #39) — 'now=yyyy-MM-ddTHH:mm;title=…;day=yyyy-MM-dd[;note=…][;rem=1]' → MenuBarLine.compact(AlertEngine.grantDue(...).due)
+            case "grantdue": got = grantdue(input)
+            // 논문 반응 줄 (0.42.0 C1, #23) — 'me=;r=👍:JOP,BHL|✅:SMJ;notes=n;hover=0|1' → PaperReact.text(line)
+            case "react": got = PaperReact.check(input)
+            // 시간표 (0.42.0 C4, R1) — tt-slots(수업시간 → '요일 HH:mm–HH:mm (강의실)') · tt-sem(날짜 → 학기 id[ 휴일]|학기 밖) · tt-today. fixtures/timetable-check.tsv
+            case "tt-slots", "tt-sem", "tt-today": got = Timetable.check(kind, input, tsv: path)
+            // 멤버 상태 (0.42.0 C5, R2) — 'now=;ini=;cal=;notion=;slab=;class=;away=;members=' → 'kind · why · ~HH:mm' | '—'. fixtures/status-check.tsv
+            case "mstatus": got = MemberStatus.check(input, tsv: path)
+            // Joint projects 한 줄 (0.42.0 C6, R9-d) — 'id=;v=;owner=;done=;waiting=' → JointProjects.line. fixtures/joint-check.tsv
+            case "jp-row": got = JointProjects.check(input)
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
@@ -177,6 +187,16 @@ enum TextCheck {
         let chips = (k["칩"] ?? "").components(separatedBy: "|").filter { !$0.isEmpty }
         let v = StatusLine.variant(width: CGFloat(w), scale: CGFloat(sc), parts: p, chips: chips)
         return v.variant.rawValue + "|" + (v.fits ? "맞음" : "잘림")
+    }
+    /// grantdue — 경보·8주 띠·메뉴 막대와 같은 AlertEngine.grantDue → MenuBarLine.compact
+    static func grantdue(_ input: String) -> String {
+        let k = kv(input)
+        let tf = DateFormatter(); tf.locale = Locale(identifier: "en_US_POSIX"); tf.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "yyyy-MM-dd"
+        guard let now = k["now"].flatMap(tf.date(from:)), let day = k["day"].flatMap(df.date(from:)) else { return "(입력 형식)" }
+        // 선택 키 note=<dueNote> (검증 1) · rem=1 → 컨펌 리마인더 경로(AlertEngine 리마인더 줄과 같은 Phase.deadlineTime)
+        if k["rem"] == "1" { return MenuBarLine.compact(Phase.deadlineTime(k["title"] ?? "", day: day), now: now) }
+        return MenuBarLine.compact(AlertEngine.grantDue(title: k["title"] ?? "", dueNote: k["note"] ?? "", day: day).due, now: now)
     }
     /// metric — 정의서 표 첫 칸 id 집합(한 번 읽음) → MetricDefs.eval
     private static var defIDs: Set<String>??

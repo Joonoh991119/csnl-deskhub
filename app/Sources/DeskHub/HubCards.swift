@@ -13,7 +13,7 @@ struct MinutesCard: View {
     @ObservedObject private var expansion = HubExpansion.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "회의록 · Plaud 요약", trailing: "Meeting Notes", fresh: model.minutesFreshness) { model.openInApp(id: model.cfg.meetingNotesDB) }
+            SectionTitle(card: "minutes", trailing: "Meeting Notes", fresh: model.minutesFreshness) { model.openInApp(id: model.cfg.meetingNotesDB) }
             VStack(spacing: 0) {
                 if let d = model.minutesPending {
                     HStack(spacing: 8) {
@@ -107,7 +107,7 @@ struct ExperimentsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             // 꼬리표 = SLab 마지막 실험날짜(집계) — 허브만, 관제탑은 레일 줄에 (0.40.0 C3, A2)
-            SectionTitle(text: "오늘의 실험 · Prolific 진행·준비 중만", trailing: "SLab", fresh: nearOnly ? model.cardTag("experiments") : nil) { model.openInApp(id: model.cfg.slabDB) }
+            SectionTitle(card: "experiments", trailing: "SLab", fresh: nearOnly ? model.cardTag("experiments") : nil) { model.openInApp(id: model.cfg.slabDB) }
             VStack(spacing: 0) {
                 if model.experiments.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
@@ -206,8 +206,8 @@ struct ConferencesCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             let tag = nearOnly ? model.cardTag("conferences") : nil   // 학회 파일 생성일 (0.40.0 C3)
-            if model.cfg.conferencesDB.isEmpty { SectionTitle(text: "다가오는 학회", fresh: tag) }
-            else { SectionTitle(text: "다가오는 학회", trailing: "Conferences", fresh: tag) { model.openInApp(id: model.cfg.conferencesDB) } }
+            if model.cfg.conferencesDB.isEmpty { SectionTitle(card: "conferences", fresh: tag) }
+            else { SectionTitle(card: "conferences", trailing: "Notion", fresh: tag) { model.openInApp(id: model.cfg.conferencesDB) } }
             if model.interestAskMe && !HubPrefs.meChosen { MeConfirmBar(model: model, compact: true) }
             // 잠김 = 단추가 꺼진 상태 알림 → 무채색. 적색은 손댈 일이 있는 '저장 실패' 와 마감에 남긴다 — 깨진 파일 상태에서 허브 적색 5곳 (검증 1)
             if let why = model.interestLocked {

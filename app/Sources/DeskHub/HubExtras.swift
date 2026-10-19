@@ -244,7 +244,7 @@ struct CompactGRMBar: View {
             let soon = (Calendar.current.dateComponents([.day], from: model.today, to: g.date).day ?? 9) <= 3
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text("다음 GRM").font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2)
+                    Text(HubCardTitle.title("grm")).font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize().help(HubCardTitle.hint("grm") ?? "")
                     Text(Hub.day(g.date)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).foregroundStyle(Hub.text2).monospacedDigit()
                     Text(Hub.dday(g.date)).font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.onAccent)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(soon ? Hub.signal : Hub.ink))
@@ -417,6 +417,63 @@ struct MeConfirmBar: View {
 }
 
 /// 논문 추천 — 큰 칸. 행마다 추천 이유, 반응(이모지 + 이니셜), 댓글
+/// 논문 반응 줄 판정 (0.42.0 C1, #23) — 화면(PaperRecBoard.row)·text.txt '반응 줄:'·fixture(kind react) 공용 순수 함수.
+/// 쉴 때: 내 반응 칩(그 이모지) · 남이 남긴 이모지의 수(합계, '👍2 ✅1') · 댓글 n. 호버: 반응 3개(수 · 내 것 *) + 댓글 단추
+enum PaperReact {
+    enum Chip: Equatable {
+        case mine(String)              // 쉴 때 내 반응(누르면 취소)
+        case counts(String)            // 쉴 때 남의 반응 수 '👍2 ✅1'
+        case notes(Int)                // 쉴 때 '댓글 n'
+        case react(String, Int, Bool)  // 호버 반응 단추 (이모지, 수, 내 것)
+        case comment(Int)              // 호버 댓글 단추
+    }
+    static func line(reactions: [(String, String)], me: String, notes: Int, hover: Bool) -> [Chip] {
+        let meU = me.trimmingCharacters(in: .whitespaces).uppercased()
+        func who(_ e: String) -> [String] { reactions.filter { $0.0 == e }.map { $0.1.uppercased() } }
+        if hover {
+            return HubPrefs.reactionEmojis.map { e in let w = who(e); return Chip.react(e, w.count, !meU.isEmpty && w.contains(meU)) } + [.comment(notes)]
+        }
+        var out: [Chip] = HubPrefs.reactionEmojis.filter { !meU.isEmpty && who($0).contains(meU) }.map { .mine($0) }
+        let others = HubPrefs.reactionEmojis.compactMap { e -> String? in
+            let w = who(e); return w.contains { $0 != meU } ? "\(e)\(w.count)" : nil
+        }
+        if !others.isEmpty { out.append(.counts(others.joined(separator: " "))) }
+        if notes > 0 { out.append(.notes(notes)) }
+        return out
+    }
+    /// 글로 — 쉴 때 '내 👍 · 👍2 ✅1 · 댓글 2' (없으면 '—'), 호버 '[👍2*] [✅1] [🙅0] · 댓글 2'
+    static func text(_ chips: [Chip]) -> String {
+        if chips.isEmpty { return "—" }
+        var parts: [String] = [], btn: [String] = []
+        for c in chips {
+            switch c {
+            case .mine(let e): parts.append("내 " + e)
+            case .counts(let t): parts.append(t)
+            case .notes(let n): parts.append("댓글 \(n)")
+            case .react(let e, let n, let mine): btn.append("[\(e)\(n)\(mine ? "*" : "")]")
+            case .comment(let n): parts.append(btn.joined(separator: " ")); btn = []; parts.append(n > 0 ? "댓글 \(n)" : "댓글")
+            }
+        }
+        if !btn.isEmpty { parts.append(btn.joined(separator: " ")) }
+        return parts.joined(separator: " · ")
+    }
+    /// fixture 입력 'me=JOP;r=👍:JOP,BHL|✅:SMJ;notes=2;hover=0|1'
+    static func check(_ input: String) -> String {
+        var k: [String: String] = [:]
+        for part in input.components(separatedBy: ";") {
+            let p = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            if p.count == 2 { k[p[0].trimmingCharacters(in: .whitespaces)] = p[1] }
+        }
+        var pairs: [(String, String)] = []
+        for g in (k["r"] ?? "").components(separatedBy: "|") where !g.isEmpty {
+            let q = g.split(separator: ":", maxSplits: 1).map(String.init)
+            guard q.count == 2 else { continue }
+            for w in q[1].components(separatedBy: ",") where !w.isEmpty { pairs.append((q[0], w)) }
+        }
+        return text(line(reactions: pairs, me: k["me"] ?? "", notes: Int(k["notes"] ?? "") ?? 0, hover: k["hover"] == "1"))
+    }
+}
+
 struct PaperRecBoard: View {
     @ObservedObject var model: NotionHubModel
     /// 허브 열 빈 면 측정 키 (R-J1, HubLayoutProbe) — 허브 열1 만 준다. 이 카드의 스크롤 칸이 열에서 늘어나는 유일한 부분이라 그 빈 높이 = 열 빈 면
@@ -430,6 +487,8 @@ struct PaperRecBoard: View {
     @ObservedObject private var expansion = HubExpansion.shared
     @ObservedObject private var fill = HubFill.shared
     @State private var openComments: String? = nil
+    /// 마우스가 올라간 행 (0.42.0 C1, #23) — 그 행만 반응 단추 3개
+    @State private var hoverRow: String? = nil
     @State private var draft: [String: String] = [:]
     @State private var askWho = false
     @State private var me = HubPrefs.me
@@ -474,7 +533,7 @@ struct PaperRecBoard: View {
     /// 접힌 한 줄 (R4) — 제목·신선도 + '새 추천이 오면 자동으로 다시 펼칩니다 · 연구 탭 ↗'(Hub.text2). 새 Sent At 이 오면 저절로 원래 보드
     private var folded: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "논문 추천", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Papers", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
+            SectionTitle(card: "papers", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Notion", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
             Button { KeyBus.shared.send("tab:연구") } label: {
                 HStack(spacing: 4) {
                     Text("새 추천이 오면 자동으로 다시 펼칩니다 · 연구 탭")
@@ -495,7 +554,7 @@ struct PaperRecBoard: View {
     private var board: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             HStack(spacing: 8) {
-                SectionTitle(text: "논문 추천", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Papers", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
+                SectionTitle(card: "papers", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Notion", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
                 Menu {
                     if !me.isEmpty { Button("내 추천 (\(me))") { setFilter(me) } }
                     ForEach(researchers.filter { $0 != me }, id: \.self) { r in Button(model.member(initials: r).map { "\($0.name) (\(r))" } ?? r) { setFilter(r) } }
@@ -615,34 +674,18 @@ struct PaperRecBoard: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // 반응 줄 — 폭이 모자라면 줄바꿈 (0.37.0 리뷰 2: 1.3배에서 '댓/글', 1.6배에서 댓글 단추가 사라지던 것)
-            FlowLayout(spacing: 6, lineSpacing: 4) {
-                ForEach(HubPrefs.reactionEmojis, id: \.self) { e in
-                    let who = reactions.filter { $0.text == e }.map(\.who)
-                    let mine = !me.isEmpty && who.contains(me)
-                    Button { react(p, e, already: mine) } label: {
-                        HStack(spacing: 3) {
-                            Text(e).font(.hub(cs.aux))
-                            Text(HubPrefs.reactionLabels[e] ?? "").font(.hub(cs.tag, weight: .medium))
-                            if !who.isEmpty { Text("\(who.count)").font(.hub(cs.tag, weight: .semibold, design: .rounded)).monospacedDigit() }
-                        }
-                        .lineLimit(1).fixedSize()   // '관심없음' 이 큰 글자에서 꺾이지 않게 (검증 1)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(mine ? Hub.ink.opacity(0.16) : (who.isEmpty ? Color.clear : Hub.fillNeutral)))
-                        .overlay(Capsule().stroke(who.isEmpty ? Hub.divider : Color.clear))
-                        .foregroundStyle(Hub.text)
-                        .opacity(who.isEmpty ? 0.6 : 1)
-                    }
-                    .buttonStyle(.plain)
-                    .help(who.isEmpty ? "\(e) 남기기" : "\(e) " + who.joined(separator: " · ") + (mine ? " · 다시 누르면 취소" : ""))
+            // 반응 줄 (0.42.0 C1, #23) — 쉴 때는 내 반응 칩 하나 + 남의 수 + 댓글 n, 마우스를 올렸거나 댓글 칸이 열렸을 때만 반응 3개 + 댓글 단추.
+            // 두 상태를 ZStack 에 겹쳐 두어(안 보이는 쪽 opacity 0) 줄 높이가 같다 — 호버로 목록이 출렁이지 않게. 연구 탭 '같이 읽자'는 늘 보인다
+            let hover = hoverRow == p.id || openComments == p.id
+            let pairs = reactions.map { ($0.text, $0.who) }
+            HStack(alignment: .center, spacing: 6) {
+                ZStack(alignment: .leading) {
+                    restLine(p, PaperReact.line(reactions: pairs, me: me, notes: notes.count, hover: false))
+                        .opacity(hover ? 0 : 1).allowsHitTesting(!hover)
+                    hoverLine(p, reactions: reactions, notes: notes)
+                        .opacity(hover ? 1 : 0).allowsHitTesting(hover)
                 }
-                Button { openComments = openComments == p.id ? nil : p.id } label: {
-                    HStack(spacing: 3) { Image(systemName: "bubble.left"); Text(notes.isEmpty ? "댓글" : "\(notes.count)").lineLimit(1).fixedSize() }
-                        .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2)
-                        .lineLimit(1).fixedSize()
-                        .padding(.leading, 4)
-                }
-                .buttonStyle(.plain).help("댓글 보기·남기기")
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if talk {
                     TalkControls(model: model, commits: model.talkCommits, paper: p, proposers: PaperComment.proposers(comments), me: me) { askWho = true }
                 }
@@ -668,6 +711,76 @@ struct PaperRecBoard: View {
             }
         }
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
+        .contentShape(Rectangle())
+        .onHover { h in if h { hoverRow = p.id } else if hoverRow == p.id { hoverRow = nil } }
+    }
+
+    /// 쉴 때 반응 줄 — 내 반응 칩(누르면 취소) · 남의 수(작게) · 댓글 n. 아무것도 없으면 빈 줄(높이는 호버 줄이 잡는다)
+    private func restLine(_ p: PaperRec, _ chips: [PaperReact.Chip]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(Array(chips.enumerated()), id: \.offset) { _, c in
+                switch c {
+                case .mine(let e):
+                    Button { react(p, e, already: true) } label: {
+                        Text(e).font(.hub(cs.aux))
+                            .lineLimit(1).fixedSize()
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(Hub.ink.opacity(0.16)))
+                            .foregroundStyle(Hub.text)
+                    }
+                    .buttonStyle(.plain).help("내 반응 \(e) · 다시 누르면 취소")
+                case .counts(let t):
+                    Text(t).font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize().monospacedDigit()
+                case .notes(let n):
+                    Button { openComments = p.id } label: {
+                        Text("댓글 \(n)").font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                    }
+                    .buttonStyle(.plain).help("댓글 보기·남기기")
+                default: EmptyView()
+                }
+            }
+            if chips.isEmpty { Text(" ").font(.hub(cs.tag)) }
+        }
+    }
+
+    /// 호버 반응 줄 — 반응 3개(라벨) + 댓글 단추. 폭이 모자라면(1.6배) 라벨을 빼고 이모지 + 수만 — 한 줄 고정
+    private func hoverLine(_ p: PaperRec, reactions: [PaperComment], notes: [PaperComment]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            hoverChips(p, reactions: reactions, notes: notes, labels: true)
+            hoverChips(p, reactions: reactions, notes: notes, labels: false)
+        }
+    }
+
+    private func hoverChips(_ p: PaperRec, reactions: [PaperComment], notes: [PaperComment], labels: Bool) -> some View {
+        HStack(spacing: 6) {
+            ForEach(HubPrefs.reactionEmojis, id: \.self) { e in
+                let who = reactions.filter { $0.text == e }.map(\.who)
+                let mine = !me.isEmpty && who.contains(me)
+                Button { react(p, e, already: mine) } label: {
+                    HStack(spacing: 3) {
+                        Text(e).font(.hub(cs.aux))
+                        if labels { Text(HubPrefs.reactionLabels[e] ?? "").font(.hub(cs.tag, weight: .medium)) }
+                        if !who.isEmpty { Text("\(who.count)").font(.hub(cs.tag, weight: .semibold, design: .rounded)).monospacedDigit() }
+                    }
+                    .lineLimit(1).fixedSize()   // '관심없음' 이 큰 글자에서 꺾이지 않게 (검증 1)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(mine ? Hub.ink.opacity(0.16) : (who.isEmpty ? Color.clear : Hub.fillNeutral)))
+                    .overlay(Capsule().stroke(who.isEmpty ? Hub.divider : Color.clear))
+                    .foregroundStyle(Hub.text)
+                    .opacity(who.isEmpty ? 0.6 : 1)
+                }
+                .buttonStyle(.plain)
+                .help(who.isEmpty ? "\(e) \(HubPrefs.reactionLabels[e] ?? "") 남기기" : "\(e) " + who.joined(separator: " · ") + (mine ? " · 다시 누르면 취소" : ""))
+            }
+            Button { openComments = openComments == p.id ? nil : p.id } label: {
+                HStack(spacing: 3) { Image(systemName: "bubble.left"); Text(notes.isEmpty ? "댓글" : "\(notes.count)").lineLimit(1).fixedSize() }
+                    .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2)
+                    .lineLimit(1).fixedSize()
+                    .padding(.leading, 4)
+            }
+            .buttonStyle(.plain).help("댓글 보기·남기기")
+        }
+        .fixedSize()
     }
 
     /// 보기를 바꾸면 열린 댓글 칸을 닫는다 (0.39.0 C0 — 안 보이는 행의 칸이 열1 보류를 잡고 있지 않게)
@@ -740,7 +853,7 @@ struct LatestManuscripts: View {
     @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "최신 원고 · " + model.cfg.manuscriptAuthors.keys.sorted().joined(separator: "·"), trailing: "Publications",
+            SectionTitle(card: "preprints", hint: "저자: " + model.cfg.manuscriptAuthors.keys.sorted().joined(separator: "·") + " (OpenAlex)", trailing: "Publications",
                          fresh: nearOnly ? model.cardTag("preprints") : nil) { model.openInApp(id: model.cfg.publicationsDB) }
             VStack(spacing: 0) {
                 let cut = nearOnly ? HubNear.preprints(model) : nil
@@ -909,8 +1022,9 @@ struct BlitzCompact: View {
 
     private var headerTitle: some View {
         HStack(spacing: 6) {
-            Text("지난 Paper Blitz" + (model.blitzDate.map { " · " + Hub.day($0) } ?? ""))
+            Text(HubCardTitle.title("blitz"))
                 .font(.hub(cs.title, weight: .semibold)).foregroundStyle(Hub.text2).tracking(0.3).lineLimit(1)
+                .help("지난 Paper Blitz" + (model.blitzDate.map { " · " + Hub.day($0) } ?? ""))
             if let f = model.blitzFreshness { FreshnessTag(f: f) }
         }
     }
@@ -1021,7 +1135,7 @@ struct GrantsSection: View {
     @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "그랜트 · 보고와 지원", trailing: "NAS", fresh: nearOnly ? model.cardTag("grants") : nil) {
+            SectionTitle(card: "grants", trailing: "NAS", fresh: nearOnly ? model.cardTag("grants") : nil) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: (model.cfg.grantsFile as NSString).deletingLastPathComponent))
             }
             VStack(spacing: 0) {
@@ -1177,6 +1291,10 @@ struct MemberGroup: View {
         let projs = entry?.projects ?? []
         let shown = expanded ? projs : Array(projs.prefix(1))
         HStack(spacing: 0) {
+            // 상태 아이콘 (0.42.0 C5, R2) — 이름 앞, 없으면 빈 칸 없음
+            if let st = model.status(of: member.initials) {
+                MemberStatusIcon(status: st, mine: !HubPrefs.me.isEmpty && member.initials.uppercased() == HubPrefs.me.uppercased()).padding(.leading, 7)
+            }
             Button { model.openInApp(id: member.id) } label: {
                 Text(member.name).font(.hub(cs.aux, weight: .semibold)).lineLimit(1)
                     .padding(.leading, 8).padding(.trailing, entry?.poster == nil ? 8 : 3).padding(.vertical, 3)

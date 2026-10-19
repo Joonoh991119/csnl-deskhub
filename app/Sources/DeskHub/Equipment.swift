@@ -77,6 +77,10 @@ enum EquipmentBoard {
         let o = rows.filter { isOverdue($0, today: today) }.sorted { $0.lastDay < $1.lastDay }
         return (o.count, me.isEmpty ? 0 : o.filter { $0.user.uppercased() == me.uppercased() }.count, o)
     }
+    /// 접힌 카드 한 줄 (0.42.0 C3, R9-b) — '사용 중 n · 닫기 누락 n' · 지금 내 예약이 있나 (뷰·덤프 같은 함수)
+    static func summary(lines: [EquipmentLine], overdue: Int) -> (text: String, mine: Bool) {
+        ("사용 중 \(lines.filter(\.busy).count) · 닫기 누락 \(overdue)", lines.contains(where: \.nowMine))
+    }
     /// 장비 6줄 (뷰·덤프 같은 함수)
     static func lines(machines: [String], rows: [EquipmentRow], now: Date, me: String) -> [EquipmentLine] {
         let my = me.uppercased()
@@ -114,9 +118,13 @@ extension NotionHubModel {
     func equipmentDumpLines() -> [String] {
         let me = HubPrefs.me
         let ls = EquipmentBoard.lines(machines: equipmentMachines, rows: equipment, now: now, me: me)
-        var out = ["장비 \(ls.count) · 받은 예약 \(equipmentReceived) · 창 \(equipment.count)" + (equipmentLoaded ? "" : " · 조회 실패·없음")]
-        out += ls.map { l in [l.machine, l.now + (l.nowMine ? " (내 것)" : ""), l.next + (l.nextMine ? " (내 것)" : "")].joined(separator: " · ") }
         let o = EquipmentBoard.overdue(equipment, today: today, me: me)
+        // 첫 줄 끝 '· 접힘|펼침' + 접힌 요약 (0.42.0 C3, R9-b — 카드와 같은 HubExpansion·summary)
+        let sum = EquipmentBoard.summary(lines: ls, overdue: o.n)
+        var out = ["장비 \(ls.count) · 받은 예약 \(equipmentReceived) · 창 \(equipment.count)" + (equipmentLoaded ? "" : " · 조회 실패·없음")
+                   + " · " + (HubExpansion.shared.isOpen(EquipmentCard.key) ? "펼침" : "접힘")]
+        out.append("요약 · " + sum.text + (sum.mine ? " · 내 것" : ""))
+        out += ls.map { l in [l.machine, l.now + (l.nowMine ? " (내 것)" : ""), l.next + (l.nextMine ? " (내 것)" : "")].joined(separator: " · ") }
         out.append("닫기 누락 \(o.n) (내 것 \(o.mine)) →notion")
         return out
     }
@@ -125,17 +133,28 @@ extension NotionHubModel {
 /// 장비 예약 카드 — 허브 열2 '오늘의 실험' 아래
 struct EquipmentCard: View {
     @ObservedObject var model: NotionHubModel
+    @ObservedObject private var expansion = HubExpansion.shared
     @Environment(\.cardStyle) private var cs
+
+    /// 기본 접힘 (0.42.0 C3, R9-b — 랩장 '장비 예약도 미리 다 펼쳐놓지 말고 토글이나 클릭으로') — HubExpansion 키 equipment(이 맥 저장, --key expand:equipment).
+    /// HubFill.columnCards 에는 넣지 않는다 — 장비를 펼쳐도 열2 채움이 멈추지 않게
+    static let key = "equipment"
 
     var body: some View {
         let me = HubPrefs.me
         let lines = EquipmentBoard.lines(machines: model.equipmentMachines, rows: model.equipment, now: model.now, me: me)
         let over = EquipmentBoard.overdue(model.equipment, today: model.today, me: me)
+        let open = expansion.isOpen(Self.key)
         VStack(alignment: .leading, spacing: cs.gap) {
             title
             VStack(alignment: .leading, spacing: 0) {
-                if lines.isEmpty { empty } else { grid(lines) }
-                if over.n > 0 { overdueChip(n: over.n, mine: over.mine, rows: over.rows) }
+                if open {
+                    if lines.isEmpty { empty } else { grid(lines) }
+                    if over.n > 0 { overdueChip(n: over.n, mine: over.mine, rows: over.rows) }
+                    toggleRow(open: true, lines: lines, over: over)
+                } else {
+                    toggleRow(open: false, lines: lines, over: over)
+                }
                 CardFooter(caption: CardMetas.caption("equipment", model))
             }
             .frame(maxWidth: .infinity, alignment: .top)
@@ -143,9 +162,29 @@ struct EquipmentCard: View {
         }
     }
 
+    /// 접힘: 한 줄 요약 '사용 중 n · 닫기 누락 n'(지금 내 예약이 있으면 '· 내 것' ink) + '▸' — 줄 전체가 클릭 영역. 펼침: '▾ 접기' 한 줄
+    private func toggleRow(open: Bool, lines: [EquipmentLine], over: (n: Int, mine: Int, rows: [EquipmentRow])) -> some View {
+        let sum = EquipmentBoard.summary(lines: lines, overdue: over.n)
+        return Button { expansion.toggle(Self.key) } label: {
+            HStack(spacing: 6) {
+                Text(open ? "▾" : "▸").font(.hub(cs.aux, weight: .semibold)).foregroundStyle(Hub.text2)
+                if open {
+                    Text("접기").font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1)
+                } else {
+                    Text(sum.text).font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text).lineLimit(1).monospacedDigit()
+                    if sum.mine { Text("· 내 것").font(.hub(cs.aux, weight: .semibold)).foregroundStyle(Hub.ink).lineLimit(1).fixedSize() }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(open ? "장비 표 접기 (이 맥에 저장)" : "장비 \(lines.count)대 지금·다음 예약 펼치기 (이 맥에 저장)")
+    }
+
     private var title: some View {
-        let at = model.lastUpdated.map(Hub.time) ?? "—"
-        return SectionTitle(text: "장비 예약 (예약 기준 · 갱신 \(at))", trailing: "Resource", fresh: model.cardTag("equipment"), badge: "equip-mine") {
+        SectionTitle(card: "equipment", trailing: "Resource", fresh: model.cardTag("equipment"), badge: "equip-mine") {
             model.openInApp(id: model.cfg.resourceDB)
         }
     }

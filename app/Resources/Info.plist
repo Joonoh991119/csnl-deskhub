@@ -15,6 +15,7 @@
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>ATSApplicationFontsPath</key><string>Fonts</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
     <key>NSCalendarsFullAccessUsageDescription</key><string>바탕화면 '오늘 일정' 위젯에 캘린더 일정을 표시합니다.</string>
     <key>NSCalendarsUsageDescription</key><string>바탕화면 '오늘 일정' 위젯에 캘린더 일정을 표시합니다.</string>

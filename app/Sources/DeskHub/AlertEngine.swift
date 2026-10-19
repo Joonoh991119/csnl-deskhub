@@ -79,6 +79,17 @@ enum AlertEngine {
     }
     private static let genericWords: Set<String> = ["제출", "접수", "마감", "보고", "신청", "초록", "준비", "일정", "결과", "회의"]
 
+    /// 그랜트 마감 시각 (0.42.0 C1, #39) — 제목에 'HH:mm' 이 있으면 그 시각(Phase.deadlineTime), 없으면 dueNote 의 첫 'HH:mm'
+    /// (실제 grants_schedule.json 은 시각을 dueNote 에 적는다: '연구원 컨펌 마감 10/15(목) 18:00 → …', 검증 1 리뷰), 둘 다 없으면 그날 23:59.
+    /// 경보·8주 띠·팝오버 '할 것'·메뉴 막대·안내판·Phase 가 같은 값을 쓴다. 자정으로 두면 18:00 마감이 당일 오전부터 '지남'.
+    /// 제목의 'n:n' 숫자(예 '2:1 매칭')도 시각으로 읽힌다 — 리마인더와 같은 규칙(fixture 에 적음)
+    static func grantDue(title: String, dueNote: String = "", day: Date) -> (due: Date, hasTime: Bool) {
+        func clock(_ s: String) -> Bool { s.range(of: "\\d{1,2}:\\d{2}", options: .regularExpression) != nil }
+        if clock(title) { return (Phase.deadlineTime(title, day: day), true) }
+        if clock(dueNote) { return (Phase.deadlineTime(dueNote, day: day), true) }
+        return (Phase.deadlineTime(title, day: day), false)
+    }
+
     /// 미루기를 할 수 있는 사람 = 이 맥에서 확인한 이니셜(HubPrefs.meChosen). 확인 전·비었으면 "" → 미루기 없음 (반응 쓰기와 같은 조건)
     static var snoozeActor: String { HubPrefs.meChosen ? HubPrefs.me.trimmingCharacters(in: .whitespaces) : "" }
 
@@ -128,7 +139,8 @@ enum AlertEngine {
             let byActor = !actor.isEmpty && (r.by.map { b in [actor.uppercased(), actorMember?.initials.uppercased()].contains(b.uppercased()) } ?? false)
             let actorOwns = !actor.isEmpty && (m.isMine(r.title, me: actor) || byActor)
             out.append(HubAlert(id: "rem-" + r.id, level: level, title: r.title, detail: title(kindText, n < 0 ? "\(-n)일 지남" : ""),
-                                due: hasClock ? Phase.deadlineTime(r.title, day: d) : d, hasTime: hasClock, mine: isMine(r.title),
+                                // 시각 없는 리마인더도 그날 23:59 (그랜트·안내판·Phase 와 같은 규칙) — 자정이면 그날 0시부터 '지남' (검증 1 리뷰)
+                                due: Phase.deadlineTime(r.title, day: d), hasTime: hasClock, mine: isMine(r.title),
                                 link: r.source.hasPrefix("notion:") ? .notion(String(r.source.dropFirst(7))) : .nas(m.remindersPath),
                                 sources: ["리마인더"], action: (level == .warning || n < 0) ? "끝남" : nil,
                                 overdue: n < 0, snoozable: n < 0 && actorOwns))
@@ -143,8 +155,12 @@ enum AlertEngine {
                 if let i = out.firstIndex(where: { $0.id.hasPrefix("rem-") && $0.due.map(RemindersFile.dayFormatter.string(from:)) == ds
                     && sameEvent(reminderID: String($0.id.dropFirst(4)), reminderTitle: $0.title, grantTitle: g.title) }) {
                     out[i].sources.append("그랜트")
+                    // 리마인더 제목에 시각이 없고 그랜트(제목·dueNote)에 있으면 그 시각으로 — 두 경로가 다른 남은 시간을 보이지 않게
+                    let gd = grantDue(title: g.title, dueNote: g.dueNote, day: d)
+                    if gd.hasTime && !out[i].hasTime { out[i].due = gd.due; out[i].hasTime = true }
                 } else {
-                    out.append(HubAlert(id: "grant-" + g.id, level: .warning, title: title(g.kind, g.title), detail: g.dueNote, due: d, sources: ["그랜트"]))
+                    let gd = grantDue(title: g.title, dueNote: g.dueNote, day: d)
+                    out.append(HubAlert(id: "grant-" + g.id, level: .warning, title: title(g.kind, g.title), detail: g.dueNote, due: gd.due, hasTime: gd.hasTime, sources: ["그랜트"]))
                 }
             }
         }

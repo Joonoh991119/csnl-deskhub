@@ -1,0 +1,11 @@
+/* @primer/primitives@11.10.0 dist/css/functional/themes/light.css — 필요한 줄만 (MIT) */
+  --fgColor-danger: #d1242f; /** Danger text for errors and destructive actions */
+  --bgColor-muted: #f6f8fa; /** Muted background for secondary content areas and subtle grouping */
+  --borderColor-default: #d1d9e0; /** Default border color for most UI elements */
+  --fgColor-accent: #0969da; /** Accent text for links and interactive elements */
+  --fgColor-disabled: #818b98; /** Text color for disabled interactive elements */
+  --fgColor-muted: #59636e; /** Muted text for secondary content and less important information */
+  --fgColor-success: #1a7f37; /** Success text for positive feedback and completed states */
+  --bgColor-default: #ffffff; /** Default background color for pages and main content areas */
+  --bgColor-inset: var(--bgColor-muted); /** Inset background for recessed content areas like wells or sunken panels */
+  --fgColor-default: #1f2328; /** Default text color for primary content and headings */

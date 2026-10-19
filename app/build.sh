@@ -44,6 +44,9 @@ $PB -c "Add :DeskHubBuilt string $(date '+%Y-%m-%d %H:%M')" "$APP/Contents/Info.
 [ -f Resources/apps.json ] && cp Resources/apps.json "$APP/Contents/Resources/apps.json"
 [ -f Resources/scoreboard-sample.json ] && cp Resources/scoreboard-sample.json "$APP/Contents/Resources/scoreboard-sample.json"
 [ -f Resources/research-topics.json ] && cp Resources/research-topics.json "$APP/Contents/Resources/research-topics.json"
+[ -f Resources/semesters.json ] && cp Resources/semesters.json "$APP/Contents/Resources/semesters.json"   # 학기 날짜·휴일 (0.42.0 C4)
+# 번들 OFL 글꼴 (0.42.0 C7) — Info.plist ATSApplicationFontsPath=Fonts 로 등록. 지난 빌드의 폴더를 비우고 다시
+if [ -d Resources/Fonts ]; then rm -rf "$APP/Contents/Resources/Fonts"; mkdir -p "$APP/Contents/Resources/Fonts" && cp -R Resources/Fonts/ "$APP/Contents/Resources/Fonts/"; fi
 echo 'APPL????' > "$APP/Contents/PkgInfo"
 codesign --force --deep --sign - "$APP" 2>&1 | grep -v 'replacing existing signature' || true
 # 리뷰 라운드 배포 (리뷰 방식 개선 B1, 2026-10-15): `./build.sh install publish` 또는 `./build.sh publish`

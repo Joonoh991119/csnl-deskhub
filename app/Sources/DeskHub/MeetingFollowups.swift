@@ -20,7 +20,14 @@ struct FollowupItem: Codable, Identifiable, Hashable {
     var rule: String?
     var source: [String: String]
     var line: Int?
-    enum CodingKeys: String, CodingKey { case id, who, meeting, meetingDate = "meeting_date", kind, text, rule, source, line }
+    /// 출처 바뀜 (0.42.0 C2, R6) — 스크립트가 다시 읽은 출처·사라진 MM 파일에 이 글이 없을 때 단다(선택 키, 0.41.0 파일은 nil)
+    var orphanSince: String? = nil
+    var orphanReason: String? = nil
+    /// 같은 글의 옛 id (담당·출처가 바뀌어 id 가 바뀜) — 상태를 이어받는다
+    var aka: [String]? = nil
+    enum CodingKeys: String, CodingKey { case id, who, meeting, meetingDate = "meeting_date", kind, text, rule, source, line,
+                                         orphanSince = "orphan_since", orphanReason = "orphan_reason", aka }
+    var isOrphan: Bool { !(orphanSince ?? "").isEmpty }
 
     var day: Date? { RemindersFile.dayFormatter.date(from: String(meetingDate.prefix(10))) }
     var isSelf: Bool { id.hasPrefix("fu-self-") }
@@ -187,11 +194,19 @@ enum FollowupLogic {
         return st
     }
     static func isOpen(_ status: String) -> Bool { status == "proposed" || status == "confirmed" }
-    /// 그 항목의 실효 상태 — 담당자(who) 상태 파일의 같은 id 행
+    /// 그 항목의 실효 상태 — 담당자(who) 상태 파일의 같은 id 행, 없으면 aka(옛 id) 행 중 가장 늦은 at (0.42.0 C2)
     static func status(of it: FollowupItem, states: [String: [FollowupState]], aliases: [String: String]) -> String {
         let w = canon(it.who, aliases: aliases)
-        return effective(states[w]?.last { $0.id == it.id })
+        let rows = states[w] ?? []
+        if let r = rows.last(where: { $0.id == it.id }) { return effective(r) }
+        let aka = Set(it.aka ?? [])
+        guard !aka.isEmpty else { return "proposed" }
+        var best: FollowupState? = nil
+        for r in rows where aka.contains(r.id) && (best == nil || (r.at ?? "") >= (best?.at ?? "")) { best = r }
+        return effective(best)
     }
+    /// '남은' 에 드는가 (0.42.0 C2) — 남은 상태이고, 출처 바뀜 항목이면 확정한 것만(옛 결과의 제안은 할 일이 아님)
+    static func isLive(_ it: FollowupItem, _ status: String) -> Bool { isOpen(status) && (!it.isOrphan || status == "confirmed") }
     /// 항목 하나의 보기 — 확인한 이니셜 = who → 내용, 교수님 → 읽기, 그 밖(미확인 포함) → 수만. BHL ≠ BYL (이니셜 그대로 비교)
     static func visibility(me: String, chosen: Bool, who: String, aliases: [String: String], supervisors: [String] = supervisors) -> View {
         let m = canon(me, aliases: aliases)
@@ -211,7 +226,7 @@ enum FollowupLogic {
         var out: [String: Count] = [:]
         for it in items {
             let st = status(of: it, states: states, aliases: aliases)
-            guard isOpen(st) else { continue }
+            guard isLive(it, st) else { continue }
             let w = it.who.isEmpty ? "" : canon(it.who, aliases: aliases)
             var c = out[w] ?? Count()
             c.open += 1
@@ -222,7 +237,7 @@ enum FollowupLogic {
     }
     /// 남은 항목 중 가장 이른 회의 날짜
     static func oldest(items: [FollowupItem], states: [String: [FollowupState]], aliases: [String: String]) -> Date? {
-        items.filter { isOpen(status(of: $0, states: states, aliases: aliases)) }.compactMap(\.day).min()
+        items.filter { isLive($0, status(of: $0, states: states, aliases: aliases)) }.compactMap(\.day).min()
     }
     /// '사람별' 줄 — 많은 순(같으면 이니셜), 0 생략, 상태 파일이 깨진 사람은 '?', 담당 미정은 끝. 없으면 '—'
     static func perPersonLine(_ c: [String: Count], unknown: Set<String> = []) -> String {
@@ -295,11 +310,21 @@ extension NotionHubModel {
         let a = cfg.initialsAliases
         let rows = followups.filter { it in
             (who.map { FollowupLogic.canon(it.who, aliases: a) == FollowupLogic.canon($0, aliases: a) && !it.who.isEmpty } ?? true)
-                && FollowupLogic.isOpen(followupStatus(it))
+                && FollowupLogic.isLive(it, followupStatus(it))
         }
         let conf = rows.filter { followupStatus($0) == "confirmed" }.sorted { ($0.meetingDate, $0.id) < ($1.meetingDate, $1.id) }
         let prop = rows.filter { followupStatus($0) == "proposed" }.sorted { $0.meetingDate != $1.meetingDate ? $0.meetingDate > $1.meetingDate : $0.id < $1.id }
         return conf + prop
+    }
+    /// 출처 바뀜 제안 (0.42.0 검증 1 리뷰) — 남은 수·oldest 에는 안 들지만(isLive false), 본인 보기에서 '확정'·'아님' 을 고를 수 있게
+    /// 남은 항목 아래에 따로 보인다. 새 회의 순. 확정·아님이 없으면 30일 뒤 스크립트가 정리
+    func followupOrphanProposals(who: String) -> [FollowupItem] {
+        let a = cfg.initialsAliases
+        return followups.filter { it in
+            it.isOrphan && !it.who.isEmpty && FollowupLogic.canon(it.who, aliases: a) == FollowupLogic.canon(who, aliases: a)
+                && followupStatus(it) == "proposed"
+        }
+        .sorted { $0.meetingDate != $1.meetingDate ? $0.meetingDate > $1.meetingDate : $0.id < $1.id }
     }
     /// 내 남은 항목 (보기 내용일 때만 의미)
     var myFollowups: [FollowupItem] { followupView == .full ? followupOpen(who: followupMe) : [] }
@@ -496,6 +521,9 @@ extension NotionHubModel {
             out.append(f.joined(separator: " · "))
         }
         out.append("사람별: " + (followupUnknown == nil ? "?" : FollowupLogic.perPersonLine(followupCounts, unknown: followupUnknown ?? [])))
+        // 출처 바뀜 (0.42.0 C2, R6) — 전체 orphan 수 · 그중 '남은'(확정) 수
+        let orphans = followups.filter(\.isOrphan)
+        out.append("출처 바뀜 \(orphans.count) (남음 \(orphans.filter { FollowupLogic.isLive($0, followupStatus($0)) }.count) · 내 화면 제안 \(followupView == .full ? followupOrphanProposals(who: followupMe).count : 0))")
         if let why = followupLocked { out.append("잠김 · " + why) }
         if let id = followupSaveFailed { out.append("저장 실패 · " + id) }
         if !followupCommits.pending.isEmpty { out.append("대기 \(followupCommits.pending.count)") }
@@ -517,7 +545,7 @@ extension NotionHubModel {
 // MARK: - text-check (main.swift TextCheck 가 부른다)
 
 enum FollowupCheck {
-    static let kinds: Set<String> = ["fu-status", "fu-visible", "fu-count", "fu-remind", "fu-mm", "fu-choices"]
+    static let kinds: Set<String> = ["fu-status", "fu-visible", "fu-count", "fu-remind", "fu-mm", "fu-choices", "fu-orphan", "fu-aka"]
     private static func kv(_ input: String) -> [String: String] {
         var out: [String: String] = [:]
         for part in input.components(separatedBy: ";") {
@@ -557,6 +585,27 @@ enum FollowupCheck {
                 if p[1] != "proposed", !who.isEmpty { states[FollowupLogic.canon(who, aliases: aliases), default: []].append(FollowupState(id: "t\(i)", status: p[1])) }
             }
             return FollowupLogic.perPersonLine(FollowupLogic.counts(items: items, states: states, aliases: aliases))
+        // 출처 바뀜 (0.42.0 C2) — 'orphan=yyyy-MM-dd|빈 값;status=proposed|confirmed|done|dismissed' → 남음 · 숨김 · 끝남 · 버림 (FollowupLogic.isLive)
+        case "fu-orphan":
+            let st = k["status"] ?? ""
+            var it = FollowupItem(id: "t", who: "JOP", meeting: "GRM", meetingDate: "2026-10-07", kind: "기타", text: "t", source: [:])
+            it.orphanSince = (k["orphan"] ?? "").isEmpty ? nil : k["orphan"]
+            let states = st.isEmpty || st == "proposed" ? [:] : ["JOP": [FollowupState(id: "t", status: st)]]
+            let eff = FollowupLogic.status(of: it, states: states, aliases: aliases)
+            if FollowupLogic.isLive(it, eff) { return "남음" }
+            return eff == "done" ? "끝남" : (eff == "dismissed" ? "버림" : "숨김")
+        // aka 상태 이어받기 (0.42.0 C2) — 'aka=옛id,…;rows=id:status@at|…' (항목 id 'fu-new', 담당 JOP) → 실효 상태
+        case "fu-aka":
+            var it = FollowupItem(id: "fu-new", who: "JOP", meeting: "GRM", meetingDate: "2026-10-07", kind: "기타", text: "t", source: [:])
+            let aka = (k["aka"] ?? "").components(separatedBy: ",").filter { !$0.isEmpty }
+            it.aka = aka.isEmpty ? nil : aka
+            let rows: [FollowupState] = (k["rows"] ?? "").components(separatedBy: "|").compactMap { r in
+                let a = r.split(separator: "@", maxSplits: 1).map(String.init)
+                let q = (a.first ?? "").split(separator: ":", maxSplits: 1).map(String.init)
+                guard q.count == 2 else { return nil }
+                return FollowupState(id: q[0], status: q[1], at: a.count > 1 ? a[1] : nil)
+            }
+            return FollowupLogic.status(of: it, states: ["JOP": rows], aliases: aliases)
         // 'today=;mm=;grm=;open=;ack=' → 칩 글 또는 '—'
         case "fu-remind":
             guard let t = day(k["today"]) else { return "(입력 형식)" }
@@ -669,7 +718,7 @@ struct FollowupsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "미팅 후속 · " + (view == .full ? "나" : (view == .read ? "연구실" : "수만")), trailing: "회의록",
+            SectionTitle(card: "followups", hint: "미팅 후속 · 보기: " + (view == .full ? "내 것" : (view == .read ? "연구실 읽기" : "개수만")), trailing: "Meeting Notes",
                          fresh: nearOnly ? model.cardTag("followups") : nil, badge: nearOnly && view == .full ? "fu-mine" : nil) {
                 model.openInApp(id: model.cfg.meetingNotesDB)
             }
@@ -760,6 +809,17 @@ struct FollowupsCard: View {
             RowDivider()
             row(it)
         }
+        // 출처 바뀜 제안 — 남은 수에는 안 들지만 '확정'(할 일로 남기기)·'아님' 을 고를 수 있게 남은 항목 아래 (0.42.0 검증 1 리뷰)
+        let orphans = model.followupOrphanProposals(who: model.followupMe)
+        if !orphans.isEmpty {
+            RowDivider()
+            Text("출처 바뀜 \(orphans.count) — 남길 것만 확정")
+                .font(.hub(cs.tag, weight: .medium)).foregroundStyle(Hub.text3)
+                .padding(.horizontal, cs.rowH).padding(.top, cs.rowV)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .help("회의록·MM 파일이 바뀌어 다시 뽑은 결과에 없는 제안 — 남은 개수에 들지 않으며, 확정·아님이 없으면 30일 뒤 정리")
+            if !nearOnly || expansion.isOpen("followups") { ForEach(orphans) { it in row(it) } }
+        }
         if model.followupRead == .ok { RowDivider(); addRow }
     }
 
@@ -795,7 +855,7 @@ struct FollowupsCard: View {
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
     }
 
-    private func sourceChip(_ it: FollowupItem) -> some View {
+    @ViewBuilder private func sourceChip(_ it: FollowupItem) -> some View {
         Button { it.link?.open() } label: {
             HStack(spacing: 3) {
                 Text(it.chip).lineLimit(1).fixedSize()
@@ -806,6 +866,11 @@ struct FollowupsCard: View {
             .background(Capsule().fill(Hub.fillNeutral))
         }
         .buttonStyle(.plain).disabled(it.link == nil).help(it.link?.help ?? "직접 적은 항목")
+        // 출처 바뀜 (0.42.0 C2, R6) — 적색 아님(Hub.text2)
+        if it.isOrphan {
+            Text("출처 바뀜").font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                .help("회의록·MM 파일이 바뀌어 다시 뽑은 결과에 이 글이 없습니다 — 확정·끝남이 없으면 30일 뒤 정리")
+        }
     }
 
     /// '＋ MM 후속 적기' — 제자리 입력 칸 + 종류 + 남기기(Enter). 지도교수님과의 개인 미팅(MM)은 기록이 거의 없어 이것이 주 경로 (결정 D-g)
@@ -962,7 +1027,7 @@ struct FollowupCountsView: View {
                 if i < rows.count - 1 { RowDivider() }
             }
             RowDivider()
-            Text("수만 보입니다 — 항목 내용은 본인·교수님 화면에만. 평가가 아닙니다").font(.hub(cs.tag)).foregroundStyle(Hub.text3)
+            Text("개수만 보입니다 — 항목 내용은 본인·교수님 화면에만. 평가가 아닙니다").font(.hub(cs.tag)).foregroundStyle(Hub.text3)
                 .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV).fixedSize(horizontal: false, vertical: true)
             SourceCaption(text: CardMetas.caption("followups", model)).padding(.horizontal, cs.rowH).padding(.bottom, cs.rowV)
         }

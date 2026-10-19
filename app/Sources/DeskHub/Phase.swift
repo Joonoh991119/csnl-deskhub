@@ -37,7 +37,16 @@ enum Phase {
             let due = deadlineTime(r.title, day: d)
             return due >= now && due <= soon ? (r.title, due, nil) : nil
         }
-        for g in m.grants { if let d = g.due { let due = deadlineTime(g.title, day: d); if due >= now && due <= soon && !deadlines.contains(where: { c.isDate($0.1, inSameDayAs: due) }) { deadlines.append((g.title, due, nil)) } } }
+        for g in m.grants {
+            guard let d = g.due else { continue }
+            let gd = AlertEngine.grantDue(title: g.title, dueNote: g.dueNote, day: d)
+            if let i = deadlines.firstIndex(where: { c.isDate($0.1, inSameDayAs: d) }) {
+                // 같은 날 리마인더가 시각 없이(23:59) 들어와 있으면 그랜트 시각으로 — 안내판·팝오버와 같은 마감 시각 (0.42.0 검증 2 리뷰, #39)
+                if gd.hasTime && !AlertEngine.grantDue(title: deadlines[i].0, day: d).hasTime && gd.due >= now { deadlines[i].1 = gd.due }
+                continue
+            }
+            if gd.due >= now && gd.due <= soon { deadlines.append((g.title, gd.due, nil)) }
+        }
         if let d = deadlines.min(by: { $0.1 < $1.1 }) {
             return PhaseHero(kind: .deadline, title: d.0, subtitle: Hub.relative(d.1, now: now) , date: d.1, link: d.2)
         }

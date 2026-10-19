@@ -1,6 +1,6 @@
 {
   "csnl": {
-    "name": "CSNL (기본)",
+    "name": "CSNL",
     "source": "DeskHub 디자인 스펙 2026-10-12",
     "light": {
       "card": "#ffffff",
@@ -312,7 +312,7 @@
     }
   },
   "tokyonight": {
-    "name": "Tokyo Night (Storm · 항상 다크)",
+    "name": "Tokyo Night Storm",
     "source": "github.com/folke/tokyonight.nvim (Apache-2.0)",
     "alwaysDark": true,
     "light": {
@@ -361,6 +361,372 @@
         "ink": 5.33,
         "ok": 7.35,
         "signal": 5.08
+      }
+    }
+  },
+  "primer": {
+    "name": "GitHub Primer",
+    "source": "github.com/primer/primitives @11.10.0 (MIT)",
+    "light": {
+      "card": "#ffffff",
+      "backdrop": "#d1d9e0",
+      "surface": "#f6f8fa",
+      "text": "#1f2328",
+      "text2": "#59636e",
+      "text3": "#818b98",
+      "ink": "#0969da",
+      "ok": "#1a7f37",
+      "signal": "#d1242f",
+      "heroBG": "#ddeafa",
+      "onAccent": "#ffffff",
+      "cardBorder": "#1f232814",
+      "divider": "#1f232814",
+      "fillNeutral": "#1f232812",
+      "_contrast": {
+        "text": 14.84,
+        "text2": 5.74,
+        "text3": 3.24,
+        "ink": 4.88,
+        "ok": 4.77,
+        "signal": 4.93
+      }
+    },
+    "dark": {
+      "card": "#0d1117",
+      "backdrop": "#010409",
+      "surface": "#151b23",
+      "text": "#f0f6fc",
+      "text2": "#9198a1",
+      "text3": "#656c76",
+      "ink": "#4493f8",
+      "ok": "#3fb950",
+      "signal": "#f85149",
+      "heroBG": "#152337",
+      "onAccent": "#0d1117",
+      "cardBorder": "#f0f6fc1f",
+      "divider": "#f0f6fc1a",
+      "fillNeutral": "#f0f6fc12",
+      "_contrast": {
+        "text": 15.91,
+        "text2": 5.94,
+        "text3": 3.26,
+        "ink": 5.59,
+        "ok": 6.82,
+        "signal": 5.16
+      }
+    }
+  },
+  "carbon": {
+    "name": "IBM Carbon (White / g100)",
+    "source": "github.com/carbon-design-system/carbon @carbon/themes@11.83.0 (Apache-2.0)",
+    "light": {
+      "card": "#ffffff",
+      "backdrop": "#e0e0e0",
+      "surface": "#f4f4f4",
+      "text": "#161616",
+      "text2": "#525252",
+      "text3": "#6f6f6f",
+      "ink": "#0f62fe",
+      "ok": "#1d8039",
+      "signal": "#da1e28",
+      "heroBG": "#dde9ff",
+      "onAccent": "#ffffff",
+      "cardBorder": "#16161614",
+      "divider": "#16161614",
+      "fillNeutral": "#16161612",
+      "_contrast": {
+        "text": 16.45,
+        "text2": 7.1,
+        "text3": 4.57,
+        "ink": 4.55,
+        "ok": 4.55,
+        "signal": 4.55
+      }
+    },
+    "dark": {
+      "card": "#161616",
+      "backdrop": "#0d0d0d",
+      "surface": "#262626",
+      "text": "#f4f4f4",
+      "text2": "#c6c6c6",
+      "text3": "#a8a8a8",
+      "ink": "#78a9ff",
+      "ok": "#42be65",
+      "signal": "#fa4d56",
+      "heroBG": "#242b37",
+      "onAccent": "#161616",
+      "cardBorder": "#f4f4f41f",
+      "divider": "#f4f4f41a",
+      "fillNeutral": "#f4f4f412",
+      "_contrast": {
+        "text": 13.76,
+        "text2": 8.86,
+        "text3": 6.36,
+        "ink": 6.43,
+        "ok": 6.33,
+        "signal": 4.51
+      }
+    }
+  },
+  "radix": {
+    "name": "Radix Colors",
+    "source": "github.com/radix-ui/colors @3.0.0 (MIT)",
+    "light": {
+      "card": "#fcfcfd",
+      "backdrop": "#f0f0f3",
+      "surface": "#f9f9fb",
+      "text": "#1c2024",
+      "text2": "#60646c",
+      "text3": "#8b8d98",
+      "ink": "#0d74ce",
+      "ok": "#207f55",
+      "signal": "#ce2c31",
+      "heroBG": "#dbe9f6",
+      "onAccent": "#ffffff",
+      "cardBorder": "#1c202414",
+      "divider": "#1c202414",
+      "fillNeutral": "#1c202412",
+      "_contrast": {
+        "text": 15.58,
+        "text2": 5.65,
+        "text3": 3.14,
+        "ink": 4.53,
+        "ok": 4.72,
+        "signal": 4.96
+      }
+    },
+    "dark": {
+      "card": "#18191b",
+      "backdrop": "#111113",
+      "surface": "#212225",
+      "text": "#edeef0",
+      "text2": "#b0b4ba",
+      "text3": "#696e77",
+      "ink": "#70b8ff",
+      "ok": "#3dd68c",
+      "signal": "#ff9592",
+      "heroBG": "#242f3b",
+      "onAccent": "#18191b",
+      "cardBorder": "#edeef01f",
+      "divider": "#edeef01a",
+      "fillNeutral": "#edeef012",
+      "_contrast": {
+        "text": 13.7,
+        "text2": 7.64,
+        "text3": 3.1,
+        "ink": 7.57,
+        "ok": 8.48,
+        "signal": 7.55
+      }
+    }
+  },
+  "tokyonight-daynight": {
+    "name": "Tokyo Night (Day / Night)",
+    "source": "github.com/folke/tokyonight.nvim extras/lua (Apache-2.0)",
+    "light": {
+      "card": "#e1e2e7",
+      "backdrop": "#c1c9df",
+      "surface": "#d0d5e3",
+      "text": "#223c78",
+      "text2": "#485891",
+      "text3": "#68709a",
+      "ink": "#1359b7",
+      "ok": "#4b6431",
+      "signal": "#b6093b",
+      "heroBG": "#c4cfe0",
+      "onAccent": "#ffffff",
+      "cardBorder": "#223c7814",
+      "divider": "#223c7814",
+      "fillNeutral": "#223c7812",
+      "_contrast": {
+        "text": 7.21,
+        "text2": 4.65,
+        "text3": 3.27,
+        "ink": 4.56,
+        "ok": 4.52,
+        "signal": 4.63
+      }
+    },
+    "dark": {
+      "card": "#1a1b26",
+      "backdrop": "#16161e",
+      "surface": "#292e42",
+      "text": "#c0caf5",
+      "text2": "#a9b1d6",
+      "text3": "#737aa2",
+      "ink": "#7aa2f7",
+      "ok": "#9ece6a",
+      "signal": "#f7768e",
+      "heroBG": "#272e43",
+      "onAccent": "#1a1b26",
+      "cardBorder": "#c0caf51f",
+      "divider": "#c0caf51a",
+      "fillNeutral": "#c0caf512",
+      "_contrast": {
+        "text": 8.32,
+        "text2": 6.36,
+        "text3": 3.22,
+        "ink": 5.33,
+        "ok": 7.35,
+        "signal": 5.08
+      }
+    }
+  },
+  "catppuccin-frappe": {
+    "name": "Catppuccin Frappé",
+    "source": "github.com/catppuccin/palette (MIT)",
+    "alwaysDark": true,
+    "light": {
+      "card": "#303446",
+      "backdrop": "#232634",
+      "surface": "#292c3c",
+      "text": "#c6d0f5",
+      "text2": "#b5bfe2",
+      "text3": "#838ba7",
+      "ink": "#8caaee",
+      "ok": "#a6d189",
+      "signal": "#e78284",
+      "heroBG": "#3d455e",
+      "onAccent": "#303446",
+      "cardBorder": "#c6d0f51f",
+      "divider": "#c6d0f51a",
+      "fillNeutral": "#c6d0f512",
+      "_contrast": {
+        "text": 9.04,
+        "text2": 7.58,
+        "text3": 4.09,
+        "ink": 5.99,
+        "ok": 7.96,
+        "signal": 5.21
+      }
+    },
+    "dark": {
+      "card": "#303446",
+      "backdrop": "#232634",
+      "surface": "#292c3c",
+      "text": "#c6d0f5",
+      "text2": "#b5bfe2",
+      "text3": "#838ba7",
+      "ink": "#8caaee",
+      "ok": "#a6d189",
+      "signal": "#e78284",
+      "heroBG": "#3d455e",
+      "onAccent": "#303446",
+      "cardBorder": "#c6d0f51f",
+      "divider": "#c6d0f51a",
+      "fillNeutral": "#c6d0f512",
+      "_contrast": {
+        "text": 9.04,
+        "text2": 7.58,
+        "text3": 4.09,
+        "ink": 5.99,
+        "ok": 7.96,
+        "signal": 5.21
+      }
+    }
+  },
+  "catppuccin-macchiato": {
+    "name": "Catppuccin Macchiato",
+    "source": "github.com/catppuccin/palette (MIT)",
+    "alwaysDark": true,
+    "light": {
+      "card": "#24273a",
+      "backdrop": "#181926",
+      "surface": "#1e2030",
+      "text": "#cad3f5",
+      "text2": "#b8c0e0",
+      "text3": "#8087a2",
+      "ink": "#8aadf4",
+      "ok": "#a6da95",
+      "signal": "#ed8796",
+      "heroBG": "#323a54",
+      "onAccent": "#24273a",
+      "cardBorder": "#cad3f51f",
+      "divider": "#cad3f51a",
+      "fillNeutral": "#cad3f512",
+      "_contrast": {
+        "text": 10.85,
+        "text2": 8.93,
+        "text3": 4.53,
+        "ink": 7.18,
+        "ok": 10.03,
+        "signal": 6.52
+      }
+    },
+    "dark": {
+      "card": "#24273a",
+      "backdrop": "#181926",
+      "surface": "#1e2030",
+      "text": "#cad3f5",
+      "text2": "#b8c0e0",
+      "text3": "#8087a2",
+      "ink": "#8aadf4",
+      "ok": "#a6da95",
+      "signal": "#ed8796",
+      "heroBG": "#323a54",
+      "onAccent": "#24273a",
+      "cardBorder": "#cad3f51f",
+      "divider": "#cad3f51a",
+      "fillNeutral": "#cad3f512",
+      "_contrast": {
+        "text": 10.85,
+        "text2": 8.93,
+        "text3": 4.53,
+        "ink": 7.18,
+        "ok": 10.03,
+        "signal": 6.52
+      }
+    }
+  },
+  "everforest": {
+    "name": "Everforest",
+    "source": "github.com/sainnhe/everforest palette.md · medium (MIT)",
+    "light": {
+      "card": "#FDF6E3",
+      "backdrop": "#EFEBD4",
+      "surface": "#F4F0D9",
+      "text": "#455056",
+      "text2": "#626f61",
+      "text3": "#808e7e",
+      "ink": "#2d739a",
+      "ok": "#657301",
+      "signal": "#d60c09",
+      "heroBG": "#e0e4d9",
+      "onAccent": "#ffffff",
+      "cardBorder": "#45505614",
+      "divider": "#45505614",
+      "fillNeutral": "#45505612",
+      "_contrast": {
+        "text": 7.22,
+        "text2": 4.62,
+        "text3": 3.01,
+        "ink": 4.54,
+        "ok": 4.57,
+        "signal": 4.68
+      }
+    },
+    "dark": {
+      "card": "#2D353B",
+      "backdrop": "#232A2E",
+      "surface": "#343F44",
+      "text": "#dacfb7",
+      "text2": "#a0aba3",
+      "text3": "#859289",
+      "ink": "#7fbbb3",
+      "ok": "#a7c080",
+      "signal": "#e98f91",
+      "heroBG": "#38484c",
+      "onAccent": "#2D353B",
+      "cardBorder": "#dacfb71f",
+      "divider": "#dacfb71a",
+      "fillNeutral": "#dacfb712",
+      "_contrast": {
+        "text": 7.0,
+        "text2": 4.56,
+        "text3": 3.33,
+        "ink": 4.98,
+        "ok": 5.41,
+        "signal": 4.54
       }
     }
   }

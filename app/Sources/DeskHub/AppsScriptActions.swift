@@ -89,7 +89,7 @@ struct AppsScriptSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "메일 초안 · 보내지 않음")
+            SectionTitle(card: "tools")
             VStack(alignment: .leading, spacing: 8) {
                 FlowLayout(spacing: 6, lineSpacing: 6) {
                     ForEach(items) { it in

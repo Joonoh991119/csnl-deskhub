@@ -1,0 +1,8 @@
+# DeskHub --text-check fixtures/joint-check.tsv (0.42.0 C6, R9-d) — Joint projects 한 줄 JointProjects.line (카드 도움말·text.txt 와 같은 함수)
+# 입력 'id=;v=;owner=;done=A,B;waiting=C' → 'id · 버전 · 담당 · 완료 … · 대기 …' — 빈 칸은 칸째 생략, 버전이 비면 '?'
+jp-row	id=csnl-deskhub;v=0.42.0;owner=JOP;done=BHL;waiting=JYK,SMJ	csnl-deskhub · 0.42.0 · JOP · 완료 BHL · 대기 JYK,SMJ
+jp-row	id=csnl-report;v=0.3.4;owner=JOP;done=BHL,JYK;waiting=	csnl-report · 0.3.4 · JOP · 완료 BHL,JYK
+jp-row	id=csnl-timetable;v=0.1.1;owner=JOP;done=;waiting=SMJ	csnl-timetable · 0.1.1 · JOP · 대기 SMJ
+jp-row	id=csnl-mail;v=0.1.0;owner=JOP;done=;waiting=	csnl-mail · 0.1.0 · JOP
+jp-row	id=csnl-prolific;v=;owner=;done=;waiting=	csnl-prolific · ?
+jp-row	id=csnl-paper-recommend;v=0.5.1;owner=;done=;waiting=BYL	csnl-paper-recommend · 0.5.1 · 대기 BYL

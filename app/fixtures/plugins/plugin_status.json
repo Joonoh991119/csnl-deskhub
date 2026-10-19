@@ -1,0 +1,14 @@
+{
+ "schema": 1,
+ "generated": "2026-10-15T09:00:00+09:00",
+ "source": "plugin_status.py",
+ "errors": [],
+ "rows": [
+  {"id": "csnl-report", "version": "0.3.4", "version_source": "github:Joonoh991119/csnl-admin@main", "owner": "JOP", "done": ["BHL", "JYK"], "waiting": [], "review_source": "manual", "note": ""},
+  {"id": "csnl-deskhub", "version": "0.42.0", "version_source": "github:Joonoh991119/csnl-admin@main", "owner": "JOP", "done": ["BHL"], "waiting": ["JYK", "SMJ"], "review_source": "github:#21", "note": ""},
+  {"id": "csnl-paper-recommend", "version": "0.5.1", "version_source": "github:Joonoh991119/csnl-research@main", "owner": "", "done": [], "waiting": [], "review_source": "", "note": ""},
+  {"id": "csnl-timetable", "version": "0.1.1", "version_source": "github:Joonoh991119/csnl-admin@main", "owner": "JOP", "done": [], "waiting": ["SMJ"], "review_source": "manual", "note": ""},
+  {"id": "csnl-mail", "version": "0.1.0", "version_source": "github:Joonoh991119/csnl-admin@main", "owner": "JOP", "done": [], "waiting": [], "review_source": "", "note": ""},
+  {"id": "csnl-prolific", "version": "?", "version_source": "", "owner": "", "done": [], "waiting": [], "review_source": "", "note": ""}
+ ]
+}

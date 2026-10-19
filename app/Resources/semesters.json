@@ -1,0 +1,19 @@
+{
+ "_note": "timetable 플러그인 config/semesters.json 의 'semesters' 사본 (DeskHub 0.42.0 C4). 같은 id 는 ~/Library/Application Support/DeskHub/semesters.json(사용자 파일)이 덮는다 — 다음 학기는 사용자 파일에 더한다. holidays = 수업이 없는 평일 공휴일. 오늘이 [start, makeup_end] 안인 학기가 지금 학기.",
+ "semesters": {
+  "2026-2": {
+   "label": "2026학년도 2학기",
+   "start": "2026-09-01",
+   "end": "2026-12-14",
+   "makeup_end": "2026-12-21",
+   "holidays": [
+    "2026-09-24",
+    "2026-09-25",
+    "2026-10-05",
+    "2026-10-09"
+   ],
+   "source": "snu.ac.kr 학사일정 2026-10-13 확인 (개강 9/1, 종강 12/14, 보강 12/15~21). 공휴일: 추석 9/24~26, 개천절 대체 10/5, 한글날 10/9",
+   "verified": true
+  }
+ }
+}

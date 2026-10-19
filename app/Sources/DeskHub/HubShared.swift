@@ -791,9 +791,13 @@ struct MoreToggle: View {
 // 창 안 NSViewRepresentable(창 끌기·손잡이·Notion 웹뷰)이 SwiftUI 변환을 따르지 않아 클릭 좌표가 어긋나고 글자가 흐려지므로
 
 extension Font {
-    /// 시스템 글꼴 × 글자 배율(HubDisplay.scale). 앱 안 글자 크기는 모두 이것으로 그린다 (0.37.0 기계 치환)
+    /// 시스템 글꼴 × 글자 배율(HubDisplay.scale). 앱 안 글자 크기는 모두 이것으로 그린다 (0.37.0 기계 치환).
+    /// 0.42.0 C7: Display 판에서 번들 글꼴을 고르면(기본 system) 그 PostScript 이름으로 — design(.rounded 등)은 빠지고(숫자 정렬은 monospacedDigit 이 맡음),
+    /// .monospaced 는 시스템 그대로
     static func hub(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> Font {
-        .system(size: size * HubDisplay.scale, weight: weight, design: design)
+        let s = size * HubDisplay.scale
+        if design != .monospaced, let ps = HubDisplay.faceName(weight) { return .custom(ps, fixedSize: s) }
+        return .system(size: s, weight: weight, design: design)
     }
 }
 
@@ -810,9 +814,56 @@ final class HubDisplay: ObservableObject {
     static let shared = HubDisplay()
     static let range: ClosedRange<Double> = 0.9...1.6
     static let presets = ["default", "contrast", "dark"]
-    static let presetNames = ["default": "기본", "contrast": "고대비", "dark": "어두움"]
+    static let presetNames = ["default": "Default", "contrast": "High Contrast", "dark": "Dark"]
     /// Font.hub 가 읽는 배율 (뷰 밖에서도 읽도록 정적)
     nonisolated(unsafe) static private(set) var scale: CGFloat = 1
+
+    // MARK: 글꼴 (0.42.0 C7, R4) — UserDefaults DeskHub.fontFamily · 훅 DESKHUB_FONT · --key font:<id>. 기본 system(결정 D-9).
+    // 번들 OFL 글꼴은 Info.plist ATSApplicationFontsPath=Fonts 로 등록된다. 등록 확인(NSFont(name:))에 실패하면 시스템으로 대체
+    static let fonts = ["system", "pretendard", "plex", "suit"]
+    static let fontNames = ["system": "System", "pretendard": "Pretendard", "plex": "IBM Plex Sans KR", "suit": "SUIT"]
+    /// 굵기 → PostScript 이름 (regular · medium · semibold · bold). SUIT 는 가변 글꼴의 이름 붙은 인스턴스
+    nonisolated static let fontFaces: [String: [String]] = [
+        "pretendard": ["Pretendard-Regular", "Pretendard-Medium", "Pretendard-SemiBold", "Pretendard-Bold"],
+        "plex": ["IBMPlexSansKR", "IBMPlexSansKR-Medm", "IBMPlexSansKR-SmBld", "IBMPlexSansKR-Bold"],
+        "suit": ["SUITVariable-Regular", "SUITVariable-Medium", "SUITVariable-SemiBold", "SUITVariable-Bold"],
+    ]
+    /// 지금 쓰는 글꼴 id (대체 뒤) · 고른 값 · 고른 글꼴이 없어 시스템으로 대체했나
+    nonisolated(unsafe) static private(set) var family = "system"
+    nonisolated(unsafe) static private(set) var familyRequested = "system"
+    nonisolated(unsafe) static private(set) var familyFallback = false
+    /// 그 글꼴이 이 앱에 등록됐나 (네 굵기 모두)
+    nonisolated static func registered(_ id: String) -> Bool {
+        guard let faces = fontFaces[id] else { return false }
+        return faces.allSatisfy { NSFont(name: $0, size: 12) != nil }
+    }
+    /// Font.hub · nsFont 가 쓰는 PostScript 이름 — 시스템이면 nil
+    nonisolated static func faceName(_ w: Font.Weight) -> String? {
+        guard family != "system", let f = fontFaces[family] else { return nil }
+        switch w {
+        case .medium: return f[1]
+        case .semibold: return f[2]
+        case .bold, .heavy, .black: return f[3]
+        default: return f[0]
+        }
+    }
+    /// AppKit 폭 재기(StatusLine) 도 같은 글꼴로 — 시스템이면 지금과 같다
+    nonisolated static func nsFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        let w: Font.Weight = weight == .medium ? .medium : (weight == .semibold ? .semibold : (weight == .bold || weight == .heavy || weight == .black ? .bold : .regular))
+        if let ps = faceName(w), let f = NSFont(name: ps, size: size) { return f }
+        return NSFont.systemFont(ofSize: size, weight: weight)
+    }
+    private static func applyFamily(_ id: String) {
+        familyRequested = id
+        if id == "system" || !fonts.contains(id) { family = "system"; familyFallback = id != "system" }
+        else if registered(id) { family = id; familyFallback = false }
+        else { family = "system"; familyFallback = true }
+    }
+    /// windows.txt 'font: <id> (등록됨|대체|기본)'
+    static var fontLine: String {
+        "font: \(family) " + (familyFallback ? "(대체) · 고른 값 \(familyRequested)" : (family == "system" ? "(default)" : "(등록됨)"))
+    }
+    @Published private(set) var fontFamily = "system"
 
     @Published private(set) var textScale: Double
     @Published private(set) var colorPreset: String
@@ -832,6 +883,20 @@ final class HubDisplay: ObservableObject {
         if let v = env["DESKHUB_COLOR_PRESET"], !v.isEmpty { p = v }
         colorPreset = Self.presets.contains(p) ? p : "default"
         Self.scale = CGFloat(textScale)
+        var ff = d.string(forKey: "DeskHub.fontFamily") ?? "system"
+        if let v = env["DESKHUB_FONT"], !v.isEmpty { ff = v }
+        Self.applyFamily(ff)
+        fontFamily = Self.family
+    }
+
+    /// 판의 Font 단추·--key font:<id> — 같은 경로. 등록이 안 된 글꼴이면 시스템으로 대체(저장 값은 고른 id)
+    func setFont(_ id: String) {
+        guard Self.fonts.contains(id) else { NSSound.beep(); return }
+        UserDefaults.standard.set(id, forKey: "DeskHub.fontFamily")
+        Self.applyFamily(id)
+        guard Self.family != fontFamily else { return }
+        fontFamily = Self.family
+        revision += 1
     }
 
     /// 범위 안으로 자르고 0.1 단위로
@@ -876,7 +941,7 @@ struct DisplaySettingsPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("글자 크기 · 색").font(.hub(14, weight: .bold))
+                Text("Display").font(.hub(14, weight: .bold))
                 Text("이 맥에만 저장").font(.hub(11)).foregroundStyle(Hub.text3)
                 Spacer(minLength: 4)
                 Button { display.panelOpen = false } label: {
@@ -884,7 +949,7 @@ struct DisplaySettingsPanel: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(Hub.text2).help("닫기 (Esc)")
             }
-            Text("글자 크기").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
+            Text("Text size").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
             HStack(spacing: 8) {
                 stepButton("가−", by: -0.1).help("작게 (0.1배)")
                 Slider(value: $draft, in: HubDisplay.range, step: 0.1) { editing in if !editing { display.setScale(draft) } }
@@ -895,7 +960,23 @@ struct DisplaySettingsPanel: View {
                 Button("기본") { draft = 1.0; display.setScale(1.0) }
                     .buttonStyle(.plain).font(.hub(12, weight: .medium)).foregroundStyle(Hub.ink).help("1.0배로")
             }
-            Text("색").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
+            Text("Font").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
+            FlowLayout(spacing: 6, lineSpacing: 6) {
+                ForEach(HubDisplay.fonts, id: \.self) { f in
+                    let on = display.fontFamily == f
+                    let ok = f == "system" || HubDisplay.registered(f)
+                    Button { display.setFont(f) } label: {
+                        Text((HubDisplay.fontNames[f] ?? f) + (ok ? "" : " (없음)")).font(.hub(12.5, weight: .semibold))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Hub.ink : Hub.fillNeutral))
+                            .foregroundStyle(on ? Hub.onAccent : (ok ? Hub.text : Hub.text3))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(f == "system" ? "시스템 글꼴 — default" : (ok ? "번들 글꼴 · SIL OFL 1.1" : "이 앱에 글꼴 파일이 없어 시스템 글꼴로 대체됩니다"))
+                }
+            }
+            Text("Color").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
             HStack(spacing: 6) {
                 ForEach(HubDisplay.presets, id: \.self) { p in
                     let on = display.colorPreset == p

@@ -7,7 +7,7 @@
   "meetings": 4,
   "transcripts": 4,
   "mm_files": 2,
-  "items": 15,
+  "items": 16,
   "new": 15,
   "dropped": {
    "privacy": 0,
@@ -81,6 +81,24 @@
     "notion": "82e9b2a4f9df0251f2943e2433d6d5a3"
    },
    "line": 19
+  },
+  {
+   "id": "fu-4a0c1e2f3b5d",
+   "who": "JOP",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-30",
+   "kind": "분석 계획",
+   "text": "가짜 시험 출처 바뀜 — 지난 회의록에서 확정한 분석 다시 보기",
+   "rule": "sec",
+   "source": {
+    "notion": "82e9b2a4f9df0251f2943e2433d6d5a3"
+   },
+   "line": 7,
+   "orphan_since": "2026-10-14",
+   "orphan_reason": "reread",
+   "aka": [
+    "fu-7e1d0c2b9a88"
+   ]
   },
   {
    "id": "fu-03729fdfc207",

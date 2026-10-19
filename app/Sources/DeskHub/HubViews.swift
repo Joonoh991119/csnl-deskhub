@@ -6,20 +6,23 @@ import AppKit
 // `DeskHub --view hub|today|grm|me|ambient` 로도 바꾼다 (스냅샷 비교용).
 
 enum HubViewMode: String, CaseIterable, Identifiable {
-    case tower, process, board, hub, today, grm, me, ambient
+    // timetable 은 끝에 (0.42.0 C4) — 숫자 키 = allCases 순서라 기존 키가 밀리지 않게(9)
+    case tower, process, board, hub, today, grm, me, ambient, timetable
     var id: String { rawValue }
     /// 디자인 계획 2차(10-14) 이전의 뷰 — 메뉴 '이전' 묶음, 2주 비교 뒤 랩장이 정리 (결정 18)
-    var legacy: Bool { ![.tower, .process, .board].contains(self) }
+    var legacy: Bool { ![.tower, .process, .board, .timetable].contains(self) }
     var title: String {
         switch self {
-        case .tower: return "관제탑"
-        case .process: return "공정 보드"
-        case .board: return "안내판"
-        case .hub: return "랩 허브"
-        case .today: return "오늘 집중"
-        case .grm: return "GRM 주간"
-        case .me: return "나"
-        case .ambient: return "앰비언트"
+        // 화면 이름은 영어 (0.42.0 C3, R3 — 랩장 '가능한 전문 용어나 UI는 영어를 유지'). rawValue(--view·저장 값)는 그대로
+        case .tower: return "Tower"
+        case .process: return "Pipeline"
+        case .board: return "Board"
+        case .hub: return "Dashboard"
+        case .today: return "Today"
+        case .grm: return "GRM Weekly"
+        case .me: return "Me"
+        case .ambient: return "Ambient"
+        case .timetable: return "Timetable"
         }
     }
     var symbol: String {
@@ -32,6 +35,7 @@ enum HubViewMode: String, CaseIterable, Identifiable {
         case .grm: return "person.3"
         case .me: return "person.crop.circle"
         case .ambient: return "clock"
+        case .timetable: return "calendar"
         }
     }
     var blurb: String {
@@ -44,6 +48,7 @@ enum HubViewMode: String, CaseIterable, Identifiable {
         case .grm: return "발표 순번·회의록·Paper Blitz"
         case .me: return "이 맥 사용자의 추천·프로젝트·차례"
         case .ambient: return "보조 모니터·벽용 큰 글자"
+        case .timetable: return "이번 학기 수업 — 요일×시간 격자, 사람 고르기"
         }
     }
 }
@@ -83,6 +88,7 @@ struct HubViewSwitch: View {
         case .grm: GRMWeekView(model: model)
         case .me: MeView(model: model)
         case .ambient: AmbientView(model: model)
+        case .timetable: TimetableView(model: model)
         }
     }
 }

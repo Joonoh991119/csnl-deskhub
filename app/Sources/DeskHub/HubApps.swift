@@ -41,7 +41,7 @@ struct AppsCard: View {
         let cut = nearOnly ? HubNear.apps(data.apps) : nil
         let apps = cut.map { $0.shown(open: expansion.isOpen("apps")) } ?? data.apps
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: nearOnly ? "만든 앱 · \(data.apps.count)개" : "만든 앱", trailing: data.report.map { FileManager.default.fileExists(atPath: ($0 as NSString).expandingTildeInPath) ? "구조 보고서" : nil } ?? nil,
+            SectionTitle(card: "apps", hint: "연구실에서 만든 앱 \(data.apps.count)개", trailing: data.report.map { FileManager.default.fileExists(atPath: ($0 as NSString).expandingTildeInPath) ? "구조 보고서" : nil } ?? nil,
                          fresh: nearOnly ? Freshness.content(CardMetas.appsFileDate, cycle: 30, today: HubClock.today, help: "apps.json 수정일") : nil) {
                 if let r = data.report { NSWorkspace.shared.open(URL(fileURLWithPath: (r as NSString).expandingTildeInPath)) }
             }

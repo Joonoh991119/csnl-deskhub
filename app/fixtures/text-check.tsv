@@ -84,3 +84,27 @@ tally	[BHL] 👍@1;[JOP] 같이 읽자@2;[SYJ] 이번 주 GRM 에서 보면 좋�
 feed	2026-10-17|2026-10-17	미확정
 feed	2026-10-17|2026-10-16	미확정
 feed	2026-10-17|2026-10-14	확정
+# grantdue: 연구비 마감 시각 (0.42.0 C1, #39) — 입력 'now=;title=;day=', 기대 MenuBarLine.compact(AlertEngine.grantDue). 제목 HH:mm = 마감, 없으면 그날 23:59
+grantdue	now=2026-10-15T13:27;title=BK21 자체평가 실적 제출 (18:00);day=2026-10-15	4h
+grantdue	now=2026-10-15T13:27;title=BK21 자체평가 실적 제출;day=2026-10-15	10h
+grantdue	now=2026-10-15T18:30;title=BK21 자체평가 실적 제출 (18:00);day=2026-10-15	지남
+grantdue	now=2026-10-14T14:00;title=BK21 자체평가 실적 제출 (18:00);day=2026-10-15	28h
+grantdue	now=2026-10-12T13:27;title=BK21 자체평가 실적 제출 (18:00);day=2026-10-15	D-3
+grantdue	now=2026-10-15T17:30;title=중견 연구 보고 (18:00);day=2026-10-15	30m
+# 알려진 한계 — 제목의 시각 아닌 'n:nn' 숫자도 시각으로 읽힌다(리마인더와 같은 규칙): '1:10 매칭' → 01:10 마감. 'n:n'(분 한 자리 '2:1')은 시각 아님 → 23:59
+grantdue	now=2026-10-15T13:27;title=기관 1:10 매칭 지원;day=2026-10-15	지남
+grantdue	now=2026-10-15T13:27;title=기관 2:1 매칭 지원;day=2026-10-15	10h
+# grantdue 검증 1 — 실제 grants_schedule.json 은 시각을 dueNote 에(제목 BK21 자체평가 항목별 실적 2026). 제목 시각 > dueNote 첫 HH:mm > 23:59. rem=1 = 시각 없는 컨펌 리마인더도 23:59
+grantdue	now=2026-10-15T13:27;title=BK21 자체평가 항목별 실적 2026;note=연구원 컨펌 마감 10/15(목) 18:00 → 제출;day=2026-10-15	4h
+grantdue	now=2026-10-15T19:00;title=BK21 자체평가 항목별 실적 2026;note=연구원 컨펌 마감 10/15(목) 18:00 → 제출;day=2026-10-15	지남
+grantdue	now=2026-10-15T13:27;title=중견 연구 보고 (17:00);note=컨펌 18:00;day=2026-10-15	3h
+grantdue	now=2026-10-18T13:27;title=BK21 실적 제출;day=2026-10-18;rem=1	10h
+# react: 논문 반응 줄 (0.42.0 C1, #23) — 입력 'me=;r=이모지:이니셜,…|…;notes=n;hover=0|1'. 쉴 때 '내 👍 · 남 수 · 댓글 n'(없으면 —), 호버 '[이모지 수 *=내 것] … · 댓글'
+react	me=JOP;r=;notes=0;hover=0	—
+react	me=JOP;r=👍:JOP;notes=0;hover=0	내 👍
+react	me=JOP;r=👍:BHL|✅:SMJ;notes=0;hover=0	👍1 ✅1
+react	me=JOP;r=👍:JOP,BHL|✅:SMJ;notes=2;hover=0	내 👍 · 👍2 ✅1 · 댓글 2
+react	me=JOP;r=✅:SMJ;notes=1;hover=0	✅1 · 댓글 1
+react	me=JOP;r=👍:JOP,BHL|✅:SMJ;notes=2;hover=1	[👍2*] [✅1] [🙅0] · 댓글 2
+react	me=JOP;r=;notes=0;hover=1	[👍0] [✅0] [🙅0] · 댓글
+react	me=;r=👍:BHL;notes=0;hover=0	👍1

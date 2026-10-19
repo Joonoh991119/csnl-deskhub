@@ -124,7 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotionLink.mode = config.notionHub.openLinksIn
         NotionLink.minAppVersion = config.notionHub.minNotionAppVersion
         Theme.all = Theme.load()
-        Theme.currentID = Theme.all[config.theme] != nil ? config.theme : "csnl"
+        Theme.currentID = Theme.hookID ?? (Theme.all[config.theme] != nil ? config.theme : "csnl")
         Theme.preset = HubDisplay.shared.colorPreset
         var mode = config.appearance
         if Theme.current.alwaysDark == true { mode = "dark" }
@@ -306,6 +306,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 글자·색 (0.37.0 C3) — 판의 막대·단추와 같은 경로(UserDefaults 저장). settings = '글자' 판 열기·닫기
         else if k.hasPrefix("scale:") { if let v = Double(k.dropFirst("scale:".count)) { HubDisplay.shared.setScale(v) } }
         else if k.hasPrefix("preset:") { HubDisplay.shared.setPreset(String(k.dropFirst("preset:".count))) }
+        // 글꼴 (0.42.0 C7) — 판 'Font' 단추와 같은 경로(UserDefaults DeskHub.fontFamily)
+        else if k.hasPrefix("font:") { HubDisplay.shared.setFont(String(k.dropFirst("font:".count))) }
         else if k == "settings" { withAnimation(.easeOut(duration: 0.12)) { HubDisplay.shared.panelOpen.toggle() } }
         // 학회 관심 (0.37.0 C5) — 이름 일부가 맞는 첫 학회에 '관심' 클릭과 같은 경로 · interest-undo = 마지막 대기 취소
         else if k == "interest-undo" { if let m = hubs.values.first, let p = m.interestCommits.pending.last { m.interestCommits.undo(p.id) } }
@@ -370,6 +372,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var out = ["[허브 글자] " + CardStyle.large.dumpLine, ""]
             // [허브 카드] — 카드마다 가까운 것만 보인 수·숨긴 수·펼침·기준값 (0.37.0 C2, HubNear — 뷰와 같은 함수)
             out += ["[허브 카드] \(HubNear.keys.count)"] + HubNear.dumpLines(m) + [""]
+            // [카드 제목] — 허브 카드 제목 표 'id · 제목 · 도움말' (0.42.0 C3, R9-a — SectionTitle(card:) 와 같은 HubCardTitle)
+            out += ["[카드 제목] \(HubCardTitle.rows.count)"] + HubCardTitle.dumpLines() + [""]
             // [카드 출처] — 허브 데이터 카드 14: id · 꼬리표 · 캡션('출처 · 기준 · n · 정의 id', CardMetas.caption — 카드 끝 CardFooter 와 같은 함수) (0.40.0 C2, A1)
             out += ["[카드 출처] \(CardMetas.hub.count)" + (m.metricsNote.map { " · 집계 " + $0 } ?? "")] + CardMetas.dumpLines(m) + [""]
             // [꼬리표] — 허브 데이터 카드 14 + 관제탑 레일 데이터 항목 10 의 내용 날짜 꼬리표(M3) · [자료 상태] — 원천 정렬 표(경과일 내림차순, 5칸) · [위생] (0.40.0 C3, A2)
@@ -382,13 +386,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             out += ["[배지]"] + SeenCards.shared.dumpLines(m) + [""]
             // [장비] — 장비 6줄 '장비 · 지금 · 다음'(내 것) + 닫기 누락 (0.40.0 C5, A5 — EquipmentCard 와 같은 EquipmentBoard 함수)
             out += ["[장비]"] + m.equipmentDumpLines() + [""]
+            // [멤버 상태]·[Members 카드] (0.42.0 C5, R2·R9-c — MemberStatus.resolve 를 모델이 한 번 계산한 값 · MembersCard 와 같은 함수)
+            out += ["[멤버 상태]"] + m.memberStatusDumpLines() + [""]
+            out += ["[Members 카드]", MembersCard.dumpLine(m), ""]
+            // [Joint projects] — 읽기·생성·행·오류 / 행 'id · 버전 · 담당 · 완료 … · 대기 …'(대기 있는 행 먼저) (0.42.0 C6, R9-d — JointProjectsCard 와 같은 함수)
+            out += ["[Joint projects]"] + m.jointDumpLines() + [""]
+            // [Timetable] — 학기·출처·과목·행·사람·못 읽은 행·휴일 / 오늘 덩어리 / 주간 (0.42.0 C4, R1 — ClassesCard·TimetableView 와 같은 Timetable 함수)
+            out += ["[Timetable]"] + m.timetableDumpLines() + [""]
             // [미팅 후속] — 읽기·생성·항목 / 나·보기·남은·다음 미팅·리마인드 / (보기 내용·읽기만) 항목 줄 / 사람별 (0.41.0 C2, R1 — MeetingFollowups.swift 같은 함수)
             out += ["[미팅 후속]"] + m.followupDumpLines() + [""]
             // [GRM 자료 지도] — 머리(날짜 대응·열별 채움·?) · 보이는 행 · 순번 (0.40.0 C6, A6 — GRMMapView 와 같은 GRMMap 함수)
             out += ["[GRM 자료 지도]"] + GRMMap.dumpLines(m) + [""]
             // [논문 추천] — PaperRecBoard 가 그리는 제목·저자 그대로 (R-31)
             out += ["[논문 추천] \(m.papers.count)"]
-            out += m.papers.map { p in [dash(p.researcher), dash(p.tier), dash(p.title), dash(p.authors)].joined(separator: " · ") }
+            // 반응 줄 (0.42.0 C1, #23) — 쉴 때 글(PaperReact.line, 화면과 같은 함수)
+            out += m.papers.map { p in
+                let cs = m.paperComments[p.id] ?? []
+                let rest = PaperReact.text(PaperReact.line(reactions: cs.filter(\.isReaction).map { ($0.text, $0.who) }, me: HubPrefs.me,
+                                                           notes: cs.filter(\.isNote).count, hover: false))
+                return [dash(p.researcher), dash(p.tier), dash(p.title), dash(p.authors), "반응 줄: " + rest].joined(separator: " · ")
+            }
             // [Paper Blitz] — 인용 줄(R-30): 발표자 · 제목 앞 40자 · 표시 줄 · 정리|원문
             out += ["", "[Paper Blitz] \(m.blitz.count)"]
             out += m.blitz.map { p in
@@ -477,6 +494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for id in calendars.keys.sorted() { if let c = calendars[id] { info.append(c.debugLine + " (\(id) 창)") } }
         info.append(popoverDebugLine)
         info.append(HubLayoutProbe.line)
+        // 글꼴 (0.42.0 C7) — 'font: <id> (등록됨|대체|기본)'
+        info.append(HubDisplay.fontLine)
         // 갱신 단위 Notion 질의·쪽 수 (0.40.0 C1, F0-3 — 죽은 조회 3건을 빼고 12)
         info.append(NotionQueryStats.line)
         // 첫 그림까지 시간 (M5, 0.40.0 C2) — 'render: 첫 실측 n ms · 뷰 <mode>'
@@ -705,9 +724,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             parent.submenu = m
             menu.addItem(parent)
         }
-        submenu("테마", Theme.ids.compactMap { id in Theme.all[id].map { ($0.name, id, id == Theme.currentID) } }, #selector(chooseTheme(_:)))
-        submenu("외형", [("맥 설정 따르기", "system", config.appearance == "system"), ("라이트", "light", config.appearance == "light"),
-                        ("다크", "dark", config.appearance == "dark")], #selector(chooseAppearance(_:)))
+        submenu("Theme", Theme.ids.compactMap { id in Theme.all[id].map { ($0.name, id, id == Theme.currentID) } }, #selector(chooseTheme(_:)))
+        submenu("Appearance", [("System", "system", config.appearance == "system"), ("Light", "light", config.appearance == "light"),
+                        ("Dark", "dark", config.appearance == "dark")], #selector(chooseAppearance(_:)))
         var screens: [(String, String, Bool)] = [("보조 모니터" + (Config.hasSecondary ? "" : " (지금 없음 — 숨긴 채 대기)"), "secondary", config.layout.screen == "secondary"),
                                                  ("주 모니터", "main", config.layout.screen == "main")]
         for s in NSScreen.screens.dropFirst() { screens.append(("  " + s.localizedName, s.localizedName, config.layout.screen == s.localizedName)) }

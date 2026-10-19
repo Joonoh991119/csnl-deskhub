@@ -20,11 +20,12 @@ final class KeyBus: ObservableObject {
 
 /// 키 표 — ? 로 띄우는 시트와 같은 내용
 enum KeyMap {
-    static let global: [(String, String)] = [
-        ("1 – 8", "뷰 바꾸기 (관제탑 · 공정 보드 · 안내판 · 랩 허브 · 오늘 집중 · GRM 주간 · 나 · 앰비언트)"),
+    /// 뷰 이름은 HubViewMode.title(영어) 그대로 — 뷰가 늘면 범위·이름이 같이 바뀐다 (0.42.0 C3 검증 1: '1 – 8' 과 한글 이름이 남아 있던 것)
+    static var global: [(String, String)] { [
+        ("1 – \(HubViewMode.allCases.count)", "뷰 바꾸기 (" + HubViewMode.allCases.map(\.title).joined(separator: " · ") + ")"),
         ("r", "지금 새로고침"),
         ("?", "이 키 표 열기·닫기"),
-    ]
+    ] }
     static let tower: [(String, String)] = [
         ("j / k", "경보 아래·위로 고르기"),
         ("Enter", "고른 경보의 원본 열기"),
@@ -101,8 +102,8 @@ struct KeyHelpSheet: View {
                 Spacer()
                 Text("카드를 한 번 클릭한 뒤 · Esc 닫기").font(.hub(11)).foregroundStyle(Hub.text3)
             }
-            section("어디서나", KeyMap.global)
-            if store.mode == .tower { section("관제탑", KeyMap.tower) }
+            section("Global", KeyMap.global)
+            if store.mode == .tower { section("Tower", KeyMap.tower) }
         }
         .padding(18)
         .frame(width: 460)

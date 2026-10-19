@@ -1,0 +1,11 @@
+/* @primer/primitives@11.10.0 dist/css/functional/themes/dark.css — 필요한 줄만 (MIT) */
+  --fgColor-accent: #4493f8; /** Accent text for links and interactive elements */
+  --bgColor-default: #0d1117; /** Default background color for pages and main content areas */
+  --bgColor-muted: #151b23; /** Muted background for secondary content areas and subtle grouping */
+  --borderColor-default: #3d444d; /** Default border color for most UI elements */
+  --fgColor-danger: #f85149; /** Danger text for errors and destructive actions */
+  --fgColor-default: #f0f6fc; /** Default text color for primary content and headings */
+  --fgColor-disabled: #656c76; /** Text color for disabled interactive elements */
+  --fgColor-muted: #9198a1; /** Muted text for secondary content and less important information */
+  --fgColor-success: #3fb950; /** Success text for positive feedback and completed states */
+  --bgColor-inset: #010409; /** Inset background for recessed content areas like wells or sunken panels */
