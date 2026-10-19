@@ -34,10 +34,22 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.40.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
-<p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
+<div class="sub">연구실 바탕화면 대시보드 · 0.41.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
+<p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM(매주 연구실 미팅) 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기), 미팅 후속 체크(끝남·확정·아님·직접 적기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
+<summary><span class="chev"></span>0.41.0 에서 바뀐 것</summary>
+<div class="body">
+<ul>
+<li><b>미팅 후속 체크리스트</b> — 랩 허브 오른쪽 열 맨 위에 '미팅 후속' 카드가 생겼습니다. 미팅에서 나온 코멘트·다음 마일스톤·고칠 것·새 모델 제안·분석 계획이 제안으로 들어오고, 본인이 끝남·확정·아님을 고릅니다. 지도교수님과의 개인 미팅(MM)에서 나온 것은 직접 적습니다. 자세한 순서는 아래 체크리스트 절에 있습니다.</li>
+<li><b>전날·당일 알림</b> — 내 다음 MM 이나 내 GRM 발표 전날과 당일에 맨 위 한 줄에 '미팅 후속 n · 내일 GRM' 이 뜹니다. 한 번 누르면 그날은 사라집니다.</li>
+<li><b>관제탑·Members 탭은 사람별 수만</b> — 관제탑의 '미팅 후속' 줄과 Members 탭의 '미팅 후속' 열에는 사람마다 남은 개수만 보입니다. 내용은 본인과 교수님 화면에만 있고, 평가에 쓰지 않습니다.</li>
+<li><b>GRM 자료 지도 한 줄</b> — 'CSNL GRM' 탭의 지난 회차 자료는 이번 주·지난주 한 줄로 줄였습니다. 전체 지도는 'GRM 주간' 화면에 있고, 줄 끝 '자세히' 를 누르면 바로 갑니다.</li>
+</ul>
+</div>
+</details>
+
+<details>
 <summary><span class="chev"></span>0.40.0 에서 바뀐 것</summary>
 <ul>
 <li><b>상태 한 줄</b> — 허브 맨 위 한 줄에 확정·예상 일정, 학회·연구비 마감, 멈춘 자료, 다음 GRM 이 모입니다. 마감 적색은 이 한 칸으로 모았고, 아래에 8주 마감 띠가 붙습니다. 나와 관련된 새 항목은 '새 n' 배지로 보입니다.</li>
@@ -54,7 +66,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.40.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.41.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -107,6 +119,21 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </details>
 
 <details>
+<summary><span class="chev"></span>미팅 후속 체크리스트 쓰는 법</summary>
+<div class="body">
+<ol>
+<li>랩미팅(GRM) 회의록이 정리되면 다음 날까지 '미팅 후속' 카드에 <b>제안</b>이 뜹니다. 회의록의 할 일·다음 안건·수정 방향 같은 줄에서 자동으로 뽑은 것이라 틀린 것도 섞일 수 있습니다.</li>
+<li>줄 앞 <span class="kbd">○</span> 를 누르면 <b>끝남</b>(6초 안에 '되돌리기'), <span class="kbd">확정</span> 은 할 일로 남기기(누르는 즉시 저장), <span class="kbd">아님</span> 은 버리기(6초 안에 '되돌리기')입니다.</li>
+<li>지도교수님과의 개인 미팅(MM)은 기록이 거의 없어서 카드 아래 <span class="kbd">＋ MM 후속 적기</span> 로 한 줄씩 직접 적습니다. 종류(코멘트·다음 마일스톤·고칠 것·새 모델 제안·분석 계획·기타)를 고르고 엔터.</li>
+<li>다음 MM 이나 내 GRM 발표 전날·당일에 맨 위 한 줄에 '미팅 후속 n' 이 뜹니다. 누르면 그날은 사라지고 카드가 펼쳐집니다.</li>
+<li>항목 내용은 본인과 교수님 화면에만 보이고, 관제탑·Members 탭 같은 다른 화면에는 사람별 개수만 보입니다. 이니셜을 확인하지 않은 맥에서는 개수만 보입니다.</li>
+<li>'남은 ?' 가 보이면 연구실 공용 저장소(NAS) 연결을 확인합니다. 연결되지 않은 동안에는 체크 단추가 잠깁니다.</li>
+<li>끝남·아님을 누르고 6초 안에 앱을 끄면 저장되지 않습니다. 다시 켜서 한 번 더 누릅니다.</li>
+</ol>
+</div>
+</details>
+
+<details>
 <summary><span class="chev"></span>실제 자료와 예시로 넣어 둔 것</summary>
 <div class="body">
 <table>
@@ -114,6 +141,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <tr><td>일정, 마감까지 남은 시간</td><td>구글 캘린더 · Notion 일정표</td><td><span class="tag">실제</span></td></tr>
 <tr><td>GRM 순번, 회의록 초안, Paper Blitz 기록</td><td>Notion · 녹취 요약 · 발표 파일</td><td><span class="tag">실제</span> 매주 자동 정리</td></tr>
 <tr><td>그랜트·학회 마감, 학회 관심자, 리마인더</td><td>연구실 일정 파일 · Notion 학회 목록</td><td><span class="tag">실제</span></td></tr>
+<tr><td>미팅 후속 제안·체크</td><td>GRM 회의록 녹취 요약 · MM 발표 파일 · 본인 체크</td><td><span class="tag">실제</span> 하루 한 번 새로 뽑음</td></tr>
 <tr><td>진행·준비 중 실험(Prolific)</td><td>Prolific 연구 목록</td><td><span class="tag">실제</span> 진행·준비 중만</td></tr>
 <tr><td>분야 최근 이슈(연구 탭)</td><td>bioRxiv neuroscience, 하루 두 번, 관심 주제 초안으로 거름</td><td><span class="tag">실제</span> 최근 7일 새 프리프린트</td></tr>
 <tr><td>Members 탭 논문 반응 열</td><td>Notion 논문 추천 댓글, 최근 28일</td><td><span class="tag">실제</span> 화면에 '실제'로 표시</td></tr>
@@ -130,10 +158,11 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.40.0, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.41.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>
+<tr><td>미팅 후속에 '?' 가 보임, 체크 단추가 잠김</td><td>연구실 공용 저장소(NAS)를 읽지 못한 것입니다. Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span> 로 다시 연결하면 다음 갱신(10분 안)이나 <span class="kbd">r</span> 키로 돌아옵니다. 체크한 기록은 지워지지 않습니다.</td></tr>
 <tr><td>처음 30초 동안 '불러오는 중…'</td><td>정상입니다. 캘린더와 Notion 을 처음 읽는 중입니다.</td></tr>
 <tr><td>그 밖의 문제·바라는 점</td><td>GitHub csnl-admin 이슈 #21 에 적거나 봇 DM 에 답글로 남기면 바로 반영합니다. 터미널에 나온 글을 그대로 붙여 주시면 빠릅니다.</td></tr>
 </table>

@@ -190,6 +190,8 @@ struct UpcomingEventsCard: View {
 struct GRMOrderView: View {
     @ObservedObject var model: NotionHubModel
     let notionURL: URL?
+    /// 전체 지도(GRM 주간 뷰 — 기본) · 한 줄(위젯 'CSNL GRM' 탭, 0.41.0 C6 R2 — '지난 GRM 을 너무 확대할 필요 없음')
+    var mapDetail = true
 
     var body: some View {
         ScrollView(.vertical) {
@@ -205,8 +207,8 @@ struct GRMOrderView: View {
                 }
                 rotation
                 schedule
-                // 지난 회차 자료 — 점 행렬 (0.40.0 C6, A6). 'CSNL GRM' 탭과 grm 뷰가 같이 쓴다
-                GRMMapView(model: model)
+                // 지난 회차 자료 — 점 행렬 (0.40.0 C6, A6)은 GRM 주간 뷰에만, 'CSNL GRM' 탭은 이번 주·지난주 한 줄 (0.41.0 C6)
+                if mapDetail { GRMMapView(model: model) } else { GRMMapSummaryLine(model: model) }
             }
             .padding(16)
         }

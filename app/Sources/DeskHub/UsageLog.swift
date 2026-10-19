@@ -5,6 +5,7 @@ import Foundation
 // 쓰는 곳: ~/Library/Application Support/DeskHub/UsageLog.jsonl (이 맥에만, NAS·네트워크로 보내지 않음). 이니셜만, 내용(제목)은 안 씀.
 // 한 줄 = {"t": ISO, "view": "tower", "kind": …, "ms": 뷰를 띄운 뒤 첫 행동까지, "me": "JOP"(이 맥의 보기 렌즈), "dev": 1(개발·시험 실행)}
 // kind (실제 호출과 같게, 0.40.0 C2): view · open · ack · done · snooze · key · interest · tab-research · talk
+//   · fu-done · fu-dismiss · fu-confirm · fu-add (미팅 후속, 0.41.0 C2 — 항목 글은 쓰지 않음)
 //   · panel(+ "panel": 패널 id — 허브 '더 보기' 키·관제탑 'tower:<id>'·band·grm-map·exp-keys) · search(횟수만, 검색어 없음) · render(첫 그림 ms, M5)
 // dev = DESKHUB_ 환경변수가 있거나 실행 파일이 /Applications 밖 — 지표(M5·M6)에서 뺀다
 // `DeskHub --usage <dir>` → 뷰별 표시 횟수·첫 행동까지 중앙값·행동 종류 요약.

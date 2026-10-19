@@ -115,11 +115,11 @@ extension NotionHubModel {
 // MARK: - 카드 출처 캡션 (CardMeta 레지스트리 — 허브 데이터 카드 14, 메일 초안은 도구라 제외)
 
 enum CardMetas {
-    /// 허브 데이터 카드 (정의서 CARD-<id>) — 윗줄 3 · 열1 3 · 열2 4 · 열3 3 + 장비(C5)
-    static let hub = ["grm", "nownext", "members", "papers", "preprints", "apps", "reminders", "experiments", "equipment", "events", "grants", "minutes", "blitz", "conferences"]
+    /// 허브 데이터 카드 (정의서 CARD-<id>) — 윗줄 3 · 열1 3 · 열2 4 · 열3 3 + 장비(C5) + 미팅 후속(0.41.0 C3)
+    static let hub = ["grm", "nownext", "members", "papers", "preprints", "apps", "reminders", "experiments", "equipment", "events", "grants", "minutes", "blitz", "conferences", "followups"]
     /// 관제탑 레일 id → 카드 id (도구·자료 상태 제외)
     static func cardID(forRail id: String) -> String? {
-        ["papers", "minutes", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"].contains(id) ? id : nil
+        ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"].contains(id) ? id : nil
     }
 
     /// '기준' 글 — 오늘이면 HH:mm, 아니면 M.d (실제 시각 기준, 없으면 —)
@@ -167,6 +167,10 @@ enum CardMetas {
         case "minutes": return text(source: "Meeting Notes", at: at, n: m.minutes.count, card: id)
         case "blitz": return text(source: m.blitzSource == "Notion" ? "Paper Blitz Archive" : "NAS 덱", at: at, n: m.blitz.count, card: id)
         case "conferences": return text(source: "Conferences·학회 파일", at: at, n: m.conferences.count, card: id)
+        // 미팅 후속 (0.41.0 C3) — 기준 = 추출 생성 시각, n = 남은(보기 내용이면 내 것, 아니면 연구실). 못 읽으면 —
+        case "followups":
+            let n: Int? = m.followupRead == .ok ? (m.followupView == .full ? m.myFollowupOpen : m.followupOpen(who: nil).count) : nil
+            return text(source: "미팅 후속 추출·상태 파일", at: m.followupsGenerated, n: n, card: id)
         default: return text(source: "—", at: nil, n: nil, card: id)
         }
     }

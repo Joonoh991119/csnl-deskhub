@@ -1,0 +1,216 @@
+{
+ "schema": 1,
+ "generated": "2026-10-15T09:00:00+09:00",
+ "today": "2026-10-15",
+ "rules": "fu-1",
+ "counts": {
+  "meetings": 4,
+  "transcripts": 4,
+  "mm_files": 2,
+  "items": 15,
+  "new": 15,
+  "dropped": {
+   "privacy": 0,
+   "short": 0,
+   "dup": 0,
+   "outside": 0
+  }
+ },
+ "items": [
+  {
+   "id": "fu-888c168118b1",
+   "who": "JOP",
+   "meeting": "GRM",
+   "meeting_date": "2026-10-07",
+   "kind": "분석 계획",
+   "text": "가짜 시험 — 맥락 안에서 다시 분석할 필요",
+   "rule": "head-claim",
+   "source": {
+    "notion": "14c11a3372778a73d1d4fee4b55b688c"
+   },
+   "line": 11
+  },
+  {
+   "id": "fu-918e7c9f18c8",
+   "who": "JOP",
+   "meeting": "GRM",
+   "meeting_date": "2026-10-07",
+   "kind": "고칠 것",
+   "text": "색 표시 — 가짜 시험 항목, 제거 쪽으로 수정",
+   "rule": "head-claim",
+   "source": {
+    "notion": "14c11a3372778a73d1d4fee4b55b688c"
+   },
+   "line": 10
+  },
+  {
+   "id": "fu-929e0a8be16a",
+   "who": "JOP",
+   "meeting": "MM",
+   "meeting_date": "2026-10-02",
+   "kind": "코멘트",
+   "text": "가짜 시험 MM — 실험 순서 설명을 한 장으로",
+   "rule": "mm-slide",
+   "source": {
+    "nas": "/Volumes/CSNL_new/MM/JOP/MM261002_JOP.pptx"
+   },
+   "line": 13
+  },
+  {
+   "id": "fu-03c41cac46e4",
+   "who": "SMJ",
+   "meeting": "MM",
+   "meeting_date": "2026-09-30",
+   "kind": "다음 마일스톤",
+   "text": "가짜 시험 SMJ — 단계별 기준 정하기",
+   "rule": "mm-slide",
+   "source": {
+    "nas": "/Volumes/CSNL_new/MM/SMJ/MM260930_SMJ.pptx"
+   },
+   "line": 17
+  },
+  {
+   "id": "fu-093ebff428f2",
+   "who": "SJK",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-30",
+   "kind": "고칠 것",
+   "text": "가짜 시험 SJK — 서론 둘째 문단 다듬기",
+   "rule": "sec",
+   "source": {
+    "notion": "82e9b2a4f9df0251f2943e2433d6d5a3"
+   },
+   "line": 19
+  },
+  {
+   "id": "fu-03729fdfc207",
+   "who": "BHL",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-30",
+   "kind": "코멘트",
+   "text": "가짜 시험 BHL — 리뷰어 질문 표로 정리",
+   "rule": "sec",
+   "source": {
+    "notion": "82e9b2a4f9df0251f2943e2433d6d5a3"
+   },
+   "line": 14
+  },
+  {
+   "id": "fu-387cf124ab30",
+   "who": "MSY",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-23",
+   "kind": "분석 계획",
+   "text": "가짜 시험 MSY — 회귀 기울기 조건별로",
+   "rule": "sec",
+   "source": {
+    "notion": "0a83d8c7575a3e3f35cf90e3943cac00"
+   },
+   "line": 18
+  },
+  {
+   "id": "fu-4fe0f0aee905",
+   "who": "JSL",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-23",
+   "kind": "기타",
+   "text": "가짜 시험 JSL — 자극 목록 정리",
+   "rule": "sec",
+   "source": {
+    "notion": "0a83d8c7575a3e3f35cf90e3943cac00"
+   },
+   "line": 20
+  },
+  {
+   "id": "fu-89c4ec7e5df2",
+   "who": "JOP",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-23",
+   "kind": "다음 마일스톤",
+   "text": "가짜 시험 — 다음 주까지 파일럿 정리",
+   "rule": "sec",
+   "source": {
+    "notion": "0a83d8c7575a3e3f35cf90e3943cac00"
+   },
+   "line": 12
+  },
+  {
+   "id": "fu-8f9fa90d5598",
+   "who": "JHR",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-23",
+   "kind": "다음 마일스톤",
+   "text": "가짜 시험 JHR — 시각장 지도 다음 단계",
+   "rule": "sec",
+   "source": {
+    "notion": "0a83d8c7575a3e3f35cf90e3943cac00"
+   },
+   "line": 22
+  },
+  {
+   "id": "fu-8b40546ba8f9",
+   "who": "SYJ",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-16",
+   "kind": "코멘트",
+   "text": "가짜 시험 SYJ — 발표 순서 피드백",
+   "rule": "sec",
+   "source": {
+    "notion": "cecd4bf2ea90266445e526d01ff7c487"
+   },
+   "line": 21
+  },
+  {
+   "id": "fu-52442736163c",
+   "who": "MJC",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-16",
+   "kind": "기타",
+   "text": "가짜 시험 MJC — 장비 예약 확인",
+   "rule": "sec",
+   "source": {
+    "notion": "cecd4bf2ea90266445e526d01ff7c487"
+   },
+   "line": 23
+  },
+  {
+   "id": "fu-d0ccc3ecb2fe",
+   "who": "JYK",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-16",
+   "kind": "새 모델 제안",
+   "text": "가짜 시험 JYK — 기억 모듈 모델 하나 더",
+   "rule": "sec",
+   "source": {
+    "notion": "cecd4bf2ea90266445e526d01ff7c487"
+   },
+   "line": 16
+  },
+  {
+   "id": "fu-43b94ce38f82",
+   "who": "BYL",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-16",
+   "kind": "기타",
+   "text": "가짜 시험 BYL — 그림 축 눈금 다시",
+   "rule": "sec",
+   "source": {
+    "notion": "cecd4bf2ea90266445e526d01ff7c487"
+   },
+   "line": 15
+  },
+  {
+   "id": "fu-fb22e689a71a",
+   "who": "",
+   "meeting": "GRM",
+   "meeting_date": "2026-09-16",
+   "kind": "기타",
+   "text": "가짜 시험 담당 미정 — 공용 자료 정리",
+   "rule": "sec",
+   "source": {
+    "notion": "cecd4bf2ea90266445e526d01ff7c487"
+   },
+   "line": 24
+  }
+ ]
+}

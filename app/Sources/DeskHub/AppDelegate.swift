@@ -320,6 +320,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // talk: 는 시험용 키라 드라이런 훅(DESKHUB_NOTION_WRITE=dry:)이 없으면 아무것도 쓰지 않고 삐 — Notion 댓글은 API 로 지울 수 없다 (검증 1).
         // talk-undo 는 대기 중인 쓰기를 취소만 하므로(쓰기 없음) 막지 않는다. 사람이 누르는 단추 경로는 그대로
         else if k == "talk-undo" { if let m = hubs.values.first, let p = m.talkCommits.pending.last { m.talkCommits.undo(p.id) } }
+        // 미팅 후속 (0.41.0 C2) — fu-done:<id 앞>·fu-dismiss:<id 앞>(6초)·fu-confirm:<id 앞>(즉시)·fu-undo·fu-add:<종류>|<글>.
+        // 시험용 키라 DESKHUB_FOLLOWUPS 훅이 없으면 삐만 — NAS 원본에 쓰지 않게(talk: 와 같은 이유). 사람이 누르는 단추 경로는 그대로
+        // 상태 한 줄 미팅 후속 칩 '그날 확인' (0.41.0 C4) — 이 맥 UserDefaults 만 쓰므로 훅 없이도 (칩 클릭과 같은 경로)
+        else if k == "fu-ack" { hubs.values.first?.ackFollowupReminder() }
+        else if k.hasPrefix("fu-") {
+            guard FollowupsFile.hookDir != nil, let m = hubs.values.first else { NSSound.beep(); return }
+            m.followupKey(k)
+        }
         else if k.hasPrefix("talk:") {
             guard NotionDryRun.path != nil else { NSSound.beep(); return }
             let q = String(k.dropFirst("talk:".count)).lowercased()
@@ -374,6 +382,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             out += ["[배지]"] + SeenCards.shared.dumpLines(m) + [""]
             // [장비] — 장비 6줄 '장비 · 지금 · 다음'(내 것) + 닫기 누락 (0.40.0 C5, A5 — EquipmentCard 와 같은 EquipmentBoard 함수)
             out += ["[장비]"] + m.equipmentDumpLines() + [""]
+            // [미팅 후속] — 읽기·생성·항목 / 나·보기·남은·다음 미팅·리마인드 / (보기 내용·읽기만) 항목 줄 / 사람별 (0.41.0 C2, R1 — MeetingFollowups.swift 같은 함수)
+            out += ["[미팅 후속]"] + m.followupDumpLines() + [""]
             // [GRM 자료 지도] — 머리(날짜 대응·열별 채움·?) · 보이는 행 · 순번 (0.40.0 C6, A6 — GRMMapView 와 같은 GRMMap 함수)
             out += ["[GRM 자료 지도]"] + GRMMap.dumpLines(m) + [""]
             // [논문 추천] — PaperRecBoard 가 그리는 제목·저자 그대로 (R-31)

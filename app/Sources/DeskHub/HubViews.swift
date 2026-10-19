@@ -177,6 +177,8 @@ struct MeView: View {
                         myTurn
                         myProjects
                         myBlitz
+                        // 미팅 후속 펼친 판 (0.41.0 C3) — 내 Blitz 와 리마인더 사이
+                        FollowupsCard(model: model)
                         RemindersSection(model: model)
                     }
                 }

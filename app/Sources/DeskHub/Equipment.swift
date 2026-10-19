@@ -98,10 +98,11 @@ extension NotionHubModel {
     }
     /// 닫기 누락 실측 — Resource 조회가 성공했을 때만(실패면 nil → 위생은 집계 값)
     var equipmentOverdueCount: Int? { equipmentLoaded ? EquipmentBoard.overdue(equipment, today: today, me: HubPrefs.me).n : nil }
-    /// 배지 카드(C5) — equip-mine
-    var extraSeenCards: [String] { ["equip-mine"] }
-    /// equip-mine — 내 예약: 행 id → 시작·끝·상태·장비 해시
+    /// 배지 카드(C5) — equip-mine · fu-mine(미팅 후속 내 제안, 0.41.0 C3)
+    var extraSeenCards: [String] { ["equip-mine", "fu-mine"] }
+    /// equip-mine — 내 예약: 행 id → 시작·끝·상태·장비 해시 · fu-mine — followupSeenRows
     func seenRows(_ card: String, me: String) -> [String: String]? {
+        if card == "fu-mine" { return followupSeenRows(me: me) }
         guard card == "equip-mine", equipmentLoaded else { return nil }
         var out: [String: String] = [:]
         for r in equipment where !me.isEmpty && r.user.uppercased() == me.uppercased() {

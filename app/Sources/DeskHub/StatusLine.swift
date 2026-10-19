@@ -103,12 +103,14 @@ enum StatusLine {
     static func measure(_ s: String, size: CGFloat) -> CGFloat {
         ceil((s as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: size, weight: .semibold)]).width)
     }
-    static func variant(width: CGFloat, scale: CGFloat, parts: Parts, prefix: String = "") -> (variant: Variant, fits: Bool) {
+    static func variant(width: CGFloat, scale: CGFloat, parts: Parts, chips: [String] = []) -> (variant: Variant, fits: Bool) {
         // 뷰와 같은 자리 — 좌우 여백 24 + 오른쪽 띠 화살표(HStack 간격 8 이 Spacer 양쪽에 두 번 = 16, 10pt 굵은 글리프 ≈ 11pt × 배율 → 12 × 배율)
-        // + 굵은 숫자 여유 4 + (있으면) '내 GRM 바뀜' 칩. 예전 10×배율+8 은 600pt·1.0× 에서 L 을 '맞음'으로 고르고 실제로는 잘렸다 (리뷰, 검증 1)
+        // + 굵은 숫자 여유 4 + 칩들(칩마다 글 폭 + 좌우 안쪽 16 + 간격 8 — '내 GRM 바뀜'·'미팅 후속 n · 내일 GRM', 0.41.0 C4). 칩이 먼저 자리를 받는다.
+        // 예전 10×배율+8 은 600pt·1.0× 에서 L 을 '맞음'으로 고르고 실제로는 잘렸다 (리뷰, 검증 1)
         let chevron = 16 + 12 * scale
         let slack: CGFloat = 8  // semibold 측정과 실제(보통 글 + 굵은 숫자) 차 최대 8pt — 809pt·1.3× 에서 L 오판 (리뷰 2)
-        let avail = width - horizontalPadding - chevron - slack - (prefix.isEmpty ? 0 : measure(prefix, size: 12 * scale) + 16 + 8)
+        let chipW = chips.reduce(CGFloat(0)) { $0 + measure($1, size: 12 * scale) + 16 + 8 }
+        let avail = width - horizontalPadding - chevron - slack - chipW
         let order: [Variant] = width < 420 ? [.m, .s] : [.l, .m, .s]
         for v in order where measure(text(v, parts), size: 13 * scale) <= avail { return (v, true) }
         return (.s, false)
@@ -145,6 +147,24 @@ enum StatusLine {
             }.joined(separator: " · "))
         }
         if (SeenCards.shared.counts["grm-mine"] ?? 0) > 0 { out.append("고정 칩: 내 GRM 바뀜 · 확인") }
+        // 칩 (0.41.0 C4) — 뷰와 같은 chips(m): '내 GRM 바뀜 · 확인' · '미팅 후속 n · 내일 GRM'. 없으면 '—'
+        let cs = chips(m)
+        out.append("칩: " + (cs.isEmpty ? "—" : cs.map(\.text).joined(separator: " · ")))
+        return out
+    }
+
+    // MARK: 칩 (0.41.0 C4, R1-e)
+    struct Chip: Identifiable, Equatable { let id: String; let text: String; let help: String }
+    /// 맨 위 한 줄 왼쪽 칩 — 'grm-mine'(내 GRM 바뀜) + 'fu'(미팅 후속 n · 내일 GRM — 다음 MM·GRM 전날·당일, 보기 내용·남은 > 0·그날 미확인일 때만).
+    /// fu 칩은 수만 담으므로 관제탑(quiet)에도 같은 칩이 뜬다. 적색 아님
+    @MainActor static func chips(_ m: NotionHubModel) -> [Chip] {
+        var out: [Chip] = []
+        if (SeenCards.shared.counts["grm-mine"] ?? 0) > 0 {
+            out.append(Chip(id: "grm-mine", text: "내 GRM 바뀜 · 확인", help: "내가 발표자인 GRM 의 날짜·종류가 바뀜 — 누르면 확인(이 맥)"))
+        }
+        if let r = m.followupReminder(), let n = m.myFollowupOpen {
+            out.append(Chip(id: "fu", text: "미팅 후속 \(n) · \(r)", help: "다음 미팅 전에 남은 미팅 후속 \(n)개 — 누르면 오늘은 확인(이 맥), 허브에서는 카드를 펼침"))
+        }
         return out
     }
     /// text.txt [8주 띠] — W1~W8 'M.d–M.d · ◆ 제목 M.d · ◇ … · GRM 이니셜' + 미정 줄
@@ -184,17 +204,17 @@ struct StatusLineView: View {
     var body: some View {
         GeometryReader { g in
             let p = StatusLine.parts(model)
-            let changed = (seen.counts["grm-mine"] ?? 0) > 0
-            let chipText = "내 GRM 바뀜 · 확인"
-            let v = StatusLine.variant(width: g.size.width, scale: HubDisplay.scale, parts: p, prefix: changed ? chipText : "")
+            let chips = StatusLine.chips(model)
+            let v = StatusLine.variant(width: g.size.width, scale: HubDisplay.scale, parts: p, chips: chips.map(\.text))
             HStack(spacing: 8) {
-                if changed {
-                    Button { seen.acknowledge("grm-mine") } label: {
-                        Text(chipText).font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                ForEach(chips) { c in
+                    Button { tap(c) } label: {
+                        // 미팅 후속 칩은 Hub.ink 굵게(적색 아님), 내 GRM 바뀜은 Hub.text2 — 바탕은 둘 다 Hub.fillNeutral
+                        Text(c.text).font(.hub(12, weight: .semibold)).foregroundStyle(c.id == "fu" ? Hub.ink : Hub.text2).lineLimit(1).fixedSize()
                             .padding(.horizontal, 8).padding(.vertical, 2)
                             .background(Capsule().fill(Hub.fillNeutral))
                     }
-                    .buttonStyle(.plain).help("내가 발표자인 GRM 의 날짜·종류가 바뀜 — 누르면 확인(이 맥)")
+                    .buttonStyle(.plain).help(c.help)
                 }
                 line(StatusLine.segments(v.variant, p, quiet: quiet)).lineLimit(1)
                 Spacer(minLength: 0)
@@ -219,6 +239,17 @@ struct StatusLineView: View {
         }
         .frame(height: Self.height)
         .zIndex(10)
+    }
+
+    /// 칩 클릭 1회 — 내 GRM 바뀜은 확인, 미팅 후속은 그날 확인 + (허브면) 카드 제자리 펼침
+    private func tap(_ c: StatusLine.Chip) {
+        switch c.id {
+        case "grm-mine": seen.acknowledge("grm-mine")
+        case "fu":
+            model.ackFollowupReminder()
+            if !quiet, !HubExpansion.shared.isOpen("followups") { HubExpansion.shared.toggle("followups") }
+        default: break
+        }
     }
 
     private func line(_ segs: [(String, StatusLine.Role)]) -> Text {
@@ -296,7 +327,7 @@ struct EightWeekBand: View {
 final class SeenCards: ObservableObject {
     static let shared = SeenCards()
     /// 화면에 '새 n' 을 내는 카드 — events 는 계산·덤프만(랩 전체 변경 수는 화면 숫자로 내지 않음, §3)
-    static let shown: Set<String> = ["grm-mine", "rem-mine", "equip-mine"]
+    static let shown: Set<String> = ["grm-mine", "rem-mine", "equip-mine", "fu-mine"]
     @Published private(set) var counts: [String: Int] = [:]
     /// 이번 실행에서 기준선을 새로 만든 카드
     private(set) var created: Set<String> = []

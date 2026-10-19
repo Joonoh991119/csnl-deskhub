@@ -1,0 +1,52 @@
+# 미팅 후속 판정 (0.41.0 C2, R1 — FollowupLogic, 화면·덤프와 같은 함수). 종류<TAB>입력<TAB>기대. 시험 로스터·별칭은 TextCheck.testRoster·testAliases
+# fu-status: 상태 행 → 실효 상태 (행 없음·모르는 값 = proposed)
+fu-status	state=done	done
+fu-status	state=confirmed	confirmed
+fu-status	state=dismissed	dismissed
+fu-status	state=	proposed
+fu-status	state=xyz	proposed
+# fu-visible: me=;chosen=;who= → 내용 · 읽기 · 수만 (SK→SJK 별칭, 교수님 SL 은 읽기, 미확인은 수만, BHL≠BYL)
+fu-visible	me=JOP;chosen=1;who=JOP	내용
+fu-visible	me=jop;chosen=1;who=JOP	내용
+fu-visible	me=SK;chosen=1;who=SJK	내용
+fu-visible	me=SJK;chosen=1;who=SK	내용
+fu-visible	me=SL;chosen=1;who=BHL	읽기
+fu-visible	me=JOP;chosen=0;who=JOP	수만
+fu-visible	me=BHL;chosen=1;who=BYL	수만
+fu-visible	me=BYL;chosen=1;who=BHL	수만
+fu-visible	me=JOP;chosen=1;who=	수만
+fu-visible	me=;chosen=1;who=JOP	수만
+fu-visible	me=SL;chosen=0;who=BHL	수만
+fu-visible	me=SL;chosen=1;who=	읽기
+# fu-choices: Members 이니셜 → 이니셜 확인 줄 선택지 (교수님 SL 은 Members 에 없어 끝에 한 번, 멤버 못 읽었으면 —)
+fu-choices	JOP,BHL,BYL	JOP · BHL · BYL · SL
+fu-choices	JOP,SL	JOP · SL
+fu-choices		—
+# fu-count: who:상태 쉼표 목록 → 사람별 남은 수 (많은 순, 같으면 이니셜, 0 생략, 미정은 끝)
+fu-count	BHL:proposed,BHL:done,JOP:confirmed,BYL:dismissed	BHL 1 · JOP 1
+fu-count	JOP:proposed,JOP:confirmed,JOP:done,BHL:proposed	JOP 2 · BHL 1
+fu-count	SK:proposed,SJK:confirmed	SJK 2
+fu-count	미정:proposed,JOP:dismissed	미정 1
+fu-count	JOP:done,BHL:dismissed	—
+fu-count	BYL:proposed,BHL:proposed,BYL:xyz	BYL 2 · BHL 1
+# fu-remind: today=;mm=;grm=;open=;ack= → 칩 글 또는 — (한국시간 D-1·D-0 만)
+fu-remind	today=2026-10-13;mm=;grm=2026-10-15;open=3;ack=	—
+fu-remind	today=2026-10-14;mm=;grm=2026-10-15;open=3;ack=	내일 GRM
+fu-remind	today=2026-10-15;mm=;grm=2026-10-15;open=3;ack=	오늘 GRM
+fu-remind	today=2026-10-16;mm=;grm=2026-10-15;open=3;ack=	—
+fu-remind	today=2026-10-14;mm=2026-10-15;grm=2026-10-15;open=2;ack=	내일 MM·GRM
+fu-remind	today=2026-10-14;mm=2026-10-14;grm=2026-10-15;open=2;ack=	오늘 MM
+fu-remind	today=2026-10-14;mm=2026-10-15;grm=2026-10-21;open=1;ack=	내일 MM
+fu-remind	today=2026-10-14;mm=;grm=2026-10-15;open=0;ack=	—
+fu-remind	today=2026-10-14;mm=;grm=2026-10-15;open=3;ack=2026-10-14	—
+fu-remind	today=2026-10-14;mm=;grm=2026-10-15;open=3;ack=2026-10-13	내일 GRM
+fu-remind	today=2026-12-31;mm=2027-01-01;grm=;open=1;ack=	내일 MM
+# fu-mm: me=;today=;events=날짜 제목|… → 내 다음 MM 날짜 또는 — ('MMR' 부분 일치·다른 이니셜·지난 일정은 아님)
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-21 MM JOP|2026-10-28 MM JOP	2026-10-21
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-16 MMR JOP|2026-10-23 MM: JOP	2026-10-23
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-16 MM BHL	—
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-14 MM JOP	—
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-15 Milestone (JOP)	2026-10-15
+fu-mm	me=SJK;today=2026-10-15;events=2026-10-20 SK 마일스톤 미팅	2026-10-20
+fu-mm	me=BHL;today=2026-10-15;events=2026-10-20 MM BYL|2026-10-22 MM, BHL	2026-10-22
+fu-mm	me=JOP;today=2026-10-15;events=2026-10-20 JOP 개인 면담	—

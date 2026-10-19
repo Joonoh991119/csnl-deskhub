@@ -162,7 +162,60 @@ enum GRMMap {
         ((0..<columns.count).map { c in rows.filter { $0.marks[c] == .yes }.count }, rows.reduce(0) { $0 + $1.marks.filter { $0 == .unknown }.count })
     }
 
-    /// text.txt [GRM 자료 지도] — 머리 줄 · 보임 · 행 'M.d · 이니셜 · ●○●–●[ · 빈칸 n]' · 순번 줄
+    // MARK: 허브 한 줄 (0.41.0 C6, R2 — 'CSNL GRM' 탭은 이번 주·지난주 한 줄, 상세 지도는 GRM 주간 뷰에만)
+
+    /// 한 주의 회차 — past = 지난 회차(점 5개 있음), 아니면 예정
+    struct WeekCell: Equatable { let date: Date; let who: String; let marks: [Mark]?; let past: Bool }
+    /// 이번 주·지난주(한국시간 월~일, MetricDefs.week) — 그 주의 지난 회차(rows, 날짜 < 오늘) 중 가장 늦은 것,
+    /// 없으면 그 주 오늘 이후 예정(schedule) 중 가장 이른 것('예정 M.d'), 둘 다 없으면 nil('—'). 순수 함수 — text-check 'grmweek'
+    static func weekSummary(rows: [(date: Date, who: String, marks: [Mark])], schedule: [Date], today: Date) -> (this: WeekCell?, last: WeekCell?) {
+        let cal = MetricDefs.kst
+        let t0 = cal.startOfDay(for: today)
+        func cell(_ weekStart: Date) -> WeekCell? {
+            let end = cal.date(byAdding: .day, value: 7, to: weekStart)!
+            func inWeek(_ d: Date) -> Bool { d >= weekStart && d < end }
+            if let r = rows.filter({ inWeek($0.date) && cal.startOfDay(for: $0.date) < t0 }).max(by: { $0.date < $1.date }) {
+                return WeekCell(date: r.date, who: r.who, marks: r.marks, past: true)
+            }
+            if let d = schedule.filter({ inWeek($0) && cal.startOfDay(for: $0) >= t0 }).min() {
+                return WeekCell(date: d, who: "", marks: nil, past: false)
+            }
+            return nil
+        }
+        let thisStart = MetricDefs.week(of: today).start
+        return (cell(thisStart), cell(cal.date(byAdding: .day, value: -7, to: thisStart)!))
+    }
+    static func weekText(_ c: WeekCell?) -> String {
+        guard let c else { return "—" }
+        let d = MetricDefs.ymd(c.date).split(separator: "-").dropFirst().map { String(Int($0) ?? 0) }.joined(separator: ".")
+        if !c.past { return "예정 " + d }
+        return [d, c.who.isEmpty ? "미정" : c.who, (c.marks ?? []).map(\.rawValue).joined()].joined(separator: " ")
+    }
+    /// '이번 주 10.14 SMJ ●●●●○ · 지난주 10.7 JOP ●●●●○' — 뷰 도움말·덤프 '허브 한 줄:' 이 같은 글
+    static func weekLine(this: WeekCell?, last: WeekCell?) -> String { "이번 주 " + weekText(this) + " · 지난주 " + weekText(last) }
+    /// 모델에서 — rows(m) 와 올해 GRM Schedule 전체
+    @MainActor static func weekSummary(_ m: NotionHubModel) -> (this: WeekCell?, last: WeekCell?) {
+        weekSummary(rows: rows(m).map { ($0.slot.date, $0.who, $0.marks) }, schedule: m.grmAll.map(\.date), today: m.today)
+    }
+    /// text-check 'grmweek' — 'today=;rows=yyyy-MM-dd 이니셜 ●○●–?|…;sched=yyyy-MM-dd|…' → weekLine
+    static func weekCheck(_ input: String) -> String {
+        var k: [String: String] = [:]
+        for part in input.components(separatedBy: ";") {
+            let p = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            if p.count == 2 { k[p[0].trimmingCharacters(in: .whitespaces)] = p[1] }
+        }
+        guard let today = MetricDefs.parseDay(k["today"] ?? "") else { return "(입력 형식)" }
+        let rows: [(date: Date, who: String, marks: [Mark])] = (k["rows"] ?? "").components(separatedBy: "|").compactMap { r in
+            let f = r.split(separator: " ").map(String.init)
+            guard f.count == 3, let d = MetricDefs.parseDay(f[0]) else { return nil }
+            return (d, f[1], f[2].map { Mark(rawValue: String($0)) ?? .unknown })
+        }
+        let sched = (k["sched"] ?? "").components(separatedBy: "|").compactMap { MetricDefs.parseDay($0) } + rows.map(\.date)
+        let s = weekSummary(rows: rows, schedule: sched, today: today)
+        return weekLine(this: s.this, last: s.last)
+    }
+
+    /// text.txt [GRM 자료 지도] — 머리 줄 · 허브 한 줄 · 보임 · 행 'M.d · 이니셜 · ●○●–●[ · 빈칸 n]' · 순번 줄
     @MainActor static func dumpLines(_ m: NotionHubModel) -> [String] {
         let rs = rows(m)
         let fl = fills(rs)
@@ -173,7 +226,9 @@ enum GRMMap {
         head += " · " + zip(columns, fl.filled).map { "\($0.0) \($0.1)/\(rs.count)" }.joined(separator: " · ") + " · ? \(fl.unknown)"
         let open = HubExpansion.shared.isOpen("grm-map")
         let shown = shown(rs, open: open)
-        var out = [head, "보임 \(shown.count)/\(rs.count) · 펼침 " + (open ? "on" : "off") + (m.grmScan.map { " · NAS 목록 " + Hub.time($0.scannedAt) } ?? "")]
+        let wk = weekSummary(m)
+        var out = [head, "허브 한 줄: " + weekLine(this: wk.this, last: wk.last),
+                   "보임 \(shown.count)/\(rs.count) · 펼침 " + (open ? "on" : "off") + (m.grmScan.map { " · NAS 목록 " + Hub.time($0.scannedAt) } ?? "")]
         out += shown.map { r in "\(Hub.shortDay(r.slot.date)) · \(r.who) · " + r.marks.map(\.rawValue).joined() + (r.mine ? " · 빈칸 \(r.blanks)" : "") }
         out.append("순번:")
         out += GRMRotation.rows(m).map { r in "\(r.order) · \(r.initials) · 지난 \(r.last) · 다음 \(r.next)" + (r.isNext ? " (다음 발표)" : "") }
@@ -299,12 +354,80 @@ struct GRMMapView: View {
         switch m { case .yes: return "있음"; case .no: return "없음"; case .na: return "해당 없음"; case .unknown: return "판정 불가" }
     }
 
-    @ViewBuilder private func markView(_ m: GRMMap.Mark) -> some View {
-        switch m {
+    private func markView(_ m: GRMMap.Mark) -> some View { GRMMarkDot(mark: m, dot: dot) }
+}
+
+/// 점 하나 — 지도 칸과 허브 한 줄이 같은 모양 (● Hub.ink · ○ Hub.text3 테두리 · – 선 · ? 글자). 적색 없음
+struct GRMMarkDot: View {
+    let mark: GRMMap.Mark
+    let dot: CGFloat
+    var body: some View {
+        switch mark {
         case .yes: Circle().fill(Hub.ink).frame(width: dot, height: dot)
         case .no: Circle().stroke(Hub.text3, lineWidth: 1).frame(width: dot, height: dot)
         case .na: Rectangle().fill(Hub.divider).frame(width: dot, height: 2)
         case .unknown: Text("?").font(.hub(11, weight: .bold)).foregroundStyle(Hub.text2)
         }
+    }
+}
+
+/// 'CSNL GRM' 탭의 자료 지도 한 줄 (0.41.0 C6, R2) — '지난 회차 자료 · 이번 주 10.14 SMJ ●●●●○ · 지난주 10.7 JOP ●●●●○ · GRM 주간에서 자세히 ↗'.
+/// 점 순서는 초록·슬라이드·녹취·회의록·PB(도움말·접근성 라벨에 열 이름). '↗' 한 번 = 첫 탭 + GRM 주간 뷰(전체 지도)
+struct GRMMapSummaryLine: View {
+    @ObservedObject var model: NotionHubModel
+    private var dot: CGFloat { Hub.s(9) }
+
+    var body: some View {
+        let wk = GRMMap.weekSummary(model)
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { title; cell("이번 주", wk.this); cell("지난주", wk.last); Spacer(minLength: 4); link }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) { title; Spacer(minLength: 4); link }
+                HStack(spacing: 10) { cell("이번 주", wk.this); cell("지난주", wk.last); Spacer(minLength: 0) }
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
+        .help(GRMMap.weekLine(this: wk.this, last: wk.last) + " — 점: " + GRMMap.columns.joined(separator: " · "))
+    }
+
+    private var title: some View {
+        Text("지난 회차 자료").font(.hub(12, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+    }
+    private var link: some View {
+        Button {
+            KeyBus.shared.send("tab:0")
+            ViewModeStore.shared.mode = .grm
+            UsageLog.panel("grm-map")
+        } label: {
+            HStack(spacing: 3) { Text("GRM 주간에서 자세히"); Image(systemName: "arrow.up.forward") }
+                .font(.hub(11.5, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+        }
+        .buttonStyle(.plain).help("GRM 주간 뷰 — 올해 지난 회차 전체 지도")
+    }
+    @ViewBuilder private func cell(_ label: String, _ c: GRMMap.WeekCell?) -> some View {
+        HStack(spacing: 5) {
+            Text(label).font(.hub(11.5)).foregroundStyle(Hub.text3).lineLimit(1).fixedSize()
+            if let c {
+                Text((c.past ? "" : "예정 ") + Hub.shortDay(c.date)).font(.hub(12, weight: .semibold, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(c.past ? Hub.text : Hub.text2).lineLimit(1).fixedSize()
+                if c.past {
+                    Text(c.who.isEmpty ? "미정" : c.who).font(.hub(12)).foregroundStyle(Hub.text).lineLimit(1).fixedSize()
+                    HStack(spacing: 3) {
+                        ForEach(Array((c.marks ?? []).enumerated()), id: \.offset) { i, mk in
+                            GRMMarkDot(mark: mk, dot: dot)
+                                .accessibilityLabel("\(Hub.shortDay(c.date)) \(GRMMap.columns[i]) " + Self.label(mk))
+                                .help("\(GRMMap.columns[i]) " + Self.label(mk))
+                        }
+                    }
+                }
+            } else {
+                Text("—").font(.hub(12)).foregroundStyle(Hub.text3)
+            }
+        }
+        .link(c.map { _ in HubLink.notion(model.cfg.grmScheduleDB) })
+    }
+    static func label(_ m: GRMMap.Mark) -> String {
+        switch m { case .yes: return "있음"; case .no: return "없음"; case .na: return "해당 없음"; case .unknown: return "판정 불가" }
     }
 }

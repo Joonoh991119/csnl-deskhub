@@ -104,9 +104,10 @@ struct TowerView: View {
     /// 사용자가 레일을 만졌음 — 오늘(HubClock 날짜)은 자동 결정 안 함
     private func markTouched() { touchedDay = HubClock.today }
 
-    static let railOrder = ["papers", "minutes", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps", "tools", "datastate"]
+    /// 미팅 후속(0.41.0 C5)은 회의록 다음 — 13개면 half 7, 앞 열 papers…grants · 뒤 열 conferences…datastate 그대로
+    static let railOrder = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps", "tools", "datastate"]
     /// 데이터 항목(꼬리표 대상, 0.40.0 C3 M3) — 도구·자료 상태 제외
-    static let railDataItems = ["papers", "minutes", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"]
+    static let railDataItems = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"]
     /// 같은 열의 다른 펼침은 접고 이것을 편다 (열 = 레일 순서 앞 절반·뒤 절반)
     private func open(_ key: String) {
         let half = (Self.railOrder.count + 1) / 2
@@ -370,6 +371,8 @@ struct TowerView: View {
                      summary: model.papersStopped ? "새 추천 없음 (\(model.papersStoppedSince)~)" : "\(mine.count)편" + (me.isEmpty ? "" : " · \(me)") + " · 반응 없음 \(unreacted)",
                      fresh: model.cardTag("papers"), link: .notion(model.cfg.paperRecDB)),
             RailItem(id: "minutes", title: "회의록", summary: firstMin, fresh: model.cardTag("minutes"), link: .notion(model.cfg.meetingNotesDB)),
+            // 미팅 후속 (0.41.0 C5) — 사람별 남은 수만(항목 글 없음). 관련도 0 · est 0 이라 자동으로 펴지 않는다
+            RailItem(id: "followups", title: "미팅 후속", summary: model.followupRailSummary(), fresh: model.cardTag("followups"), link: nil),
             // 캘린더 첫 조회 전에는 '0건' 대신 불러오는 중 (0.37.0 C6 검증 1)
             RailItem(id: "events", title: "내일부터 \(model.cfg.eventsDays)일",
                      summary: model.todayCalendar?.isSettled == false ? "캘린더 불러오는 중…"
@@ -399,7 +402,7 @@ struct TowerView: View {
             // 학회 행마다 '관심' 단추·이니셜 칩 줄(약 18pt)이 붙는다 (0.37.0 C5, 검증 1: 단추를 칩 줄로)
             "conferences": CGFloat(min(model.conferences.count, model.cfg.conferencesCount, 8)) * (62 + 18) + 50,
             "preprints": model.preprints.isEmpty ? 0 : CGFloat(model.preprints.count) * 48 + 30,
-            "members": 340, "apps": 170, "tools": 90,
+            "members": 340, "apps": 170, "tools": 90, "followups": 0,
             // 표 행(좁은 레일은 원천·영향 카드 두 줄 ≈ 34) + 위생 줄 22 + 머리·캡션 90 (검증 1)
             "datastate": CGFloat(DataSources.catalog.count) * 34 + CGFloat(min(DataSources.hygiene(model).count, DataSources.hygieneLimit + 1)) * 22 + 90,
         ]
@@ -578,6 +581,7 @@ struct TowerView: View {
             if stretch { ScrollView(.vertical, showsIndicators: false) { ConferencesCard(model: model, maxRows: 12, quiet: true) }.frame(maxHeight: cap) }
             else { ConferencesCard(model: model, maxRows: max(3, Int(cap / 82)), quiet: true).fixedSize(horizontal: false, vertical: true) }   // 카드 안 frame(maxHeight: .infinity) 가 열을 채우지 않게
         case "preprints": LatestManuscripts(model: model)
+        case "followups": FollowupCountsView(model: model)
         case "members": MembersProjectsStrip(model: model).padding(6)
         case "apps": AppsCard()
         case "tools": AppsScriptSection(model: model)
@@ -667,8 +671,8 @@ enum TowerRelevance {
         if let d = m.blitzDate, c.isDate(d, inSameDayAs: now) { add("blitz", 1, "오늘 덱") }
         else if m.blitzPending { add("blitz", 1, "NAS 새 덱") }
 
-        // members·apps·tools·datastate 는 0 으로 고정
-        for k in ["members", "apps", "tools", "datastate"] { acc[k] = (0, []) }
+        // members·apps·tools·datastate·followups(0.41.0 C5 — 수만, 자동으로 펴지 않음) 는 0 으로 고정
+        for k in ["members", "apps", "tools", "datastate", "followups"] { acc[k] = (0, []) }
         return acc.mapValues { (score: $0.0, why: $0.1.joined(separator: ", ")) }
     }
 

@@ -280,6 +280,23 @@ final class NotionHubModel: ObservableObject {
     let reminderCommits = DelayedCommit(seconds: 6)
     /// 마지막 저장 실패 — 리마인더 칸에 [다시 시도] 한 줄
     @Published var reminderSaveFailed: ReminderItem?
+    /// 미팅 후속 (0.41.0 C2, MeetingFollowups.swift) — NAS <grantsFile 폴더>/followups 의 proposals.json(스크립트가 씀) + state-<이니셜>.json(본인 앱이 씀).
+    /// followups = 제안 + 직접 적은 항목 · followupStates = 이니셜 → 상태 행 · 읽기 '?' 면 단추 잠김 · 적색 없음
+    @Published var followups: [FollowupItem] = []
+    @Published var followupStates: [String: [FollowupState]] = [:]
+    @Published var followupRead: FollowupRead = .unknown("읽기 전")
+    @Published var followupsGenerated: Date?
+    /// proposals 손상 · 내 상태 파일 손상이면 이유 — 쓰지 않는다
+    @Published var followupLocked: String?
+    /// 마지막 저장 실패(항목 id)
+    @Published var followupSaveFailed: String?
+    /// 상태 파일이 깨진 이니셜 — 그 사람만 '?'
+    @Published var followupCorrupt: Set<String> = []
+    var followupStateFiles = 0
+    /// proposals.json 을 이번 실행에서 제대로 읽었나 — 'fu-mine' 배지 기준선은 이것이 참일 때만 (remindersLoadedOK 와 같은 이유)
+    var followupsLoadedOK = false
+    /// 끝남·아님의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다
+    let followupCommits = DelayedCommit(seconds: 6)
     @Published var loading = false
     @Published var lastUpdated: Date?
     /// 한 번의 갱신이 다 끝난 때(실제 시각, 변화 알림용) — Notion·그랜트·리마인더·학회 합치기에 더해 그 갱신이 띄운 논문 댓글·Paper Blitz·Prolific·최신 원고까지.
@@ -789,6 +806,8 @@ final class NotionHubModel: ObservableObject {
         case .missing: reminders = []; remindersLocked = nil; remindersLoadedOK = false
         case .corrupt(let why): remindersLocked = why       // 이전 목록은 그대로 보이고 버튼만 잠근다
         }
+        // 미팅 후속 (0.41.0 C2) — 리마인더 읽기 바로 뒤, 같은 NAS 폴더
+        await loadFollowups()
         let mf = ((gf as NSString).deletingLastPathComponent as NSString).appendingPathComponent("member_links.json")
         memberLinks = await Task.detached(priority: .utility) { MemberLinks.load(mf) }.value
         // 다가오는 학회: Notion Conferences + NAS conferences_upcoming.json (#7). 접수 중인 마감이 가까운 순 → 개최일 순
@@ -1611,7 +1630,7 @@ struct NotionHubWidget: View {
                     // 안전 가드 — 캘린더 없는 '오늘'(900) 등 config 밖 번호는 고른 뷰로 (tabs[899] 충돌 방지)
                     else if tab > tabs.count { HubViewSwitch(model: model) }
                     else if tabs[tab - 1].title == "Members" { MembersBoardView(model: model, notionURL: URL(string: tabs[tab - 1].url)) }
-                    else if Self.isNative(tabs[tab - 1]) { GRMOrderView(model: model, notionURL: URL(string: tabs[tab - 1].url)) }
+                    else if Self.isNative(tabs[tab - 1]) { GRMOrderView(model: model, notionURL: URL(string: tabs[tab - 1].url), mapDetail: false) }
                     else {
                         let c = tabControllers[tab - 1]
                         WebArea(controller: c).onAppear { c.ensureLoaded() }
@@ -1983,6 +2002,8 @@ struct Dashboard: View {
                     .hubProbe("2", .visible)
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: HubSpace.card) {
+                            // 미팅 후속 (0.41.0 C3, R1-d) — 열3 맨 위, 회의록 맥락 바로 위 (결정 D-a). 가장 긴 열2 는 늘리지 않는다
+                            FollowupsCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                             MinutesCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                             BlitzCompact(model: model, fill: false, nearOnly: true)
                             // 다가오는 학회 — 열2 그랜트 아래(R2-01 BHL)에서 열3 Blitz 아래 빈 면으로 (R-J1). 최신 원고는 열1 (검증 1)

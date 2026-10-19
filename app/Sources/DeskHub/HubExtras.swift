@@ -374,6 +374,14 @@ extension Hub {
     static var card: Color { Theme.color(\.card) }
 }
 
+extension NotionHubModel {
+    /// 이니셜 확인 줄·'나:' 고르기의 단추 — Members 이니셜 + 교수님(FollowupLogic.supervisors). 교수님 맥이 SL 을 골라 미팅 후속 '읽기' 보기에 들어가게
+    var meChoices: [String] { FollowupLogic.chooserInitials(members: members.map(\.initials), aliases: cfg.initialsAliases) }
+    func meChoiceHelp(_ ini: String) -> String {
+        members.first { $0.initials == ini }?.name ?? "지도교수님 — 미팅 후속은 연구실 전체를 읽기만 (쓰기 없음)"
+    }
+}
+
 /// 이 맥의 이니셜 확인 줄 — 랩 허브만이 아니라 관제탑·팝오버에도 (BHL #21 10-15 17:43: 관제탑만 쓰는 사람은 확인을 볼 일이 없음).
 /// 한 번 고르면(UserDefaults DeskHub.meConfirmed) 어느 뷰에서도 다시 안 뜬다. 스냅샷(DESKHUB_ME)에는 안 뜬다.
 struct MeConfirmBar: View {
@@ -389,14 +397,15 @@ struct MeConfirmBar: View {
                      : "이 맥에 저장된 이니셜은 \(me) 입니다. 본인이 맞으면 \(me) 를, 아니면 본인 이니셜을 눌러 주세요 (이 맥에만 저장)")
                     .font(.hub(compact ? 11 : 12)).foregroundStyle(Hub.text2).fixedSize(horizontal: false, vertical: true)
                 FlowLayout(spacing: 5, lineSpacing: 5) {
-                    ForEach(model.members.filter { !$0.initials.isEmpty }) { m in
-                        Button { HubPrefs.me = m.initials; HubPrefs.meChosen = true; done = true; model.objectWillChange.send() } label: {
-                            Text(m.initials).font(.hub(11, weight: .bold, design: .rounded))
+                    // Members 이니셜 + 교수님(SL — Members DB 에 없음, 0.41.0 검증 1)
+                    ForEach(model.meChoices, id: \.self) { ini in
+                        Button { HubPrefs.me = ini; HubPrefs.meChosen = true; done = true; model.objectWillChange.send() } label: {
+                            Text(ini).font(.hub(11, weight: .bold, design: .rounded))
                                 .padding(.horizontal, 7).padding(.vertical, 3)
-                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(m.initials == me ? Hub.ink : Hub.fillNeutral))
-                                .foregroundStyle(m.initials == me ? Hub.onAccent : Hub.text)
+                                .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(ini == me ? Hub.ink : Hub.fillNeutral))
+                                .foregroundStyle(ini == me ? Hub.onAccent : Hub.text)
                         }
-                        .buttonStyle(.plain).help(m.name)
+                        .buttonStyle(.plain).help(model.meChoiceHelp(ini))
                     }
                 }
             }
@@ -560,14 +569,15 @@ struct PaperRecBoard: View {
                  : "이 맥에 저장된 이니셜은 \(me) 입니다(설정 파일 또는 이전 버전). 본인이 맞으면 \(me) 를, 아니면 본인 이니셜을 눌러 주세요 (이 맥에만 저장)")
                 .font(.hub(cs.aux)).foregroundStyle(Hub.text2)
             FlowLayout(spacing: 5, lineSpacing: 5) {
-                ForEach(model.members.filter { !$0.initials.isEmpty }) { m in
-                    Button { HubPrefs.me = m.initials; HubPrefs.meChosen = true; me = m.initials; askWho = false } label: {
-                        Text(m.initials).font(.hub(cs.tag, weight: .bold, design: .rounded))
+                // MeConfirmBar 와 같은 선택지 — Members 이니셜 + 교수님 (0.41.0 검증 1)
+                ForEach(model.meChoices, id: \.self) { ini in
+                    Button { HubPrefs.me = ini; HubPrefs.meChosen = true; me = ini; askWho = false } label: {
+                        Text(ini).font(.hub(cs.tag, weight: .bold, design: .rounded))
                             .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(m.initials == me ? Hub.ink : Hub.fillNeutral))
-                            .foregroundStyle(m.initials == me ? Hub.onAccent : Hub.text)
+                            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(ini == me ? Hub.ink : Hub.fillNeutral))
+                            .foregroundStyle(ini == me ? Hub.onAccent : Hub.text)
                     }
-                    .buttonStyle(.plain).help(m.name)
+                    .buttonStyle(.plain).help(model.meChoiceHelp(ini))
                 }
             }
         }

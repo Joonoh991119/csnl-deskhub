@@ -309,7 +309,7 @@ extension NearCut where T: Identifiable {
 /// 공통 규칙: 가까운 것이 0개인데 자료가 있으면 가장 가까운 1개(카드가 빈 것처럼 보이지 않게). 기준값은 계획 0.37.0 §2 C2 표 — 교수님 사용 뒤 조정(§4-3)
 @MainActor
 enum HubNear {
-    static let keys = ["events", "reminders", "grants", "conferences", "experiments", "minutes", "blitz", "papers", "preprints", "apps"]
+    static let keys = ["events", "reminders", "grants", "conferences", "experiments", "minutes", "blitz", "papers", "preprints", "apps", "followups"]
 
     static func days(_ model: NotionHubModel, _ d: Date) -> Int {
         Calendar.current.dateComponents([.day], from: model.today, to: Calendar.current.startOfDay(for: d)).day ?? 0
@@ -451,6 +451,11 @@ enum HubNear {
                 + (model.papersStopped ? " · 접힘(멈춤 \(model.papersStoppedSince))" : ""),
             line("preprints", preprints(model)) { r in r.date.map(Hub.shortDay) ?? "—" },
             line("apps", apps(MadeApps.load().apps)) { $0.name },
+            // 미팅 후속 (0.41.0 C3) — 기준값은 상태·회의 날짜만(글 없음). 교수님 보기는 담당 이니셜
+            line("followups", followups(model)) { it in
+                (model.followupStatus(it) == "confirmed" ? "확정 " : "제안 ") + (it.day.map(Hub.shortDay) ?? "—")
+                    + (model.followupView == .read ? " " + (it.who.isEmpty ? "미정" : it.who) : "")
+            },
         ]
     }
 }
@@ -470,7 +475,7 @@ final class HubFill: ObservableObject {
     /// 열 → 채움 후보(우선순위 순, 시간에 민감한 것 먼저). 실험(준비 중 초안)·회의록(최근 1)·만든 앱(머리 한 줄)은 0.37.0 '가까운 것' 예외 규칙대로 제외
     static let candidates: [(col: String, keys: [String])] = [("1", ["preprints", "papers"]), ("2", ["events", "reminders", "grants"]), ("3", ["conferences", "blitz"])]
     /// 열 → 그 열의 모든 카드(HubExpansion 키) — 하나라도 펼쳐져 있으면 그 열은 건드리지 않는다
-    static let columnCards: [String: [String]] = ["1": ["papers", "preprints", "apps"], "2": ["reminders", "experiments", "events", "grants"], "3": ["minutes", "blitz", "conferences"]]
+    static let columnCards: [String: [String]] = ["1": ["papers", "preprints", "apps"], "2": ["reminders", "experiments", "events", "grants"], "3": ["followups", "minutes", "blitz", "conferences"]]
     /// 행 높이 추정 (1.0배, CardStyle.large — 0.37.0 그림 실측). × HubDisplay.scale. qa 가 잰 값으로 이 한 곳만 고친다
     static let rowH: [String: CGFloat] = ["events": 30, "reminders": 32, "grants": 66, "conferences": 66, "blitz": 42, "preprints": 62, "papers": 135]
     /// 카드당 더하는 행 상한
@@ -518,7 +523,7 @@ final class HubFill: ObservableObject {
         if !(holds[col] ?? []).isEmpty { return true }
         switch col {
         case "2": return !m.reminderCommits.pending.isEmpty
-        case "3": return !m.interestCommits.pending.isEmpty
+        case "3": return !m.interestCommits.pending.isEmpty || !m.followupCommits.pending.isEmpty   // 미팅 후속 되돌리기 (0.41.0 C3) · 입력 칸은 hold 'fu-input'
         default: return false
         }
     }

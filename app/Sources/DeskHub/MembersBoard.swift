@@ -277,6 +277,8 @@ struct MembersBoardRow {
     let milestone: MilestoneFile?
     /// 실제 열 '논문 반응' — 댓글을 아직 못 읽었으면 nil('—')
     let live: Int?
+    /// 실제 열 '미팅 후속' (0.41.0 C5) — 남은 수 'n' · '?' · '—'. 내용은 본인·교수님 화면에만, 평가 아님
+    let followups: String
     let samples: [Int?]
 
     @MainActor static func rows(_ model: NotionHubModel, sample: ScoreboardSample?, tally: ScoreboardLive.Tally?) -> [MembersBoardRow] {
@@ -288,14 +290,17 @@ struct MembersBoardRow {
             return MembersBoardRow(member: m, projects: shown, projectsHelp: projs.joined(separator: "\n"),
                                    nextGRM: g.map { Hub.shortDay($0.date) + " " + Hub.dday($0.date) } ?? "",
                                    milestone: model.milestones?[m.initials],
-                                   live: ScoreboardLive.value(tally, initials: m.initials, aliases: model.cfg.initialsAliases), samples: vals)
+                                   live: ScoreboardLive.value(tally, initials: m.initials, aliases: model.cfg.initialsAliases),
+                                   followups: model.followupCountCell(m.initials), samples: vals)
         }
     }
 
     static let band = "일부 열은 예시 — 표본 자료, 실제 집계 아님"
     static let bandAux = "논문 반응은 Notion 논문 추천 댓글에서 센 실제 값"
     static let purpose = "순위가 아닙니다 — 행은 GRM 순번 순, 비교는 본인의 지난 기간과. 숫자는 읽은 양·기여도가 아니며 평가·장학·인사에 쓰지 않습니다."
-    static let source = "진행 프로젝트 = NAS Memory 폴더 · 다음 GRM = GRM Schedule · Milestone = NAS MM 폴더의 최신 파일 날짜(이름에 날짜가 없으면 '수정일') · 논문 반응 = 최근 28일 논문 추천 댓글의 세 반응(취소 반영)"
+    static let source = "진행 프로젝트 = NAS Memory 폴더 · 다음 GRM = GRM Schedule · Milestone = NAS MM 폴더의 최신 파일 날짜(이름에 날짜가 없으면 '수정일') · 논문 반응 = 최근 28일 논문 추천 댓글의 세 반응(취소 반영) · 미팅 후속 = NAS followups(회의록·MM 에서 뽑은 제안 + 본인 확정)의 남은 수"
+    /// '미팅 후속' 열 도움말 (0.41.0 C5)
+    static let followupsHelp = "남은 확정·제안 수 — 내용은 본인·교수님 화면에만, 평가 아님"
 
     /// 합계 줄 — '연구실 · 9.18–10.15 · 논문 반응 n건(n명) · 댓글 n건 · Milestone 28일 안 n명 · 다음 GRM 예정 n명'. 못 읽었으면 반응·댓글 자리 '—'
     @MainActor static func summary(_ model: NotionHubModel, rows: [MembersBoardRow], tally: ScoreboardLive.Tally?) -> String {
@@ -317,6 +322,7 @@ struct MembersBoardRow {
         var cols = ["이니셜", "진행 프로젝트", "다음 GRM"]
         if model.milestones != nil { cols.append("Milestone") }
         cols.append("논문 반응(실제 \(period.label))")
+        cols.append("미팅 후속(실제)")
         cols += (sample?.columns ?? []).map { $0.title + "(예시)" }
         var out = ["열: " + cols.joined(separator: " · ")]
         if sample != nil { out.append("띠: " + band + " · " + bandAux) }
@@ -326,6 +332,7 @@ struct MembersBoardRow {
             var f = [dash(r.member.initials), dash(r.projects), dash(r.nextGRM)]
             if model.milestones != nil { f.append(r.milestone?.label ?? "—") }
             f.append(r.live.map(String.init) ?? "—")
+            f.append(r.followups)
             f += r.samples.map { $0.map(String.init) ?? "—" }
             out.append(f.joined(separator: " · "))
         }
@@ -380,6 +387,7 @@ struct MembersBoardView: View {
         private var wMM: CGFloat { cs.col(96) }
         private var wSample: CGFloat { cs.col(112) }
         private var wLive: CGFloat { cs.col(150) }
+        private var wFU: CGFloat { cs.col(84) }
 
         var body: some View {
             let tally = ScoreboardLive.tally(model)
@@ -445,6 +453,13 @@ struct MembersBoardView: View {
                 }
                 .frame(width: wLive, alignment: .leading)
                 .help(ScoreboardLive.help)
+                // 미팅 후속 (0.41.0 C5) — 실제 열, 숫자만(막대·정렬·강조 없음)
+                HStack(spacing: 4) {
+                    Text("미팅 후속").lineLimit(1).minimumScaleFactor(0.8)
+                    RealChip(label: "실제")
+                }
+                .frame(width: wFU, alignment: .leading)
+                .help(MembersBoardRow.followupsHelp)
                 ForEach(sample?.columns ?? []) { c in
                     HStack(spacing: 4) {
                         Text(c.title).lineLimit(1).minimumScaleFactor(0.8)
@@ -473,6 +488,8 @@ struct MembersBoardView: View {
                 if model.milestones != nil { milestoneCell(r.milestone).frame(width: wMM, alignment: .leading) }
                 sampleCell(r.live, max: liveMax, mine: isMe(r.member.initials)).frame(width: wLive, alignment: .leading)
                     .help(ScoreboardLive.help)
+                Text(r.followups).font(.hub(cs.aux, design: .rounded)).monospacedDigit().foregroundStyle(r.followups == "—" ? Hub.text3 : Hub.text2)
+                    .frame(width: wFU, alignment: .leading).help(MembersBoardRow.followupsHelp)
                 ForEach(Array(r.samples.enumerated()), id: \.offset) { i, v in
                     sampleCell(v, max: sample.map { $0.maxValue($0.columns[i].id) } ?? 1).frame(width: wSample, alignment: .leading)
                 }

@@ -124,6 +124,10 @@ enum TextCheck {
             case "metric": got = metric(input, tsv: path)
             // 상태 한 줄 갈래 (0.40.0 C4, A3-variant) — 입력 '폭=;배율=;확정=;예상=;학회=;연구비=;멈춤=;GRM=;현장=', 기대 'L|M|S' + '|맞음|잘림'. fixtures/statusline-check.tsv
             case "statusline": got = statusline(input)
+            // 미팅 후속 판정 (0.41.0 C2) — fu-status · fu-visible · fu-count · fu-remind · fu-mm (FollowupLogic, 화면과 같은 함수). fixtures/followup-check.tsv
+            case _ where FollowupCheck.kinds.contains(kind): got = FollowupCheck.eval(kind, input, aliases: testAliases)
+            // GRM 자료 지도 허브 한 줄 (0.41.0 C6, R2) — 'today=;rows=날짜 이니셜 ●○●–?|…;sched=날짜|…' → '이번 주 … · 지난주 …'. fixtures/grmweek-check.tsv
+            case "grmweek": got = GRMMap.weekCheck(input)
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
@@ -169,7 +173,9 @@ enum TextCheck {
         p.confirmed = Int(k["확정"] ?? "") ?? 0; p.expected = Int(k["예상"] ?? "") ?? 0
         p.undecidedConf = Int(k["학회"] ?? "") ?? 0; p.undecidedGrant = Int(k["연구비"] ?? "") ?? 0
         p.stopped = Int(k["멈춤"] ?? "") ?? 0; p.nextGRM = k["GRM"] ?? "—"; p.fieldDays = k["현장"].flatMap(Int.init)
-        let v = StatusLine.variant(width: CGFloat(w), scale: CGFloat(sc), parts: p)
+        // 선택 키 '칩=<글>|<글>' (0.41.0 C4) — 뷰와 같은 칩 폭 빼기
+        let chips = (k["칩"] ?? "").components(separatedBy: "|").filter { !$0.isEmpty }
+        let v = StatusLine.variant(width: CGFloat(w), scale: CGFloat(sc), parts: p, chips: chips)
         return v.variant.rawValue + "|" + (v.fits ? "맞음" : "잘림")
     }
     /// metric — 정의서 표 첫 칸 id 집합(한 번 읽음) → MetricDefs.eval

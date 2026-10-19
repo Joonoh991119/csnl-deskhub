@@ -41,6 +41,8 @@ enum DataSources {
         ("ssot_reminders", "reminders.json", 30, ["reminders"]), ("ssot_latest", "SSOT latest(NAS)", 30, []),
         ("publications", "Publications", 90, ["preprints"]), ("conferences", "Conferences(Notion)", 90, ["conferences"]),
         ("talks", "Talks", 90, []), ("international", "International", 90, []),
+        // 미팅 후속 추출 (0.41.0 C2) — scripts/meeting_followups.py 가 쓰는 NAS followups/proposals.json 의 generated (집계에는 없음 — 앱 라이브만)
+        ("followups", "미팅 후속 추출", 7, ["followups"]),
     ]
     /// 상태 한 줄 '자료 멈춤' 에서 빼는 원천 — 현장 실험은 따로 적는다(이중 계산 방지, A3-stopped)
     static let slabSources: Set<String> = ["slab", "ics_slab"]
@@ -59,6 +61,7 @@ enum DataSources {
         case "ssot_conferences": return m.conferencesGenerated
         case "nas_mm": return le((m.milestones ?? [:]).values.filter(\.fromName).map(\.date))
         case "resource": return m.equipmentContent
+        case "followups": return m.followupsGenerated
         default: return nil
         }
     }
@@ -184,6 +187,7 @@ extension NotionHubModel {
         case "minutes": return minutesFreshness
         case "blitz": return blitzFreshness
         case "conferences": return Freshness.content(conferencesGenerated, cycle: 30, today: t, help: "conferences_upcoming.json 생성일")
+        case "followups": return Freshness.content(followupsGenerated, cycle: 7, today: t, help: "미팅 후속 추출 생성일 (A2-src-followups)")
         default: return nil
         }
     }
