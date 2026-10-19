@@ -1,0 +1,11 @@
+{
+  "_comment": "DeskHub 시험 픽스처 (0.40.0 C2·C7, A4) — 가짜 값만. DESKHUB_PROLIFIC_SIM=fixture:<이 파일>. 2026-10 게시 study 3 · 그 제출 57 · 정원 미달 진행 중 1, 전체 제출 120 = 게시월별 합. 금액(reward) 없음",
+  "results": [
+    {"id": "fx-a1", "internal_name": "시험 study A", "status": "ACTIVE", "published_at": "2026-10-03T09:00:00.000000Z", "number_of_submissions": 20, "places_taken": 20, "total_available_places": 30, "project": "Alpha Kim"},
+    {"id": "fx-a2", "internal_name": "시험 study B", "status": "COMPLETED", "published_at": "2026-10-08T01:00:00.000000Z", "number_of_submissions": 25, "places_taken": 25, "total_available_places": 25, "project": "Alpha Kim"},
+    {"id": "fx-a3", "internal_name": "시험 study C", "status": "ACTIVE", "published_at": "2026-10-12T03:30:00.000000Z", "number_of_submissions": 12, "places_taken": 40, "total_available_places": 40, "project": "Beta Lee"},
+    {"id": "fx-b1", "internal_name": "시험 study D", "status": "COMPLETED", "published_at": "2026-09-20T05:00:00.000000Z", "number_of_submissions": 40, "places_taken": 40, "total_available_places": 40, "project": "Beta Lee"},
+    {"id": "fx-c1", "internal_name": "시험 study E", "status": "PAUSED", "published_at": "2026-08-15T06:00:00.000000Z", "number_of_submissions": 23, "places_taken": 23, "total_available_places": 30, "project": "Gamma Jo"},
+    {"id": "fx-d1", "internal_name": "시험 study F", "status": "UNPUBLISHED", "published_at": null, "number_of_submissions": 0, "places_taken": 0, "total_available_places": 20, "project": "Gamma Jo"}
+  ]
+}

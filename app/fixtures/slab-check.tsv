@@ -1,0 +1,38 @@
+# DeskHub --text-check fixtures/slab-check.tsv (0.40.0 C1, F0-1 · 검증 1) — SLab 한 행 → 오늘의 실험 title|owner|detail (NotionHubModel.slabRow)
+# 입력 rel=<Project People 제목(빈칸 = relation 없음, ? = 풀리지 않음)>;who=<피험자 이름 흉내>;sbj=<피험자 ID 흉내>;name=<실험명(제목 칸) 흉내, 기본 '시험 실험'>;proj=<프로젝트 text>;time=;round=;status=
+# 기대 'title|owner|detail' 또는 '제외'. title = 프로젝트(비면 '프로젝트 미기재') · n회차, detail = 시간. who·sbj·name(실험명) 값이 결과에 섞이면 '(원문 노출) …' 로 FAIL. 이름은 모두 가짜
+# 종류	입력	기대
+slab	rel=JOP;who=홍길동;sbj=S01;time=14:00;round=3;status=확정	프로젝트 미기재 · 3회차|JOP|14:00
+slab	rel=SK;who=김철수;sbj=S02;time=10:00;round=1;status=확정	프로젝트 미기재 · 1회차|SJK|10:00
+slab	rel=RJH;who=;sbj=;time=12:00;round=1;status=확정	프로젝트 미기재 · 1회차|JHR|12:00
+slab	rel=HJH;who=박영희;sbj=S03;time=11:00;round=2;status=확정	프로젝트 미기재 · 2회차|외부|11:00
+slab	rel=;who=Beta Lee;sbj=S04;time=09:30;round=1;status=확정	프로젝트 미기재 · 1회차||09:30
+slab	rel=;who=Jane Doe;sbj=P12/20;time=15:00;round=4;status=확정	프로젝트 미기재 · 4회차||15:00
+slab	rel=?;who=홍길동;sbj=S10;time=10:00;round=1;status=확정	프로젝트 미기재 · 1회차||10:00
+slab	rel=JYK;who=외부인;sbj=P12/20;time=13:00;round=;status=완료	프로젝트 미기재|JYK|13:00
+slab	rel=MSY;who=;sbj=S05;time=;round=2;status=확정	프로젝트 미기재 · 2회차|MSY|
+slab	rel=SMJ;who=;sbj=;time=;round=;status=확정	프로젝트 미기재|SMJ|
+slab	rel=JOP;who=홍길동;sbj=S06;time=16:00;round=1;status=취소	제외
+slab	rel=BHL;who=최민수;sbj=S07;time=17:00;round=5;status=no_show	프로젝트 미기재 · 5회차|BHL|17:00
+slab	rel=BHL;who=Betty Lee;sbj=S08;time=09:00;round=1;status=확정	프로젝트 미기재 · 1회차|BHL|09:00
+slab	rel=BYL;who=Beta Lee;sbj=S09;time=09:00;round=1;status=확정	프로젝트 미기재 · 1회차|BYL|09:00
+slab	rel=jop;who=홍길동;sbj=S11;time=18:00;round=2;status=확정	프로젝트 미기재 · 2회차|JOP|18:00
+# 실험명(제목 칸)에 피험자 이름·ID 가 들어 있어도 title 은 프로젝트 · 회차 (qa040 M8, 검증 1)
+slab	rel=JOP;who=;sbj=;name=홍길동 TimeExp2 5회차;proj=TimeExp2;time=14:00;round=5;status=확정	TimeExp2 · 5회차|JOP|14:00
+slab	rel=BYL;who=;sbj=;name=S21 김영수;proj=  CMD pilot ;time=10:30;round=1;status=완료	CMD pilot · 1회차|BYL|10:30
+slab	rel=;who=;sbj=;name=Jane Doe P07;proj=;time=;round=;status=확정	프로젝트 미기재||
+slab	rel=BHL;who=;sbj=;name=이민정_S33;proj=VWM-orient;time=09:00;round=2;status=no_show	VWM-orient · 2회차|BHL|09:00
+# owner — 실험자·예약자 칸 공용 규칙(ownerInitials): 정확 일치만, 그 밖은 '외부', 빈 값·'Project' 는 빈 칸. 로스터 이름·이메일은 가짜
+owner		
+owner	Project	
+owner	JOP	JOP
+owner	jop	JOP
+owner	SK	SJK
+owner	Alpha Kim	JOP
+owner	alphakim	JOP
+owner	betty	BYL
+owner	Beta	BHL
+owner	Bet	외부
+owner	Kim	외부
+owner	Lee	외부
+owner	HJH	외부

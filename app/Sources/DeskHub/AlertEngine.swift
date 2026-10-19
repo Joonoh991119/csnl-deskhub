@@ -204,7 +204,7 @@ enum AlertEngine {
 
         // 신선도 — 멈춘 소스는 A
         // 만성(30일 넘게 멈춘 추천)은 참조 레일 몫, 회의록·Blitz 는 주간 정리 주기(7일)가 지난 뒤에만
-        let papersChronic = m.papers.compactMap(\.sentAt).max().map { days($0) < -30 } ?? false
+        let papersChronic = m.papers.compactMap(\.sentAt).max().map { days($0) < -ProducerRule.chronicDays } ?? false
         let weeklyDue = m.lastGRM.map { days($0.date) <= -7 } ?? false
         for (key, f) in [("papers", m.papersFreshness), ("minutes", m.minutesFreshness), ("blitz", m.blitzFreshness)] {
             guard let f, f.state == .stale else { continue }
@@ -228,14 +228,14 @@ enum AlertEngine {
         return AlertSet(alerts: kept, overflow: overflow)
     }
 
-    /// 텍스트 한 장 — --dump-alerts 용
+    /// 텍스트 한 장 — --dump-alerts 용. isMember = 멤버 이니셜인가 — '@' 는 멤버에게만 붙인다('외부'·외부 발표자 이름은 멘션하지 않음, 0.40.0 C1 F0-1)
     @MainActor
-    static func dump(_ set: AlertSet, now: Date) -> String {
+    static func dump(_ set: AlertSet, now: Date, isMember: (String) -> Bool = { _ in true }) -> String {
         var lines = ["경보 \(Hub.day(now)) \(Hub.time(now)) — ■\(set.counts[.warning] ?? 0) □\(set.counts[.caution] ?? 0) ·\(set.counts[.advisory] ?? 0)"]
         if set.isClear { lines.append("✓ 경보 없음") }
         for a in set.alerts {
             let due = (a.due.map { " [" + Hub.relative($0, now: now, hasTime: a.hasTime) + "]" } ?? "") + (a.overdue ? " (지남)" : "")
-            let owner = a.owner.isEmpty ? "" : " " + a.owner.components(separatedBy: ", ").map { "@" + $0 }.joined(separator: " ")
+            let owner = a.owner.isEmpty ? "" : " " + a.owner.components(separatedBy: ", ").map { isMember($0) ? "@" + $0 : $0 }.joined(separator: " ")
             lines.append("\(a.level.mark) \(a.title)\(due)" + (a.detail.isEmpty ? "" : " — \(a.detail)") + (a.mine ? " (내 것)" : "") + owner
                          + " {\(a.sources.joined(separator: "+"))}" + (a.action.map { " <\($0)>" } ?? "") + (a.snoozable ? " ⟲미루기" : ""))
         }

@@ -258,6 +258,7 @@ final class ExplorerModel: ObservableObject {
         searchTask?.cancel()
         let q = text.trimmingCharacters(in: .whitespaces)
         guard q.count >= 2 else { searchResults = nil; searching = false; updateStatus(); return }
+        UsageLog.search()   // 횟수만 — 검색어는 쓰지 않는다 (0.40.0 C2, A1)
         let base = current
         searching = true
         searchResults = []

@@ -56,6 +56,8 @@ struct PipelineRow: Identifiable {
     /// 지난 일(24h 넘음) — 회색
     var past: Bool = false
     var due: Date? = nil
+    /// 단계 칸 대신 그리는 글 덩어리 (0.40.0 C7, A4 '실험' 한 줄) — 있으면 cells 는 비어 있고 적색·막힘이 없다
+    var summary: [(String, ExperimentStats.Tone)]? = nil
     var blockedCount: Int { cells.filter { $0.state.kind == .blocked }.count }
 }
 
@@ -109,7 +111,7 @@ enum PipelineEngine {
                     switch s.id {
                     case "produce":
                         guard let d = latest else { return (s, StageState(kind: .unknown)) }
-                        return days(d) >= -10 ? (s, StageState(kind: .done, note: Hub.day(d)))
+                        return days(d) >= -ProducerRule.papersStaleDays ? (s, StageState(kind: .done, note: Hub.day(d)))
                             : (s, StageState(kind: .blocked, note: "P23 \(Hub.day(d)) 정지", link: .url(URL(string: "https://github.com/Joonoh991119/csnl-admin/issues/19")!)))
                     case "deliver": return (s, StageState(kind: m.papers.isEmpty ? .todo : .done, note: "\(m.papers.count)편", link: .notion(m.cfg.paperRecDB)))
                     case "react": return (s, StageState(kind: mine.isEmpty ? .unknown : .progress(Double(reacted) / Double(mine.count)), note: "\(me.isEmpty ? "" : me + " ")\(reacted)/\(mine.count)"))
@@ -119,23 +121,9 @@ enum PipelineEngine {
                 }.map { ($0.0, fill($0.1, .notion(m.cfg.paperRecDB))) }   // 묶음 행 — 칸 대체 링크는 추천 DB (예외로 명시: 덤프 →notion(DB))
                 rows.append(PipelineRow(id: "papers", pipeline: def.id, title: "논문 추천", cells: cells))
             case "experiment":
-                for x in m.experiments {
-                    // 대체 링크: study URL(Prolific), 없으면 예약 Notion 페이지
-                    let rowLink: HubLink? = x.url.map(HubLink.url) ?? x.notionID.map(HubLink.notion)
-                    let cells = def.stages.map { s -> (PipelineDef.Stage, StageState) in
-                        switch s.id {
-                        case "reserve": return (s, StageState(kind: .done))
-                        case "recruit":
-                            if let f = fraction(x.detail) { return (s, StageState(kind: f >= 1 ? .done : .progress(f), note: x.detail.components(separatedBy: " · ").first ?? "")) }
-                            return (s, StageState(kind: .unknown, note: x.detail))
-                        case "collect":
-                            if x.status.lowercased() == "paused" { return (s, StageState(kind: .blocked, note: "Paused", owner: x.owner, link: x.url.map(HubLink.url))) }
-                            return (s, StageState(kind: x.status.isEmpty ? .unknown : .progress(0.5), note: x.status))
-                        default: return (s, StageState(kind: .todo))
-                        }
-                    }.map { ($0.0, fill($0.1, rowLink)) }
-                    rows.append(PipelineRow(id: "exp-" + x.id, pipeline: def.id, title: "실험 \(x.owner.isEmpty ? "" : x.owner + " ")\(x.source) · \(x.title)", cells: cells))
-                }
+                // 실험은 한 줄 요약 (0.40.0 C7, A4) — 온라인(Prolific 게시월 study·제출·정원 미달) | 현장(집계: 쉼·출처 어긋남). 적색·정체 경보 없음(D7).
+                // 오늘 실험별 행(진행 중 study)은 공정 보드에서 빠지고 오늘의 실험 카드에만 남는다. 누르면 키 표(HubExpansion 'exp-keys')
+                rows.append(PipelineRow(id: "exp-summary", pipeline: def.id, title: "실험", cells: [], summary: m.experimentSummary()))
             case "conference":
                 let confFile = ((m.cfg.grantsFile as NSString).deletingLastPathComponent as NSString).appendingPathComponent("conferences_upcoming.json")
                 for c in m.conferences.prefix(3) {
@@ -203,7 +191,8 @@ enum PipelineEngine {
             if g.abstractDone { return StageState(kind: .done, link: g.docURL.map(HubLink.url)) }
             return n >= 0 && n <= 3 ? StageState(kind: .blocked, note: n == 0 ? "오늘" : "D-\(n)", link: .notion(g.id)) : StageState(kind: talked ? .unknown : .todo)
         case "slides":
-            let deck = files.first { name in !name.hasPrefix("PB_") && !name.hasPrefix("~$") && [".pptx", ".pdf", ".key"].contains { name.lowercased().hasSuffix($0) } }
+            // 자료 지도와 같은 판정 (GRMMap.isSlide — PB_·~$·Thumbs.db·'.' 제외, 0.40.0 C6)
+            let deck = files.first(where: GRMMap.isSlide)
             if let d = deck { return StageState(kind: .done, note: (d as NSString).deletingPathExtension, link: .nas(dir + "/" + d)) }
             if n == 0 && !talked { return StageState(kind: .blocked, note: "아직 없음", link: .nas(dir)) }
             return StageState(kind: talked ? .unknown : .todo, link: .nas(dir))
@@ -224,10 +213,12 @@ enum PipelineEngine {
             if let u = NotionHubModel.magazineURL(dir: m.cfg.magazineDir, date: g.date) { return StageState(kind: .done, link: .nas(u.path)) }
             return StageState(kind: talked ? .unknown : .future)
         case "blitz":
-            if let pb = files.first(where: { $0.hasPrefix("PB_") && $0.lowercased().hasSuffix(".pptx") }) {
-                let count = m.blitzDate.map { Calendar.current.isDate($0, inSameDayAs: g.date) } == true ? "\(m.blitz.count)편" : ""
+            // PB_*.pdf 도 인정 — 예전엔 pptx 만 봐서 PB_260401.pdf 회차가 '?' 였다 (GRMMap.isPB, 0.40.0 C6). Archive 날짜도 같은 회차로
+            let count = m.blitzDate.map { Calendar.current.isDate($0, inSameDayAs: g.date) } == true ? "\(m.blitz.count)편" : ""
+            if let pb = files.first(where: GRMMap.isPB) {
                 return StageState(kind: .done, note: count, link: .nas(dir + "/" + pb))
             }
+            if m.blitzDates.contains(Calendar.current.startOfDay(for: g.date)) { return StageState(kind: .done, note: count, link: .notion(m.paperBlitzDB)) }
             return StageState(kind: talked ? .unknown : .future)
         default:
             return StageState(kind: .unknown)
@@ -246,6 +237,7 @@ enum PipelineEngine {
                 } else { to = "—" }
                 return "[\(c.stage.label) \(c.state.mark)\(c.state.note.isEmpty ? "" : " " + c.state.note) →\(to)]"
             }.joined(separator: "─")
+            if let sm = r.summary { out.append(r.title + "  " + sm.map(\.0).joined(separator: " | ")); continue }
             out.append((r.past ? "(지난) " : "") + r.title + "  " + cells)
         }
         return out.joined(separator: "\n")

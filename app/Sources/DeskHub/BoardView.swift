@@ -638,7 +638,9 @@ struct BoardView: View {
 
     private var accordion: some View {
         // 숫자엔 단위 — 안내판은 멀리서 한 번 보고 지나가므로 '5' 만으로는 무엇의 수인지 모른다 (UX smartwatch-19)
-        let items: [(String, String)] = [("papers", "논문 \(model.papers.count)편"), ("minutes", "회의록"), ("blitz", "Blitz \(model.blitz.count)편"),
+        // 논문 추천 생산자가 멈췄으면 '논문 · 6.1 이후 없음' + 펼쳐도 한 줄 (0.40.0 C8, R4)
+        let papersLabel = model.papersStopped ? "논문 · \(model.papersStoppedSince) 이후 없음" : "논문 \(model.papers.count)편"
+        let items: [(String, String)] = [("papers", papersLabel), ("minutes", "회의록"), ("blitz", "Blitz \(model.blitz.count)편"),
                                          ("grants", "그랜트 \(model.grants.count)건"), ("preprints", "원고 \(model.preprints.count)편"),
                                          ("members", "멤버 \(model.members.filter(\.active).count)명"), ("tools", "메일 초안")]
         return VStack(alignment: .leading, spacing: 8) {
@@ -656,7 +658,7 @@ struct BoardView: View {
                 // 펼친 카드는 남은 높이를 채운다 (안쪽 스크롤). 짧은 카드는 내용 높이 + 아래 Spacer
                 Group {
                     switch k {
-                    case "papers": PaperRecBoard(model: model).frame(maxHeight: .infinity)
+                    case "papers": PaperRecBoard(model: model, fold: true).frame(maxHeight: model.papersStopped ? nil : .infinity)
                     case "minutes": ScrollView(.vertical, showsIndicators: false) { MinutesCard(model: model, minutesExpanded: true) }.frame(maxHeight: .infinity)
                     case "blitz": BlitzCompact(model: model).frame(maxHeight: .infinity)
                     case "grants": GrantsSection(model: model)

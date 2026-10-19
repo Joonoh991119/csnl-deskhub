@@ -93,11 +93,13 @@ struct RemindersSection: View {
     @Environment(\.cardStyle) private var cs
     /// 랩 허브만 — 확정 D≤7(지난 것 포함)·제안 D≤7 2개, 나머지는 '▸ 더 보기' (0.37.0 C2)
     let nearOnly: Bool
+    /// 마감 D≤3 을 적색 대신 Hub.ink 굵게 — 허브는 상태 한 줄 '확정 n' 한 칸이 적색을 맡는다 (0.40.0 C4, 결정 D-b)
+    let quiet: Bool
     @ObservedObject private var expansion = HubExpansion.shared
     /// 열 바닥이 비면 다음 리마인더를 더 (HubFill, 0.38.0 C3)
     @ObservedObject private var fill = HubFill.shared
-    init(model: NotionHubModel, nearOnly: Bool = false) {
-        self.model = model; self.nearOnly = nearOnly
+    init(model: NotionHubModel, nearOnly: Bool = false, quiet: Bool = false) {
+        self.model = model; self.nearOnly = nearOnly; self.quiet = quiet
         _commits = ObservedObject(wrappedValue: model.reminderCommits)
     }
 
@@ -111,7 +113,7 @@ struct RemindersSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "리마인더 · 컨펌한 것만", trailing: "NAS") {
+            SectionTitle(text: "리마인더 · 컨펌한 것만", trailing: "NAS", fresh: nearOnly ? model.cardTag("reminders") : nil, badge: nearOnly ? "rem-mine" : nil) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: (model.remindersPath as NSString).deletingLastPathComponent))
             }
             if let why = model.remindersLocked {
@@ -145,7 +147,7 @@ struct RemindersSection: View {
                         let soon = d.map { $0 <= Calendar.current.date(byAdding: .day, value: 3, to: model.today)! } ?? false
                         Text(d.map { Hub.relative($0, now: model.now, hasTime: false) } ?? "미정")
                             .font(.hub(cs.tag + 0.5, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1)
-                            .frame(width: cs.col(44), alignment: .leading).foregroundStyle(soon && !done ? Hub.signal : Hub.text2)
+                            .frame(width: cs.col(44), alignment: .leading).foregroundStyle(soon && !done ? (quiet ? Hub.ink : Hub.signal) : Hub.text2)
                         Text(r.title).font(.hub(cs.body, weight: .medium)).lineLimit(1).strikethrough(done).foregroundStyle(done ? Hub.text3 : Hub.text)
                         Spacer()
                         if let d, (Calendar.current.dateComponents([.day], from: model.today, to: d).day ?? 0) < 14 { Text(Hub.day(d)).font(.hub(cs.aux - 0.5)).foregroundStyle(Hub.text2).monospacedDigit() }
@@ -183,7 +185,7 @@ struct RemindersSection: View {
                     }
                     .padding(.bottom, 4)
                 }
-                if let cut { MoreToggle(key: "reminders", more: cut.toggleCount(open: open, extra: e)) }
+                if let cut { CardFooter(caption: CardMetas.caption("reminders", model), toggleKey: "reminders", more: cut.toggleCount(open: open, extra: e)) }
                 // 되돌리기 바는 카드 끝 제 줄에 — 겹치면 '▸ 더 보기'·마지막 행과 포개진다 (검증 1). 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
             }

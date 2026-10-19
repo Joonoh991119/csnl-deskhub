@@ -85,6 +85,8 @@ MainActor.assumeIsolated { runApp() }
 /// 빈 칸 = 빈 값. 종류: title(Hub.cleanPaperTitle) · authors(Hub.cleanAuthors) · cite(Hub.citationLine — 넷째 칸 제목, 다섯째 칸 연도) · clamp(PopoverPlacement.clamp)
 /// · prolific(ProlificFilter.keep → yes|no, 0.37.0) · topic(TopicFilter.match → 주제 id ',' 로, 0.39.0) · comment(PaperComment.settle → talkLine, 0.39.0)
 /// · tally(PaperComment.settle → ScoreboardLive.tally → '반응 n · 사람 n · 댓글 n', 0.39.0 검증 1) · feed(BioRxivFeed.isSettled → 확정|미확정, 0.39.0 리뷰 2)
+/// · slab(NotionHubModel.slabRow → 'title|owner|detail'|'제외', 0.40.0 C1·검증 1) · owner(NotionHubModel.ownerInitials) · mm(MilestoneFiles.fileDate → yyyy-MM-dd|—, 넷째 칸 이니셜)
+/// · metric('<정의 id>|<입력>' → MetricDefs.eval, 정의서에 없는 id 는 FAIL — 0.40.0 C2) · statusline(StatusLine.variant → 'L|맞음', 0.40.0 C4)
 enum TextCheck {
     static func run(path: String) -> Int32 {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -112,6 +114,16 @@ enum TextCheck {
             case "tally": got = tally(input)
             // 피드 확정 날 (0.39.0 리뷰 2) — 입력 '오늘 yyyy-MM-dd|날 yyyy-MM-dd', 기대 '확정' | '미확정'(오늘·어제는 늘 다시 받음)
             case "feed": got = feed(input)
+            // SLab 한 행 (0.40.0 C1, F0-1) — 입력 'rel=;who=;sbj=;name=;proj=;time=;round=;status=', 기대 'title|owner|detail' 또는 '제외'. fixtures/slab-check.tsv
+            case "slab": got = slab(input)
+            // 실험자·예약자 칸 (0.40.0 C1) — NotionHubModel.ownerInitials, 기대 = 이니셜 · '외부' · 빈 칸
+            case "owner": got = NotionHubModel.ownerInitials(raw: input, members: testRoster, aliases: testAliases)
+            // MM 파일 날짜 (0.40.0 C1, F0-4) — 입력 상대 경로, 기대 'yyyy-MM-dd' 또는 '—'. 넷째 칸 = 폴더 이니셜(쉼표, 기본 JOP). fixtures/mm-check.tsv
+            case "mm": got = mm(input, initials: f.count > 3 && !f[3].isEmpty ? f[3].components(separatedBy: ",") : ["JOP"])
+            // 지표 정의 (0.40.0 C2, A1) — 입력 '<정의 id>|<입력>', 앱과 같은 MetricDefs. 정의 id 가 ../../docs/metrics-definitions.md 표에 없으면 FAIL. fixtures/metric-check.tsv
+            case "metric": got = metric(input, tsv: path)
+            // 상태 한 줄 갈래 (0.40.0 C4, A3-variant) — 입력 '폭=;배율=;확정=;예상=;학회=;연구비=;멈춤=;GRM=;현장=', 기대 'L|M|S' + '|맞음|잘림'. fixtures/statusline-check.tsv
+            case "statusline": got = statusline(input)
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
@@ -148,6 +160,82 @@ enum TextCheck {
         let p = input.components(separatedBy: "|")
         guard p.count == 2, let today = FeedItem.dayFormatter.date(from: p[0]) else { return "(입력 형식)" }
         return BioRxivFeed.isSettled(p[1], today: today) ? "확정" : "미확정"
+    }
+    /// statusline — 앱과 같은 StatusLine.variant(NSFont 실측)
+    static func statusline(_ input: String) -> String {
+        let k = kv(input)
+        guard let w = k["폭"].flatMap(Double.init), let sc = k["배율"].flatMap(Double.init) else { return "(입력 형식)" }
+        var p = StatusLine.Parts()
+        p.confirmed = Int(k["확정"] ?? "") ?? 0; p.expected = Int(k["예상"] ?? "") ?? 0
+        p.undecidedConf = Int(k["학회"] ?? "") ?? 0; p.undecidedGrant = Int(k["연구비"] ?? "") ?? 0
+        p.stopped = Int(k["멈춤"] ?? "") ?? 0; p.nextGRM = k["GRM"] ?? "—"; p.fieldDays = k["현장"].flatMap(Int.init)
+        let v = StatusLine.variant(width: CGFloat(w), scale: CGFloat(sc), parts: p)
+        return v.variant.rawValue + "|" + (v.fits ? "맞음" : "잘림")
+    }
+    /// metric — 정의서 표 첫 칸 id 집합(한 번 읽음) → MetricDefs.eval
+    private static var defIDs: Set<String>??
+    static func metric(_ input: String, tsv: String) -> String {
+        let dir = URL(fileURLWithPath: tsv).deletingLastPathComponent()
+        if defIDs == nil { defIDs = .some(MetricDefs.loadIDs(dir.appendingPathComponent("../../docs/metrics-definitions.md").standardizedFileURL)) }
+        let parts = input.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+        let id = parts[0].trimmingCharacters(in: .whitespaces), arg = parts.count > 1 ? parts[1] : ""
+        guard let ids = defIDs ?? nil, !ids.isEmpty else { return "(정의서를 읽지 못함)" }
+        guard ids.contains(id) else { return "(정의서에 없음 \(id))" }
+        return MetricDefs.eval(id: id, input: arg, fixtureDir: dir.path)
+    }
+    /// 시험 로스터 (0.40.0 C1) — 이니셜은 랩 고정 목록, 이름·이메일은 가짜(규칙 시험용). 별칭은 Config 기본값과 같다
+    static let testAliases = ["SK": "SJK", "RJH": "JHR"]
+    static let testRoster: [Member] = [
+        ("JOP", "Alpha Kim", "alpha@lab.test"), ("BHL", "Beta Lee", "beta@lab.test"), ("BYL", "Betty Lee", "betty@lab.test"),
+        ("JYK", "Gamma Jo", "gamma@lab.test"), ("SMJ", "Delta Song", ""), ("MSY", "Echo Moon", ""), ("SJK", "Foxtrot Kim", ""),
+        ("JSL", "Golf Lim", ""), ("SYJ", "Hotel Jang", ""), ("JHR", "India Ryu", ""), ("MJC", "Juliet Cho", ""),
+    ].enumerated().map { i, x in Member(id: "m\(i)", name: x.1, initials: x.0, email: x.2, active: true, order: i) }
+    /// 'k=v;k=v' → 사전 (값 안의 '=' 는 그대로)
+    private static func kv(_ input: String) -> [String: String] {
+        var out: [String: String] = [:]
+        for part in input.components(separatedBy: ";") {
+            let p = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            if p.count == 2 { out[p[0].trimmingCharacters(in: .whitespaces)] = p[1] }
+        }
+        return out
+    }
+    /// slab — 앱과 같은 NotionHubModel.slabRow. rel = people 해석이 끝난 Project People 제목(빈칸 = relation 없음, '?' = relation 은 있는데 풀리지 않음).
+    /// who·sbj 는 피험자 칸 흉내 — 페이지에 (다른 이름의 키로) 넣고, 결과에 그 값이 섞이면 '(원문 노출)'.
+    /// name = 실험명(제목 칸, 기본 '시험 실험') — 실제 실험명에 피험자 이름·ID 가 들어 있으므로 결과(title·owner·detail)에 섞이면 '(원문 노출)' (검증 1).
+    /// proj = '프로젝트' text (title 의 출처)
+    static func slab(_ input: String) -> String {
+        let k = kv(input)
+        let rel = k["rel"] ?? "", who = k["who"] ?? "", sbj = k["sbj"] ?? "", name = k["name"] ?? "시험 실험"
+        func rich(_ s: String) -> [String: Any] { ["type": "rich_text", "rich_text": [["plain_text": s]]] }
+        var props: [String: Any] = [
+            "실험명": ["type": "title", "title": [["plain_text": name]]],
+            "프로젝트": rich(k["proj"] ?? ""),
+            "시간": rich(k["time"] ?? ""), "상태": ["type": "select", "select": ["name": k["status"] ?? ""]],
+            "who": rich(who), "sbj": rich(sbj),
+        ]
+        if let r = k["round"], let n = Double(r) { props["회차"] = ["type": "number", "number": n] }
+        var people: [String: String] = [:]
+        if !rel.isEmpty {
+            props["실험자"] = ["type": "relation", "relation": [["id": "rel-1"]]]
+            if rel != "?" { people["rel1"] = rel.uppercased() }
+        }
+        let canonical: (String) -> String? = { raw in
+            let ini = (testAliases[raw.uppercased()] ?? raw).uppercased()
+            return testRoster.first { $0.initials == ini }?.initials
+        }
+        guard let row = NotionHubModel.slabRow(["id": "t", "properties": props], people: people, canonical: canonical) else { return "제외" }
+        let out = row.title + "|" + row.owner + "|" + row.detail
+        // 실험명은 통째로, 그리고 낱말마다(공백·'_' 로 나눔) — 프로젝트·회차와 같은 낱말은 정당한 출처라 뺀다
+        let proj = k["proj"] ?? "", roundText = k["round"].map { "\($0)회차" } ?? ""
+        let nameTokens = name.components(separatedBy: CharacterSet(charactersIn: " _")).filter { $0.count >= 2 && !proj.contains($0) && $0 != roundText }
+        for v in [who, sbj, name] + nameTokens where v.count >= 2 && out.contains(v) { return "(원문 노출) " + out }
+        return out
+    }
+    /// mm — MilestoneFiles.fileDate (Members 전광판 Milestone 열·'MM 고유 날짜' 와 같은 함수)
+    static func mm(_ rel: String, initials: [String]) -> String {
+        guard let d = MilestoneFiles.fileDate(rel, initials: initials) else { return "—" }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: d)
     }
     /// '[XX] 내용@분' 을 ';' 로 → PaperComment (comment·tally 공용)
     private static func parseComments(_ input: String) -> [PaperComment] {

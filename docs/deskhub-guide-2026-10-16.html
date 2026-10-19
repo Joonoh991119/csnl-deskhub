@@ -34,15 +34,27 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.39.0 · 2026년 10월 16일 · 절 제목을 누르면 펼쳐집니다</div>
+<div class="sub">연구실 바탕화면 대시보드 · 0.40.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
 <p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
+
+<details open>
+<summary><span class="chev"></span>0.40.0 에서 바뀐 것</summary>
+<ul>
+<li><b>상태 한 줄</b> — 허브 맨 위 한 줄에 확정·예상 일정, 학회·연구비 마감, 멈춘 자료, 다음 GRM 이 모입니다. 마감 적색은 이 한 칸으로 모았고, 아래에 8주 마감 띠가 붙습니다. 나와 관련된 새 항목은 '새 n' 배지로 보입니다.</li>
+<li><b>자료 날짜 꼬리표</b> — 모든 카드 머리에 '내용 날짜 · 며칠 전' 이 붙습니다. 관제탑의 '자료 상태' 표에서 어느 자료가 멈췄는지와 고칠 곳(Notion 링크)을 봅니다.</li>
+<li><b>장비 예약</b> — 장비 6대마다 지금·다음 예약이 한 줄씩 보이고, 기한이 지났는데 닫지 않은 예약은 따로 표시됩니다.</li>
+<li><b>GRM 자료 지도</b> — GRM 회차마다 슬라이드·녹취·회의록·Paper Blitz 가 있는지 점으로 보입니다. NAS 를 못 읽으면 '?' 로 표시합니다.</li>
+<li><b>공정 보드</b> — 실험마다 한 줄(SLab 은 '프로젝트 · n회차', 참여자 이름은 보이지 않음), Prolific 은 게시일·정원이 보입니다.</li>
+<li><b>논문 추천</b> — 추천 자료가 오래 갱신되지 않으면 큰 자리가 한 줄로 접힙니다.</li>
+</ul>
+</details>
 
 <details open>
 <summary><span class="chev"></span>설치 (5분, Intel·Apple Silicon 모두)</summary>
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.39.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.40.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -118,7 +130,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.39.0, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.40.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>

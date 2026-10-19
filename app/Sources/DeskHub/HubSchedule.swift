@@ -26,15 +26,19 @@ extension Hub {
 /// 윗줄 가운데 — 오늘 캘린더의 지금·다음 (다음 GRM 카드와 분리, #13)
 struct NowNextCard: View {
     @ObservedObject var cal: CalendarModel
+    /// 랩 허브만 — 카드 끝 캡션 한 줄 (0.40.0 C2, A1)
+    var caption = false
     @Environment(\.cardStyle) private var cs
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text("오늘 · 지금과 다음").font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2)
+                if caption, let f = DataSources.calendarTag(cal) { FreshnessTag(f: f).layoutPriority(-1) }   // 라이브 '갱신 HH:mm' (허브만, 0.40.0 C3)
                 Spacer(minLength: 0)
                 Text("CSNL·SLab 캘린더").font(.hub(cs.tag - 0.5)).foregroundStyle(Hub.text3)
             }
             NowNextLine(cal: cal)
+            if caption { Spacer(minLength: 0); SourceCaption(text: CardMetas.nownextCaption(cal)) }
         }
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -121,7 +125,8 @@ struct UpcomingEventsCard: View {
             VStack(alignment: .leading, spacing: cs.gap) {
                 HStack(spacing: 6) {
                     SectionTitle(text: excludeToday ? "다가오는 일정 · 내일부터 \(model.cfg.eventsDays)일"
-                                 : (nearOnly && !isOpen ? "다가오는 일정 · " + (filledTo ?? "오늘·내일") : "다가오는 일정 · \(model.cfg.eventsDays)일"))
+                                 : (nearOnly && !isOpen ? "다가오는 일정 · " + (filledTo ?? "오늘·내일") : "다가오는 일정 · \(model.cfg.eventsDays)일"),
+                                 fresh: nearOnly ? model.cardTag("events") : nil)
                     Spacer(minLength: 0)
                     // 허브(큰 글자)는 행마다 출처 꼬리표가 있어 머리 설명을 뺀다 — 좁은 열에서 제목과 겹치지 않게
                     if !nearOnly { Text("Notion Schedule + CSNL·SLab 캘린더 · GRM 제외").font(.hub(cs.tag - 0.5)).foregroundStyle(Hub.text3).lineLimit(1) }
@@ -165,7 +170,7 @@ struct UpcomingEventsCard: View {
                             Text("+\(all.count - rows.count)건 더").font(.hub(cs.aux - 0.5)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                         }.buttonStyle(.plain)
                     }
-                    if let cut { MoreToggle(key: "events", more: cut.toggleCount(open: isOpen, extra: e)) }
+                    if let cut { CardFooter(caption: CardMetas.caption("events", model), toggleKey: "events", more: cut.toggleCount(open: isOpen, extra: e)) }
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -200,6 +205,8 @@ struct GRMOrderView: View {
                 }
                 rotation
                 schedule
+                // 지난 회차 자료 — 점 행렬 (0.40.0 C6, A6). 'CSNL GRM' 탭과 grm 뷰가 같이 쓴다
+                GRMMapView(model: model)
             }
             .padding(16)
         }
@@ -207,31 +214,41 @@ struct GRMOrderView: View {
 
     /// 로테이션 순서 — GRM Schedule 의 예정 발표자가 나오는 순서(실제 순환), 다음 발표자부터 한 바퀴.
     /// Members 의 'Rotation order' 는 실제 순환과 달라(BHL R1 10-15) 예정 일정이 없을 때만 쓴다.
+    /// 0.40.0 C6 (A6): 칩 대신 4열 표 — 순번 | 이름(이니셜) | 지난 GRM n일 전 | 다음 M.d. 횟수 열은 두지 않는다(D8 — 공개 일정이라도 순위로 읽힌다)
     private var rotation: some View {
-        let next = model.nextGRM?.presenters ?? ""
         let fromSchedule = Self.cycle(model.grm.filter { $0.date >= model.today }, members: model.members)
-        let ms = fromSchedule.count >= 3 ? fromSchedule : model.members.filter { $0.active && $0.order < 99 }
         let source = fromSchedule.count >= 3 ? "GRM Schedule 예정 순서" : "Members · Rotation order"
+        let rows = GRMRotation.rows(model)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text("로테이션 순서").font(.hub(12, weight: .bold)).foregroundStyle(Hub.text2)
                 Text(source).font(.hub(11)).foregroundStyle(Hub.text3)
             }
-            FlowLayout(spacing: 6, lineSpacing: 6) {
-                ForEach(Array(ms.enumerated()), id: \.element.id) { i, m in
-                    let isNext = !next.isEmpty && (next.contains(m.name) || next.contains(m.initials))
-                    HStack(spacing: 4) {
-                        Text("\(i + 1)").font(.hub(11, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(isNext ? Hub.onAccent.opacity(0.85) : Hub.text3)
-                        Text(m.name).font(.hub(13, weight: .semibold))
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(isNext ? Hub.ink : Hub.surface))
-                    .foregroundStyle(isNext ? Hub.onAccent : Hub.text)
-                    .help(isNext ? "다음 GRM 발표 · Members 페이지" : m.initials + " · Members 페이지")
-                    .link(.notion(m.id))
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 0) {
+                GridRow {
+                    Text("순번"); Text("이름"); Text("지난 GRM"); Text("다음")
                 }
+                .font(.hub(11, weight: .semibold)).foregroundStyle(Hub.text3)
+                .padding(.vertical, 4)
+                ForEach(rows, id: \.member.id) { r in rotationRow(r) }
             }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
         }
+    }
+
+    private func rotationRow(_ r: GRMRotation) -> some View {
+        let fg: Color = r.isNext ? Hub.onAccent : Hub.text
+        return GridRow {
+            Text("\(r.order)").font(.hub(11, weight: .bold, design: .rounded)).monospacedDigit().foregroundStyle(r.isNext ? Hub.onAccent.opacity(0.85) : Hub.text3)
+            Text(r.member.name.isEmpty ? r.initials : "\(r.member.name) (\(r.initials))").font(.hub(13, weight: .semibold)).foregroundStyle(fg).lineLimit(1)
+            Text(r.last).font(.hub(12)).monospacedDigit().foregroundStyle(r.isNext ? Hub.onAccent : Hub.text2)
+            Text(r.next).font(.hub(12, weight: r.isNext ? .bold : .regular)).monospacedDigit().foregroundStyle(r.isNext ? Hub.onAccent : Hub.text2)
+        }
+        .padding(.vertical, 5)
+        .background(r.isNext ? RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Hub.ink).padding(.horizontal, -6) : nil)
+        .help(r.isNext ? "다음 GRM 발표 · Members 페이지" : r.initials + " · Members 페이지")
+        .link(.notion(r.member.id))
     }
 
     /// 예정 GRM(일반 GRM 우선, 모자라면 Focus 포함)의 발표자를 처음 나온 순서대로 — 같은 사람이 다시 나오면 한 바퀴 끝

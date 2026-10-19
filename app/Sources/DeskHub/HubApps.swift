@@ -41,7 +41,8 @@ struct AppsCard: View {
         let cut = nearOnly ? HubNear.apps(data.apps) : nil
         let apps = cut.map { $0.shown(open: expansion.isOpen("apps")) } ?? data.apps
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: nearOnly ? "만든 앱 · \(data.apps.count)개" : "만든 앱", trailing: data.report.map { FileManager.default.fileExists(atPath: ($0 as NSString).expandingTildeInPath) ? "구조 보고서" : nil } ?? nil) {
+            SectionTitle(text: nearOnly ? "만든 앱 · \(data.apps.count)개" : "만든 앱", trailing: data.report.map { FileManager.default.fileExists(atPath: ($0 as NSString).expandingTildeInPath) ? "구조 보고서" : nil } ?? nil,
+                         fresh: nearOnly ? Freshness.content(CardMetas.appsFileDate, cycle: 30, today: HubClock.today, help: "apps.json 수정일") : nil) {
                 if let r = data.report { NSWorkspace.shared.open(URL(fileURLWithPath: (r as NSString).expandingTildeInPath)) }
             }
             VStack(spacing: 0) {
@@ -64,7 +65,7 @@ struct AppsCard: View {
                     if i < apps.count - 1 { RowDivider() }
                 }
                 // 접힘에선 머리 바로 아래 바만 — 위 구분선 없이
-                if let cut { MoreToggle(key: "apps", more: cut.more, divider: !apps.isEmpty) }
+                if let cut { CardFooter(caption: CardMetas.appsCaption(), toggleKey: "apps", more: cut.more, divider: !apps.isEmpty) }
             }
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
         }

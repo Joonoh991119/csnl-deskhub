@@ -11,6 +11,42 @@ struct Freshness: Equatable {
     var help: String = ""
 }
 
+// MARK: - 멈춘 생산자 규칙 (0.40.0 C3, A2 — 정의서 A2-stopped·A2-late). papersFreshness 10일 규칙을 원천마다 기대 주기로 일반화
+enum ProducerRule {
+    /// 논문 추천 '정지' (공정 보드 생산 칸) — papersFreshness·Pipeline 의 10일
+    static let papersStaleDays = 10
+    /// 만성(30일 넘게 멈춘 추천)은 경보가 아니라 참조 레일 몫 — AlertEngine
+    static let chronicDays = 30
+    enum Kind: String { case ok = "정상", late = "지연", stopped = "멈춤" }
+    struct Judge: Equatable { let age: Int; let ratio: Double; let kind: Kind }
+    /// 경과일 = 오늘 − 내용 날짜(음수는 0), ×비 = 경과일 ÷ 기대 주기. ×1 이하 정상, ×2 이하 지연, 그 위 멈춤. 내용·주기가 없으면 nil
+    static func judge(content: Date?, today: Date, cycleDays: Int) -> Judge? {
+        guard let c = content, cycleDays > 0 else { return nil }
+        let cal = Calendar.current
+        let age = max(0, cal.dateComponents([.day], from: cal.startOfDay(for: c), to: cal.startOfDay(for: today)).day ?? 0)
+        let ratio = Double(age) / Double(cycleDays)
+        return Judge(age: age, ratio: ratio, kind: ratio > 2 ? .stopped : (ratio > 1 ? .late : .ok))
+    }
+    /// '56일 · ×8.0 · 멈춤' — 덤프·text-check 'A2-stopped'
+    static func label(_ j: Judge) -> String { "\(j.age)일 · ×" + String(format: "%.1f", j.ratio) + " · " + j.kind.rawValue }
+}
+
+extension Freshness {
+    /// 내용 날짜 꼬리표 '내용 M.d · n일'(n=0 이면 '내용 M.d') — ×1 이하 fresh(Hub.text3·checkmark), 넘으면 stale(Hub.text2·exclamationmark). 적색 없음 (A2-content)
+    static func content(_ d: Date?, cycle: Int, today: Date, help: String = "") -> Freshness? {
+        guard let d, let j = ProducerRule.judge(content: d, today: today, cycleDays: cycle) else { return nil }
+        let text = "내용 " + Hub.shortDay(d) + (j.age == 0 ? "" : " · \(j.age)일")
+        let why = "기대 주기 \(cycle)일 · " + ProducerRule.label(j)
+        return Freshness(state: j.ratio <= 1 ? .fresh : .stale, text: text, help: help.isEmpty ? why : help + " — " + why)
+    }
+    /// 라이브 원천(캘린더·Notion 조회) — '갱신 HH:mm'
+    static func live(_ d: Date?, help: String) -> Freshness? {
+        guard let d else { return nil }
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        return Freshness(state: .fresh, text: "갱신 " + f.string(from: d), help: help)
+    }
+}
+
 struct FreshnessTag: View {
     let f: Freshness
     var body: some View {
@@ -55,6 +91,13 @@ extension NotionHubModel {
         return Freshness(state: .stale, text: "마지막 갱신 " + f.string(from: ok),
                          help: feedNote != nil ? "받기 실패 — 마지막으로 받은 목록을 보이는 중" : "24시간 넘게 새로 받지 못함")
     }
+    /// 논문 추천 생산자 멈춤 (0.40.0 C8, R4-fold) — 가장 최근 Sent At 이 기대 주기 7일의 ×2(14일)를 넘으면. 자료가 없으면(nil) 접지 않는다.
+    /// 새 Sent At 이 들어오면 저절로 false → 네 자리(허브 열1·관제탑·안내판·나 뷰)가 원래 보드로 돌아간다
+    var papersStopped: Bool {
+        ProducerRule.judge(content: papers.compactMap(\.sentAt).max(), today: today, cycleDays: 7)?.kind == .stopped
+    }
+    /// 멈춘 날 'M.d' — 접힘 줄·덤프 '접힘(멈춤 6.1)'
+    var papersStoppedSince: String { papers.compactMap(\.sentAt).max().map(Hub.shortDay) ?? "—" }
     /// 논문 추천: 가장 최근 보낸 날짜가 10일 넘으면 stale
     var papersFreshness: Freshness? {
         guard let d = papers.compactMap(\.sentAt).max() else { return nil }

@@ -16,6 +16,8 @@ struct ProcessBoardView: View {
     struct ConfirmAction: Identifiable { let id = UUID(); let label: String; let action: String }
 
     private var me: String { HubPrefs.me }
+    /// '실험' 한 줄 펼침(키 표) — HubExpansion 'exp-keys' (0.40.0 C7)
+    @ObservedObject private var expansion = HubExpansion.shared
 
     /// 판정 + 날짜 미정 그랜트 묶기 + '내 손' 거르기
     private var rows: [PipelineRow] {
@@ -55,7 +57,12 @@ struct ProcessBoardView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(rs.enumerated()), id: \.element.id) { i, r in
                             if i > 0 && rs[i - 1].pipeline != r.pipeline { Rectangle().fill(Hub.divider).frame(height: 1).padding(.vertical, 4) }
-                            rowView(r, red: redCells, titleWidth: min(290, w * 0.35))
+                            if let sm = r.summary {
+                                summaryRow(r.title, sm, titleWidth: min(290, w * 0.35))
+                                if expansion.isOpen("exp-keys") { ExperimentKeyTable(model: model) }
+                            } else {
+                                rowView(r, red: redCells, titleWidth: min(290, w * 0.35))
+                            }
                         }
                         if rs.isEmpty { Text(mineOnly ? "내 손에 있는 칸 없음" : "공정 없음").foregroundStyle(Hub.text2).padding(12) }
                     }
@@ -132,6 +139,31 @@ struct ProcessBoardView: View {
             Spacer()
             Text("칸 클릭 = 원본 · ■ 막힘 · ? 판정 근거 없음").font(.hub(11)).foregroundStyle(Hub.text3)
         }
+    }
+
+    /// '실험' 한 줄 (0.40.0 C7, A4) — 단계 칸 대신 글 두 덩어리(온라인 Hub.text · 현장 text3/text2). 클릭 = 키 표 펼침. 적색 없음
+    private func summaryRow(_ title: String, _ sm: [(String, ExperimentStats.Tone)], titleWidth: CGFloat) -> some View {
+        let open = expansion.isOpen("exp-keys")
+        return HStack(alignment: .center, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: open ? "chevron.down" : "chevron.right").font(.hub(10, weight: .bold)).foregroundStyle(Hub.text3)
+                Text(title).font(.hub(13, weight: .medium)).lineLimit(1)
+            }
+            .frame(width: titleWidth, alignment: .leading).padding(.leading, 12)
+            HStack(spacing: 8) {
+                ForEach(Array(sm.enumerated()), id: \.offset) { i, c in
+                    if i > 0 { Text("|").foregroundStyle(Hub.divider) }
+                    Text(c.0).foregroundStyle(c.1 == .text ? Hub.text : (c.1 == .text2 ? Hub.text2 : Hub.text3)).lineLimit(1)
+                }
+            }
+            .font(.hub(12))
+            .padding(.vertical, 7)
+            Spacer(minLength: 0)
+        }
+        .padding(.trailing, 8)
+        .contentShape(Rectangle())
+        .onTapGesture { expansion.toggle("exp-keys") }
+        .help("누르면 실험 키 표(프로젝트 × 실험자 · 누적 세션 · 마지막 날짜) — 정의 A4-* (docs/metrics-definitions.md)")
     }
 
     private func rowView(_ r: PipelineRow, red: Set<String>, titleWidth: CGFloat) -> some View {

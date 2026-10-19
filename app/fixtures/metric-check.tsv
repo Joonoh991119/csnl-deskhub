@@ -1,0 +1,72 @@
+# DeskHub --text-check fixtures/metric-check.tsv (0.40.0 C2~) — 지표 정의의 순수 함수(MetricDefs·ProducerRule·StatusLine·EquipmentBoard·GRMMap·ExperimentStats)
+# 입력 '<정의 id>|<입력>', 기대 = 결과 글. 정의 id 가 ../../docs/metrics-definitions.md 표에 없으면 '(정의서에 없음 id)' 로 FAIL
+# 종류	입력	기대
+# C2 · A1 — 주 경계(한국시간 월~일)·집계 지연·별칭·캡션
+metric	M-week|2026-10-15	2026-10-12..2026-10-18
+metric	M-week|2026-10-12	2026-10-12..2026-10-18
+metric	M-week|2026-10-18	2026-10-12..2026-10-18
+metric	M-week|2026-10-19	2026-10-19..2026-10-25
+metric	A1-asof|as_of=2026-10-14T11:00:00+09:00,now=2026-10-15T17:00	30시간 · 지연
+metric	A1-asof|as_of=2026-10-15T02:00:00+09:00,now=2026-10-15T17:00	15시간
+metric	A1-asof|as_of=2026-10-14T15:00:00+09:00,now=2026-10-15T17:00	26시간
+metric	alias|SK	SJK
+metric	alias|RJH	JHR
+metric	alias|jop	JOP
+metric	caption|src=SLab·Prolific,at=2026-10-15T17:00,now=2026-10-15T18:00,n=3,id=CARD-experiments	출처 SLab·Prolific · 기준 17:00 · n 3 · CARD-experiments
+metric	caption|src=apps.json,at=2026-10-01T09:00,now=2026-10-15T18:00,n=4,id=CARD-apps	출처 apps.json · 기준 10.1 · n 4 · CARD-apps
+# C3 · A2 — 멈춘 생산자 규칙(ProducerRule: ×1 이하 정상 · ×2 이하 지연 · 그 위 멈춤)과 내용 날짜 꼬리표
+metric	A2-stopped|content=2026-08-20,today=2026-10-15,cycle=7	56일 · ×8.0 · 멈춤
+metric	A2-stopped|content=2026-10-08,today=2026-10-15,cycle=7	7일 · ×1.0 · 정상
+metric	A2-stopped|content=2026-10-07,today=2026-10-15,cycle=7	8일 · ×1.1 · 지연
+metric	A2-stopped|content=2026-10-01,today=2026-10-15,cycle=7	14일 · ×2.0 · 지연
+metric	A2-stopped|content=2026-09-30,today=2026-10-15,cycle=7	15일 · ×2.1 · 멈춤
+metric	A2-stopped|content=,today=2026-10-15,cycle=7	내용 없음
+metric	A2-stopped|content=2026-10-20,today=2026-10-15,cycle=30	0일 · ×0.0 · 정상
+metric	A2-content|content=2026-08-20,today=2026-10-15,cycle=7	내용 8.20 · 56일 · stale
+metric	A2-content|content=2026-10-15,today=2026-10-15,cycle=7	내용 10.15 · fresh
+# C4 · A3 — 8주 창(이번 주 월요일부터 56일)·현장 실험 마지막
+metric	A3-window|2026-10-15	2026-10-12..2026-12-06
+metric	A3-window|2026-10-12	2026-10-12..2026-12-06
+metric	A3-window|2026-10-18	2026-10-12..2026-12-06
+metric	A3-window|2026-10-19	2026-10-19..2026-12-13
+metric	A3-field|slab=2026-08-20,ics=2026-08-21,today=2026-10-15	55일
+metric	A3-field|slab=,ics=,today=2026-10-15	—
+# C5 · A5 — 장비 지금·다음·닫기 누락·장비 순서 (EquipmentBoard)
+metric	A5-now|start=2026-10-14,end=2026-10-16,status=Running,user=JYK,now=2026-10-15T17:00	사용 중 JYK ~10.16
+metric	A5-now|start=2026-10-15,end=,status=Running,user=SJK,now=2026-10-15T17:00	사용 중 SJK ~10.15
+metric	A5-now|start=2026-10-14,end=2026-10-14,status=Running,user=JYK,now=2026-10-15T17:00	비어 있음
+metric	A5-now|start=2026-10-14,end=2026-10-16,status=Done,user=JYK,now=2026-10-15T17:00	비어 있음
+metric	A5-now|start=2026-10-15T09:00,end=2026-10-15T12:00,status=Running,user=BHL,now=2026-10-15T17:00	비어 있음
+metric	A5-next|start=2026-10-22,end=2026-10-23,status=Running,user=SJK,now=2026-10-15T17:00	10.22 SJK
+metric	A5-next|start=2026-10-14,end=2026-10-16,status=Running,user=JYK,now=2026-10-15T17:00	—
+metric	A5-overdue|start=2026-09-01,end=2026-09-17,status=Running,today=2026-10-15	누락
+metric	A5-overdue|start=2026-10-14,end=2026-10-16,status=Running,today=2026-10-15	정상
+metric	A5-overdue|start=2026-10-14,end=,status=Running,today=2026-10-15	누락
+metric	A5-overdue|start=2026-09-01,end=2026-09-17,status=Done,today=2026-10-15	정상
+metric	A5-machines|GPU1,GPU1,MacStudio,GPU2,MacStudio,GPU1,iMac2	GPU1 · MacStudio · GPU2 · iMac2
+# C6 · A6 — 회차 폴더 파일 판정(GRMMap.classify — 자료 지도·공정 보드 grmStage 같은 함수)
+metric	A6-slide|SMJ_261014.pptx	슬라이드
+metric	A6-slide|PB_261014.pptx	PB
+metric	A6-slide|PB_260401.pdf	PB
+metric	A6-slide|~$x.pptx	—
+metric	A6-slide|~$PB_261014.pptx	—
+metric	A6-slide|Thumbs.db	—
+metric	A6-slide|.DS_Store	—
+metric	A6-slide|발표.key	슬라이드
+metric	A6-slide|260408_JYK.pdf	슬라이드
+metric	A6-slide|notes.docx	—
+# A6-minutes — 회의록 칸: relation 또는 제목 있는 같은 날 Meeting Notes 행(Type 'Other' 포함 — 정의서·aggregate_daily 와 같게, 검증 1)
+metric	A6-minutes|rel=0,day=2026-04-08,notes=Other:2026-04-08	●
+metric	A6-minutes|rel=0,day=2026-04-08,notes=GRM:2026-04-08	●
+metric	A6-minutes|rel=1,day=2026-04-08,notes=	●
+metric	A6-minutes|rel=0,day=2026-04-08,notes=GRM:2026-04-01;Other:2026-04-15	○
+metric	A6-minutes|rel=0,day=2026-04-08,notes=Other:2026-04-08:	○
+metric	A6-transcript|GRM_transcript_20261014.json	녹취
+# C7 · A4 — 온라인(Prolific 게시월·제출·정원 미달, 픽스처 prolific-month.json — 가짜 값)·게시월 합·현장
+metric	A4-online|prolific-month.json|2026-10	study 3 · 제출 57 · 정원 미달 진행 중 1
+metric	A4-online|prolific-month.json|2026-09	study 1 · 제출 40 · 정원 미달 진행 중 1
+metric	A4-sum|prolific-month.json	월별 합 = 전체 합 (120=120)
+metric	A4-field|slab=2026-08-20,ics=2026-08-21,today=2026-10-15	현장 쉼 55일 (Notion·캘린더 둘 다 멈춤)
+metric	A4-field|slab=2026-10-10,ics=2026-08-21,today=2026-10-15	출처 어긋남 50
+metric	A4-field|slab=2026-10-10,ics=2026-10-12,today=2026-10-15	현장 마지막 10.12
+metric	A4-field|slab=,ics=,today=2026-10-15	현장 — (집계 없음)

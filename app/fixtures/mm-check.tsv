@@ -1,0 +1,28 @@
+# DeskHub --text-check fixtures/mm-check.tsv (0.40.0 C1, F0-4) — MM 파일 이름 날짜 (MilestoneFiles.fileDate)
+# 입력 = MM/<이니셜>/ 아래 상대 경로, 기대 'yyyy-MM-dd' 또는 '—'. 넷째 칸 = 폴더 이니셜(쉼표, 비면 JOP)
+# 규칙 ① MM<yymmdd>_<이니셜> ② 앞 6자리 yymmdd ③ 어디든 (yyyy|yy)[.-_]mm[.-_]dd ④ 이름에 없으면 상위 폴더 이름. 연도 2015–2035, 달력 검증
+# 종류	입력	기대	이니셜
+mm	MM261016_JOP.pptx	2026-10-16
+mm	MM261016_JOP_GRM.pdf	2026-10-16
+mm	MM261016_BHL.pptx	—
+mm	MM261016_BHL.pptx	2026-10-16	BHL
+mm	MM261016_SK.pptx	2026-10-16	SJK,SK
+mm	sub/260903 진척.pptx	2026-09-03	BHL
+mm	260903 진척.pptx	2026-09-03	MSY
+mm	260903 진척.key	2026-09-03	MSY
+mm	261014_GRM.pdf	2026-10-14	JYK
+mm	261014.pptx	2026-10-14	JYK
+mm	2610141.pptx	—	JYK
+mm	발표 자료_2026.10.14.pptx	2026-10-14	SMJ
+mm	발표-자료_2026-10-14 최종.pptx	2026-10-14	SMJ
+mm	MM_진척(26.10.14).pptx	2026-10-14	BYL
+mm	MM_진척(26.10.14) (1).pptx	2026-10-14	BYL
+mm	261332 발표.pptx	—	MSY
+mm	260230 발표.pptx	—	MSY
+mm	140101 발표.pptx	—	MSY
+mm	360101 발표.pptx	—	MSY
+mm	발표 - 20261014.pptx	—	SMJ
+mm	발표_10_16_2025.pptx	—	SMJ
+mm	260901 진척/발표.pptx	2026-09-01	BHL
+mm	a/b_2026.09.01/발표.pptx	2026-09-01	SMJ
+mm	2026.10/발표.pptx	—	SMJ

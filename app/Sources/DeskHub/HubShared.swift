@@ -238,21 +238,23 @@ struct UndoToast: View {
 /// 다음 크기 요청은 이 두 값만 고친다 (계획 0.37.0 §5 ⑤ — 리터럴 344곳을 다시 고치지 않게)
 struct CardStyle: Equatable {
     var title: CGFloat, body: CGFloat, aux: CGFloat, tag: CGFloat, big: CGFloat
+    /// 캡션 — 카드 끝 '출처 · 기준 · n · 정의 id' 한 줄 (0.40.0 C2, A1)
+    var cap: CGFloat
     var rowH: CGFloat, rowV: CGFloat, gap: CGFloat, empty: CGFloat
     /// 글자가 든 고정 폭(날짜·D-day·출처 칸)의 배율 — 큰 글자에서 '…' 로 잘리지 않게
     var colScale: CGFloat
     /// × 글자 배율(HubDisplay.scale, 0.37.0 C3) — 슬라이더로 키워도 날짜·D-day 칸이 '…' 로 잘리지 않게
     func col(_ w: CGFloat) -> CGFloat { (w * colScale * HubDisplay.scale).rounded() }
 
-    static let standard = CardStyle(title: 12, body: 13, aux: 12, tag: 11, big: 14, rowH: 12, rowV: 8, gap: 8, empty: 12, colScale: 1)
+    static let standard = CardStyle(title: 12, body: 13, aux: 12, tag: 11, big: 14, cap: 10.5, rowH: 12, rowV: 8, gap: 8, empty: 12, colScale: 1)
     /// 랩 허브 — 제목 ≥16 · 본문 ≥14 (교수님 기본 화면)
-    static let large = CardStyle(title: 16, body: 15, aux: 14, tag: 14, big: 20, rowH: 10, rowV: 5, gap: 4, empty: 8, colScale: 1.2)
+    static let large = CardStyle(title: 16, body: 15, aux: 14, tag: 14, big: 20, cap: 12, rowH: 10, rowV: 5, gap: 4, empty: 8, colScale: 1.2)
 
     private static func n(_ v: CGFloat) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.1f", Double(v)) }
     /// text.txt [허브 글자] 한 줄
     var dumpLine: String {
         "제목 \(Self.n(title)) · 본문 \(Self.n(body)) · 보조 \(Self.n(aux)) · 꼬리표 \(Self.n(tag)) · 큰 값 \(Self.n(big)) · 행 여백 \(Self.n(rowH))×\(Self.n(rowV))"
-            + " · 카드 간격 \(Self.n(HubSpace.card)) · 바깥 \(Self.n(HubSpace.outer))"
+            + " · 카드 간격 \(Self.n(HubSpace.card)) · 바깥 \(Self.n(HubSpace.outer)) · 캡션 \(Self.n(cap))"
     }
 }
 
@@ -445,7 +447,8 @@ enum HubNear {
             line("experiments", experiments(model)) { x in [x.source, x.status].filter { !$0.isEmpty }.joined(separator: " ") },
             line("minutes", minutes(model)) { m in m.date.map(Hub.shortDay) ?? "—" },
             line("blitz", blitz(model, me: me)) { p in (model.blitzDate.map(Hub.shortDay) ?? "—") + " " + (p.presenter.isEmpty ? "?" : p.presenter) },
-            line("papers", papers(model, visible: PaperRecBoard.visible(model, who: who))) { p in p.sentAt.map(Hub.shortDay) ?? "—" },
+            line("papers", papers(model, visible: PaperRecBoard.visible(model, who: who))) { p in p.sentAt.map(Hub.shortDay) ?? "—" }
+                + (model.papersStopped ? " · 접힘(멈춤 \(model.papersStoppedSince))" : ""),
             line("preprints", preprints(model)) { r in r.date.map(Hub.shortDay) ?? "—" },
             line("apps", apps(MadeApps.load().apps)) { $0.name },
         ]
@@ -564,7 +567,10 @@ final class HubFill: ObservableObject {
 
     private func step(_ col: String, _ keys: [String]) {
         guard let m = model else { waiting[col] = "허브 안 보임"; return }
-        if (Self.columnCards[col] ?? []).contains(where: { HubExpansion.shared.isOpen($0) }) { waiting[col] = "펼친 카드"; seen[col] = nil; return }
+        // 논문 추천이 멈춰 접혀 있으면(R4) 펼침 저장값은 화면에 없다 — 그 열은 접힌 열로 본다 (0.40.0 C8)
+        if (Self.columnCards[col] ?? []).contains(where: { HubExpansion.shared.isOpen($0) && !($0 == "papers" && m.papersStopped) }) {
+            waiting[col] = "펼친 카드"; seen[col] = nil; return
+        }
         guard let v = HubLayoutProbe.value(col) else { waiting[col] = "측정 전"; return }
         // 토스트·댓글 칸이 떠 있는 동안 잰 높이로는 정하지도 빼지도 않는다 — 닫히면 높이가 바뀌어 probe 가 다시 깨운다(토스트는 6초 뒤 한 번 더 확인)
         if transient(col, m) {
@@ -655,7 +661,10 @@ final class HubFill: ObservableObject {
         case "grants": return HubNear.grants(m).more
         case "conferences": return HubNear.conferences(m, limit: min(m.cfg.conferencesCount, 5)).more
         case "blitz": return HubNear.blitz(m, me: HubPrefs.me).more
-        case "papers": return HubNear.papers(m, visible: PaperRecBoard.visible(m, who: PaperRecBoard.who(filter: HubPrefs.paperFilter, me: HubPrefs.me))).more
+        case "papers":
+            // 접힌 보드(R4)는 행을 그리지 않으니 채울 행도 없다 — 열1 빈 면은 최신 원고가 받는다
+            if m.papersStopped { return 0 }
+            return HubNear.papers(m, visible: PaperRecBoard.visible(m, who: PaperRecBoard.who(filter: HubPrefs.paperFilter, me: HubPrefs.me))).more
         case "preprints": return HubNear.preprints(m).more
         default: return 0
         }
@@ -699,13 +708,49 @@ final class HubExpansion: ObservableObject {
     @Published private(set) var open: Set<String>
     private init() { open = Set(UserDefaults.standard.stringArray(forKey: Self.defaultsKey) ?? []) }
     func isOpen(_ key: String) -> Bool { open.contains(key) }
-    /// 클릭·--key expand:<key> 가 같은 경로. 다 접히면 키를 지운다(defaults read 에 남지 않게)
+    /// 클릭·--key expand:<key> 가 같은 경로. 다 접히면 키를 지운다(defaults read 에 남지 않게). 열 때 UsageLog panel(키) (0.40.0 C2, A1)
     func toggle(_ key: String) {
+        let opening = !open.contains(key)
         withAnimation(.easeOut(duration: 0.2)) {
             if open.contains(key) { open.remove(key) } else { open.insert(key) }
         }
+        if opening { UsageLog.panel(key) }
         if open.isEmpty { UserDefaults.standard.removeObject(forKey: Self.defaultsKey) }
         else { UserDefaults.standard.set(open.sorted(), forKey: Self.defaultsKey) }
+    }
+}
+
+/// 허브 카드 끝 한 줄 (0.40.0 C2, A1·결정 D-h) — 왼쪽 캡션('출처 · 기준 · n · 정의 id', Hub.text3·cs.cap), 오른쪽 '▸ 더 보기 · n개'(있을 때만).
+/// 허브의 MoreToggle 자리를 대신한다 — 토글이 있는 카드는 높이가 그대로(캡션 글자가 토글 글자보다 작다), 없는 카드는 캡션 한 줄만큼 늘어난다
+struct CardFooter: View {
+    let caption: String
+    var toggleKey: String? = nil
+    /// 펼치면 더 보이는 수 (MoreToggle 과 같은 값) — 0 이면 토글 없이 캡션만
+    var more: Int = 0
+    var divider: Bool = true
+    @ObservedObject private var store = HubExpansion.shared
+    @Environment(\.cardStyle) private var cs
+    var body: some View {
+        VStack(spacing: 0) {
+            if divider { RowDivider() }
+            HStack(spacing: 8) {
+                // 캡션이 먼저 폭을 받는다 — 토글은 제 글자 폭(fixedSize)만 남기고, 남는 오른쪽 면은 토글 클릭 영역
+                SourceCaption(text: caption).layoutPriority(1)
+                if let key = toggleKey, more > 0 {
+                    let open = store.isOpen(key)
+                    Button { store.toggle(key) } label: {
+                        Text(open ? "▾ 접기" : "▸ 더 보기 · \(more)개")
+                            .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                            .frame(maxWidth: .infinity, alignment: .trailing).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(open ? "접기 — 가까운 것만 (이 맥에 저장)" : "이 카드의 나머지 \(more)개를 제자리에서 펼침 (이 맥에 저장)")
+                } else {
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+        }
     }
 }
 

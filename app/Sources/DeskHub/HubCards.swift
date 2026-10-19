@@ -75,7 +75,7 @@ struct MinutesCard: View {
                     if i < shownMinutes.count - 1 { RowDivider() }
                 }
                 let more = min(model.minutes.count, model.cfg.recentMinutesCount) - 1
-                if nearOnly { MoreToggle(key: "minutes", more: cut.more) }
+                if nearOnly { CardFooter(caption: CardMetas.caption("minutes", model), toggleKey: "minutes", more: cut.more) }
                 else if more > 0 {
                     RowDivider()
                     Button { withAnimation(.easeOut(duration: 0.15)) { minutesExpanded.toggle() } } label: {
@@ -97,7 +97,7 @@ struct MinutesCard: View {
     }
 }
 
-/// 오늘의 실험 — SLab 예약 · 자원 예약(Running) · Prolific 진행(ACTIVE)·준비(UNPUBLISHED) 중 study (0.37.0 C4)
+/// 오늘의 실험 — SLab 예약 · Prolific 진행(ACTIVE)·준비(UNPUBLISHED) 중 study (0.37.0 C4). 장비 예약은 EquipmentCard (0.40.0 C5)
 struct ExperimentsCard: View {
     @ObservedObject var model: NotionHubModel
     /// 랩 허브만 — SLab·자원 + Prolific 진행 중 4행, 나머지는 '▸ 더 보기' (0.37.0 C2)
@@ -106,11 +106,12 @@ struct ExperimentsCard: View {
     @ObservedObject private var expansion = HubExpansion.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "오늘의 실험 · Prolific 진행·준비 중만", trailing: "SLab") { model.openInApp(id: model.cfg.slabDB) }
+            // 꼬리표 = SLab 마지막 실험날짜(집계) — 허브만, 관제탑은 레일 줄에 (0.40.0 C3, A2)
+            SectionTitle(text: "오늘의 실험 · Prolific 진행·준비 중만", trailing: "SLab", fresh: nearOnly ? model.cardTag("experiments") : nil) { model.openInApp(id: model.cfg.slabDB) }
             VStack(spacing: 0) {
                 if model.experiments.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(model.loading ? "불러오는 중…" : (model.prolificNote == nil ? "오늘 예약된 실험 없음" : "오늘 예약된 실험 없음 (SLab·자원 예약 기준)"))
+                        Text(model.loading ? "불러오는 중…" : (model.prolificNote == nil ? "오늘 예약된 실험 없음" : "오늘 예약된 실험 없음 (SLab 예약 기준)"))
                             .font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
                         if model.prolificNote == nil {
                             Text("SLab 오늘 예약 · Prolific 진행·준비 중 study 가 여기 나옵니다").font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
@@ -165,7 +166,7 @@ struct ExperimentsCard: View {
                             // 빈 실험자 칸 = 자료 빠짐(마감·오류 아님) → 무채색. 적색은 마감·오류에만 (검증 1)
                             if x.owner.isEmpty { Text("실험자 미확인").font(.hub(cs.tag, weight: .semibold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize() }
                             else { Text(x.owner).font(.hub(cs.tag, weight: .bold, design: .rounded)).foregroundStyle(Hub.ink) }
-                            if !x.status.isEmpty { Text(x.status).font(.hub(cs.tag, weight: .bold)).foregroundStyle(x.status == "확정" || x.status == ProlificFilter.activeLabel || x.status == "Running" ? Hub.ok : Hub.text2) }
+                            if !x.status.isEmpty { Text(x.status).font(.hub(cs.tag, weight: .bold)).foregroundStyle(x.status == "확정" || x.status == ProlificFilter.activeLabel ? Hub.ok : Hub.text2) }
                         }
                         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                         .contentShape(Rectangle())
@@ -173,7 +174,7 @@ struct ExperimentsCard: View {
                     .buttonStyle(.plain)
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "experiments", more: cut.more) }
+                if let cut { CardFooter(caption: CardMetas.caption("experiments", model), toggleKey: "experiments", more: cut.more) }
             }
             .frame(maxWidth: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -204,8 +205,9 @@ struct ConferencesCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            if model.cfg.conferencesDB.isEmpty { SectionTitle(text: "다가오는 학회") }
-            else { SectionTitle(text: "다가오는 학회", trailing: "Conferences") { model.openInApp(id: model.cfg.conferencesDB) } }
+            let tag = nearOnly ? model.cardTag("conferences") : nil   // 학회 파일 생성일 (0.40.0 C3)
+            if model.cfg.conferencesDB.isEmpty { SectionTitle(text: "다가오는 학회", fresh: tag) }
+            else { SectionTitle(text: "다가오는 학회", trailing: "Conferences", fresh: tag) { model.openInApp(id: model.cfg.conferencesDB) } }
             if model.interestAskMe && !HubPrefs.meChosen { MeConfirmBar(model: model, compact: true) }
             // 잠김 = 단추가 꺼진 상태 알림 → 무채색. 적색은 손댈 일이 있는 '저장 실패' 와 마감에 남긴다 — 깨진 파일 상태에서 허브 적색 5곳 (검증 1)
             if let why = model.interestLocked {
@@ -240,7 +242,7 @@ struct ConferencesCard: View {
                     row(c)
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "conferences", more: cut.toggleCount(open: open, extra: e)) }
+                if let cut { CardFooter(caption: CardMetas.caption("conferences", model), toggleKey: "conferences", more: cut.toggleCount(open: open, extra: e)) }
                 // 되돌리기 바는 카드 끝 제 줄에 — 겹치면 '▸ 더 보기' 글자와 포개진다 (검증 1). 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
             }

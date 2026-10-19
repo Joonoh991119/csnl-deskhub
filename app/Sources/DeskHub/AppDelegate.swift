@@ -52,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 첫 그림까지 시간 (M5, 0.40.0 C2) — 여기서 시작, 데이터 다 옴 뒤 기본 뷰가 그려지면 HubViewSwitch 가 끝을 잰다
+        RenderClock.begin()
         if AppDelegate.showInDock { NSApp.setActivationPolicy(.regular) }
         // 검증용: DESKHUB_APPEARANCE=dark|light 로 외형 고정, flip 은 다크로 띄웠다가 20초 뒤 라이트로 바꿔
         // 자동 외형 전환 때 카드 색이 따라오는지 스냅샷으로 확인한다. 평소(LaunchAgent)에는 시스템 설정을 따른다.
@@ -278,7 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let proposals = (["", "제안 (\(props.count))"] + props.map { "- \($0.id) · \($0.title) · \($0.date)" }).joined(separator: "\n")
             // '레일 관련도' 줄 (0.35.0, SMJ #27 검증용) — 관제탑 기본 펼침이 쓰는 점수 그대로
             let relevance = "\n\n" + TowerRelevance.dumpLine(model: m, now: HubClock.now, me: HubPrefs.me)
-            return AlertEngine.dump(AlertEngine.evaluate(m, cal: m.todayCalendar, now: HubClock.now, me: HubPrefs.me), now: HubClock.now) + "\n" + proposals + relevance
+            return AlertEngine.dump(AlertEngine.evaluate(m, cal: m.todayCalendar, now: HubClock.now, me: HubPrefs.me), now: HubClock.now,
+                                    isMember: { ini in m.member(initials: ini).map { !$0.initials.isEmpty } ?? false }) + "\n" + proposals + relevance
         }.joined(separator: "\n\n")
         try? text.write(to: dir.appendingPathComponent("alerts.txt"), atomically: true, encoding: .utf8)
     }
@@ -295,6 +298,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 허브 카드 '더 보기' 토글 (0.37.0 C2) — 클릭과 같은 경로(HubExpansion.toggle, 이 맥 저장)
         else if k.hasPrefix("expand:") { HubExpansion.shared.toggle(String(k.dropFirst("expand:".count))) }
+        // 8주 띠 (0.40.0 C4) — 상태 한 줄 클릭과 같은 경로 · esc 는 띠가 열려 있으면 닫기(아니면 뷰로)
+        else if k == "band" { StatusBand.shared.toggle() }
+        else if k == "esc", StatusBand.shared.open { StatusBand.shared.close() }
+        // '내 것' 배지 확인 (0.40.0 C4) — '새 n' 칩·'내 GRM 바뀜 · 확인' 과 같은 경로
+        else if k.hasPrefix("seen:") { SeenCards.shared.acknowledge(String(k.dropFirst("seen:".count))) }
         // 글자·색 (0.37.0 C3) — 판의 막대·단추와 같은 경로(UserDefaults 저장). settings = '글자' 판 열기·닫기
         else if k.hasPrefix("scale:") { if let v = Double(k.dropFirst("scale:".count)) { HubDisplay.shared.setScale(v) } }
         else if k.hasPrefix("preset:") { HubDisplay.shared.setPreset(String(k.dropFirst("preset:".count))) }
@@ -326,7 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let dir = URL(fileURLWithPath: (note.object as? String) ?? NSTemporaryDirectory(), isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let defs = PipelineDefs.load()
-        let text = hubs.values.map { m in PipelineEngine.dump(PipelineEngine.evaluate(m, defs: defs, now: HubClock.now, me: HubPrefs.me), now: HubClock.now) }
+        // [실험 키] — '실험' 한 줄의 펼침 표(0.40.0 C7, A4 — ExperimentKeyTable 과 같은 ExperimentStats.keyTable)
+        let text = hubs.values.map { m in PipelineEngine.dump(PipelineEngine.evaluate(m, defs: defs, now: HubClock.now, me: HubPrefs.me), now: HubClock.now)
+            + "\n\n[실험 키]\n" + m.experimentKeyDumpLines().joined(separator: "\n") }
             .joined(separator: "\n\n")
         try? text.write(to: dir.appendingPathComponent("pipeline.txt"), atomically: true, encoding: .utf8)
     }
@@ -352,6 +362,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var out = ["[허브 글자] " + CardStyle.large.dumpLine, ""]
             // [허브 카드] — 카드마다 가까운 것만 보인 수·숨긴 수·펼침·기준값 (0.37.0 C2, HubNear — 뷰와 같은 함수)
             out += ["[허브 카드] \(HubNear.keys.count)"] + HubNear.dumpLines(m) + [""]
+            // [카드 출처] — 허브 데이터 카드 14: id · 꼬리표 · 캡션('출처 · 기준 · n · 정의 id', CardMetas.caption — 카드 끝 CardFooter 와 같은 함수) (0.40.0 C2, A1)
+            out += ["[카드 출처] \(CardMetas.hub.count)" + (m.metricsNote.map { " · 집계 " + $0 } ?? "")] + CardMetas.dumpLines(m) + [""]
+            // [꼬리표] — 허브 데이터 카드 14 + 관제탑 레일 데이터 항목 10 의 내용 날짜 꼬리표(M3) · [자료 상태] — 원천 정렬 표(경과일 내림차순, 5칸) · [위생] (0.40.0 C3, A2)
+            out += ["[꼬리표]"] + DataSources.tagDumpLines(m) + [""]
+            out += ["[자료 상태]"] + DataSources.dumpLines(m) + [""]
+            out += ["[위생]"] + DataSources.hygieneDumpLines(m) + [""]
+            // [상태 한 줄]·[8주 띠]·[배지] (0.40.0 C4, A3) — 뷰와 같은 StatusLine·SeenCards 함수
+            out += ["[상태 한 줄]"] + StatusLine.dumpLines(m) + [""]
+            out += ["[8주 띠]"] + StatusLine.bandDumpLines(m) + [""]
+            out += ["[배지]"] + SeenCards.shared.dumpLines(m) + [""]
+            // [장비] — 장비 6줄 '장비 · 지금 · 다음'(내 것) + 닫기 누락 (0.40.0 C5, A5 — EquipmentCard 와 같은 EquipmentBoard 함수)
+            out += ["[장비]"] + m.equipmentDumpLines() + [""]
+            // [GRM 자료 지도] — 머리(날짜 대응·열별 채움·?) · 보이는 행 · 순번 (0.40.0 C6, A6 — GRMMapView 와 같은 GRMMap 함수)
+            out += ["[GRM 자료 지도]"] + GRMMap.dumpLines(m) + [""]
             // [논문 추천] — PaperRecBoard 가 그리는 제목·저자 그대로 (R-31)
             out += ["[논문 추천] \(m.papers.count)"]
             out += m.papers.map { p in [dash(p.researcher), dash(p.tier), dash(p.title), dash(p.authors)].joined(separator: " · ") }
@@ -364,9 +388,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // [학회 관심] — 학회 · 학회키 · 관심 [이니셜] · 나 on|off (0.37.0 C5 — 6초 대기 중이면 바뀔 상태)
             let ci = m.interestDumpLines()
             out += ["", "[학회 관심] \(m.conferences.count)"] + ci
-            // [실험] — 오늘의 실험 카드 행 그대로: 출처 · 제목 · 실험자 · 상태 (0.37.0 C4 — Prolific 은 진행·준비 중만)
+            // [실험] — 오늘의 실험 카드 행 그대로: 출처 · 제목 · detail · 실험자 · 상태 (0.37.0 C4 — Prolific 은 진행·준비 중만.
+            // 0.40.0 C1: detail 까지 — M8(피험자 이름·ID 출현 0) 시험이 카드 둘째 줄도 덮게)
             out += ["", "[실험] \(m.experiments.count)"]
-            out += m.experiments.map { x in [dash(x.source), dash(x.title), dash(x.owner), dash(x.status)].joined(separator: " · ") }
+            out += m.experiments.map { x in [dash(x.source), dash(x.title), dash(x.detail), dash(x.owner), dash(x.status)].joined(separator: " · ") }
             // Prolific 안내 줄(미연결·조회 실패 — 지난 행이 남으면 '아래는 HH:mm 결과') (0.38.0 C5)
             if let n = m.prolificNote { out.append("알림 · " + n) }
             // [연구 탭] — 가상 탭 901 (0.39.0 C1): 칸 · 분야 최근 이슈 · 논문 추천(보기 대상 · 편 수 · 신선도)
@@ -442,6 +467,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for id in calendars.keys.sorted() { if let c = calendars[id] { info.append(c.debugLine + " (\(id) 창)") } }
         info.append(popoverDebugLine)
         info.append(HubLayoutProbe.line)
+        // 갱신 단위 Notion 질의·쪽 수 (0.40.0 C1, F0-3 — 죽은 조회 3건을 빼고 12)
+        info.append(NotionQueryStats.line)
+        // 첫 그림까지 시간 (M5, 0.40.0 C2) — 'render: 첫 실측 n ms · 뷰 <mode>'
+        info.append(RenderClock.line)
         // 접힘 빈 면 채우기 (0.38.0 C3) — 'hub-fill: 1 preprints +1 papers +2 · 2 … (결정 HH:mm:ss · 1.0배)' / '꺼짐' / '대기(이유)'
         info.append(HubFill.shared.line)
         // ViewThatFits 가 고른 갈래 (0.38.0 C2) — 'choices: board-deadline 한 줄 · conf-row Cosyne 2027 한 줄 · …'

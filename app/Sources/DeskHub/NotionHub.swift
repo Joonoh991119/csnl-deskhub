@@ -22,13 +22,16 @@ struct NotionAPI {
         token = f
     }
 
-    /// page_size 가 100 이상이면 '전부' 요청으로 보고 has_more 를 따라 최대 3페이지까지 (조사 P2 — 추천·일정이 100에서 잘리던 문제)
-    func query(db: String, body: [String: Any]) async throws -> [[String: Any]] {
+    /// page_size 가 100 이상이면 '전부' 요청으로 보고 has_more 를 따라 최대 maxPages(기본 3)페이지까지 (조사 P2 — 추천·일정이 100에서 잘리던 문제).
+    /// maxPages 는 시험 훅 DESKHUB_SLAB_SIM=all(SLab 전 페이지, 0.40.0 C1)만 10 으로 넘긴다. 질의·쪽 수는 NotionQueryStats 에 센다(windows.txt 'notion:')
+    func query(db: String, body: [String: Any], maxPages: Int = 3) async throws -> [[String: Any]] {
         let wantsAll = (body["page_size"] as? Int ?? 100) >= 100
         var out: [[String: Any]] = []
         var b = body
-        for _ in 0..<(wantsAll ? 3 : 1) {
+        NotionQueryStats.add(query: 1, pages: 0)
+        for _ in 0..<(wantsAll ? max(1, maxPages) : 1) {
             let (rows, next) = try await queryPage(db: db, body: b)
+            NotionQueryStats.add(query: 0, pages: 1)
             out += rows
             guard wantsAll, let n = next else { break }
             b["start_cursor"] = n
@@ -124,6 +127,23 @@ struct NotionAPI {
     static func appURL(id: String) -> URL { URL(string: "notion://www.notion.so/\(id.replacingOccurrences(of: "-", with: ""))")! }
 }
 
+/// 갱신 단위 Notion 질의·쪽 수 (0.40.0 C1, F0-3 관측) — refresh 시작 때 0, 갱신 본체(projectPeople 까지)가 끝나면 last 에 굳힌다.
+/// 뒤따르는 Blitz·Prolific·댓글은 세지 않는다(그 갱신 본체 밖). windows.txt 'notion: 마지막 갱신 질의 n · 쪽 m'
+enum NotionQueryStats {
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var queries = 0, pages = 0
+    nonisolated(unsafe) private static var last: (queries: Int, pages: Int)?
+    static func reset() { lock.lock(); queries = 0; pages = 0; lock.unlock() }
+    static func add(query q: Int, pages p: Int) { lock.lock(); queries += q; pages += p; lock.unlock() }
+    /// 갱신 본체 끝 — 지금 값을 '마지막 갱신' 으로
+    static func settle() { lock.lock(); last = (queries, pages); lock.unlock() }
+    static var line: String {
+        lock.lock(); defer { lock.unlock() }
+        guard let l = last else { return "notion: 마지막 갱신 —" }
+        return "notion: 마지막 갱신 질의 \(l.queries) · 쪽 \(l.pages)"
+    }
+}
+
 // MARK: - 모델
 
 struct Member: Identifiable, Hashable {
@@ -139,7 +159,7 @@ struct Presentation: Identifiable, Hashable {
 }
 struct EventRow: Identifiable, Hashable {
     let id: String; let title: String; let date: Date; let hasTime: Bool; let type: String
-    let status: String; let priority: String
+    let status: String
 }
 /// Paper Blitz 발표 논문 한 편 (Notion 아카이브 또는 NAS pptx 에서)
 struct BlitzPaper: Identifiable, Hashable {
@@ -157,15 +177,12 @@ struct PaperRec: Identifiable, Hashable {
     let id: String; let title: String; let authors: String; let tier: String; let researcher: String; let doi: URL?
     var recommendation: String = ""; var presentPlanned: Bool = false; var sentAt: Date? = nil
 }
-/// 오늘의 실험 한 줄 (SLab 예약 · 자원 예약 · Prolific study)
+/// 오늘의 실험 한 줄 (SLab 예약 · Prolific study — 장비 예약은 0.40.0 C5 부터 장비 카드)
 struct ExperimentRow: Identifiable, Hashable {
     let id: String; let source: String; let title: String; let detail: String; let status: String; let url: URL?; let notionID: String?
-    /// 실험자 이니셜(SLab 참여자, Prolific 프로젝트 이름). 비면 "실험자 미확인"
+    /// 실험자 이니셜 — SLab 은 '실험자' relation(Project People 제목 → 멤버 이니셜, 멤버가 아니면 '외부'), Prolific 은 프로젝트 이름(ownerInitials).
+    /// 비면 "실험자 미확인". 피험자 이름·ID 는 어디서도 읽지 않는다 (0.40.0 C1, F0-1). SLab title = 프로젝트 · n회차 — 실험명은 쓰지 않는다 (검증 1)
     var owner: String = ""
-}
-/// 진행 중인 원고
-struct Manuscript: Identifiable, Hashable {
-    let id: String; let title: String; let journal: String; let stage: String; let deadline: Date?; let authors: [String]; let doi: URL?
 }
 struct MeetingNote: Identifiable, Hashable {
     let id: String; let title: String; let date: Date?; let summary: String; let decisions: String
@@ -219,22 +236,30 @@ enum NotionDryRun {
 @MainActor
 final class NotionHubModel: ObservableObject {
     @Published var members: [Member] = []
+    /// 지난 1주 이후 GRM — 다음 GRM·경보·안내판·공정 보드가 쓰는 목록 (0.40.0 C6 부터 grmAll 에서 거른다 — 동작 그대로)
     @Published var grm: [GRMSlot] = []
+    /// 올해 1월 1일부터의 GRM 전체 (0.40.0 C6, A6 — 자료 지도·순번 '지난 GRM')
+    @Published var grmAll: [GRMSlot] = []
+    /// NAS 회차 폴더 목록 (GRMMap.scan, 백그라운드) · Paper Blitz Archive 의 모든 날짜
+    @Published var grmScan: GRMFolderScan?
+    /// 회의록 날짜 전부(Type 'Other' 포함, 제목 있는 행) — GRM 자료 지도 '회의록' 열 (A6-minutes, 검증 1). minutes 는 카드용으로 Other 를 뺀다
+    @Published var minuteDaysAll: Set<Date> = []
+    var grmScanRunning = false
+    @Published var blitzDates: Set<Date> = []
     @Published var notes: [Presentation] = []
     @Published var events: [EventRow] = []
-    @Published var resources: [LinkRow] = []
     @Published var cwll: [LinkRow] = []
     @Published var minutes: [MeetingNote] = []
     @Published var conferences: [ConferenceRow] = []
     @Published var papers: [PaperRec] = []
     @Published var experiments: [ExperimentRow] = []
     @Published var experimentsNote: String?
+    /// Prolific 전체 study (모든 상태, 메모리만 — 0.40.0 C7, A4 온라인 수집). 금액은 쓰지 않는다
+    @Published var prolificStudies: [ProlificStudy] = []
     /// Prolific 연결 상태 — 미연결·조회 실패는 '오늘의 실험' 카드 안에 표시 (#17, 실험 없음과 구분). nil = 연결됨 또는 꺼짐
     @Published var prolificNote: String?
     /// 마지막 Prolific 조회 성공 시각(실제 시각) — 실패해도 지난 행이 남아 있으면 '아래는 HH:mm 결과' (0.38.0 C5, M-PROLIFIC)
     private(set) var prolificOKAt: Date?
-    @Published var manuscripts: [Manuscript] = []
-    @Published var manuscriptsNote: String?
     @Published var blitz: [BlitzPaper] = []
     @Published var blitzDate: Date?
     @Published var blitzSource: String?      // "Notion" 또는 pptx 경로
@@ -248,6 +273,9 @@ final class NotionHubModel: ObservableObject {
     @Published var reminders: [ReminderItem] = []
     /// reminders.json 이 깨져 있으면 이유 — 이때는 등록·끝남 버튼을 잠근다 (덮어써서 잃지 않게)
     @Published var remindersLocked: String?
+    /// reminders.json 을 이번 실행에서 한 번이라도 제대로 읽었나(.ok) — '내 것' 배지(rem-mine)는 이것이 참일 때만 기준선을 만든다.
+    /// NAS 미마운트(.missing)에서 빈 기준선이 저장되면 마운트 뒤 내 리마인더 전부가 '새 n' 이 됐다 (리뷰, 검증 1)
+    var remindersLoadedOK = false
     /// 리마인더 끝남·아님의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다 (D1 리뷰)
     let reminderCommits = DelayedCommit(seconds: 6)
     /// 마지막 저장 실패 — 리마인더 칸에 [다시 시도] 한 줄
@@ -311,6 +339,23 @@ final class NotionHubModel: ObservableObject {
     let talkCommits = DelayedCommit(seconds: 6)
     /// Members 현황판 Milestone 열 (0.37.0 C7, MembersBoard.swift) — 이니셜 → NAS MM 최신 파일. nil = MM 폴더 없음(NAS 끊김) → 열 숨김
     @Published var milestones: [String: MilestoneFile]? = nil
+    /// MM 이름 날짜(4규칙)의 그 해 고유 날짜 수 — (연도, 이니셜 → n). 덤프 [Members 전광판] 'MM 고유 날짜' 줄만 (0.40.0 C1, F0-4)
+    var milestoneDays: (year: Int, days: [String: Int])? = nil
+    /// 일일 집계 (0.40.0 C2, A1 — scripts/aggregate_daily.py 가 이 맥 Application Support/DeskHub/metrics/latest.json 에 씀, 훅 DESKHUB_METRICS).
+    /// 없거나 schema ≠ 1 이면 nil + metricsNote('집계 없음' 등). 적색 없음
+    @Published var metrics: MetricsSnapshot?
+    @Published var metricsNote: String?
+    /// conferences_upcoming.json 의 generated 날짜 — 학회 카드 꼬리표·자료 상태 (0.40.0 C3, A2)
+    @Published var conferencesGenerated: Date?
+    /// 장비 예약 (0.40.0 C5, A5·F0-2 — Equipment.swift) — Resource 의 Canceled 아닌 예약 중 앱 창((끝 ?? 시작) ≥ 오늘−14 또는 Running)
+    @Published var equipment: [EquipmentRow] = []
+    /// 장비 6개 순서 — 받은 예약의 장비 이름을 행 수 내림차순(같으면 이름)
+    @Published var equipmentMachines: [String] = []
+    /// Resource 조회 성공 여부 · 받은 행 수 — 실패면 위생 '닫기 누락' 은 집계 값
+    @Published var equipmentLoaded = false
+    @Published var equipmentReceived = 0
+    /// 받은 예약 전체(앱 창 적용 전)의 오늘 이하 시작일 최댓값 — 장비 꼬리표·자료 상태 Resource 행. 창(오늘−14)으로 거르면 2주 예약이 없을 때 꼬리표가 사라졌다 (리뷰, 검증 1)
+    @Published var equipmentLatestStart: Date?
     /// 허브의 오늘 캘린더. @Published 가 아니라 보드·관제탑 본체·팝오버는 이 모델만 관찰한다 →
     /// 첫 조회 끝(isSettled)을 이 모델의 변화로 한 번 알린다 (0.37.0 C6 — '불러오는 중…' 이 다섯 곳에서 같이 풀리게)
     var todayCalendar: CalendarModel? = nil {
@@ -331,6 +376,8 @@ final class NotionHubModel: ObservableObject {
         return ["pdf", "pptx"].map { "\(dir)/PB_\(s).\($0)" }.first { FileManager.default.fileExists(atPath: $0) }
     }
     private var preprintsFetchedAt: Date?
+    /// 최신 원고를 마지막으로 받은 시각 — 카드 캡션 '기준' (0.40.0 C2)
+    var preprintsAt: Date? { preprintsFetchedAt }
 
     let cfg: NotionHubConfig
     let prolific: ProlificConfig
@@ -370,6 +417,12 @@ final class NotionHubModel: ObservableObject {
     var lastGRM: GRMSlot? {
         let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
         return grm.last { $0.date < today || (Calendar.current.isDate($0.date, inSameDayAs: today) && now >= noon) }
+    }
+    /// 올해 GRM 전체(grmAll)에서 같은 정오 규칙의 마지막 GRM — 내용 날짜 꼬리표·자료 상태 'GRM Schedule' 행용.
+    /// lastGRM 은 지난 1주(grm)만 봐서 늘 '정상'이고, 방학처럼 1주 넘게 GRM 이 없으면 nil 이 되어 꼬리표가 사라졌다 (리뷰, 검증 1)
+    var lastGRMContent: Date? {
+        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
+        return grmAll.filter { $0.date < today || (Calendar.current.isDate($0.date, inSameDayAs: today) && now >= noon) }.map(\.date).max()
     }
     /// 다가오는 일정: 오늘~eventsDays, GRM·할 일 Type 제외
     var visibleEvents: [EventRow] {
@@ -460,14 +513,56 @@ final class NotionHubModel: ObservableObject {
         let tokens = text.uppercased().split { !($0.isLetter || $0.isNumber) }.map(String.init)
         return tokens.contains(m.initials.uppercased())
     }
-    /// 이름("Joonoh Park", "박준오", "JOP")을 Members DB 이니셜로. 못 찾으면 받은 그대로
+    /// 이름("Joonoh Park", "박준오", "JOP")을 Members DB 이니셜로. 못 찾으면 받은 그대로 (다른 호출자 — 안내판 whoInitials 가 '외부' 로 바꾼다).
+    /// 0.40.0 C1 (F0-1): 부분 일치는 initialsList 와 같은 '한 명일 때만' — 둘 이상 걸리면(이보현 BHL·이보연 BYL) 고르지 않는다.
+    /// 이메일은 접두가 아니라 local part 가 같을 때만
     func initials(forName raw: String) -> String {
         let n = raw.trimmingCharacters(in: .whitespaces); if n.isEmpty { return "" }
-        if let m = member(initials: n) { return m.initials }
-        let key = n.lowercased().replacingOccurrences(of: " ", with: "")
-        if let m = members.first(where: { $0.name.lowercased().replacingOccurrences(of: " ", with: "") == key || $0.email.lowercased().hasPrefix(key) }) { return m.initials }
-        if let m = members.first(where: { $0.name.lowercased().contains(n.lowercased()) }) { return m.initials }
-        return n
+        if let m = member(initials: n), !m.initials.isEmpty { return m.initials }
+        let pool = members.filter { !$0.name.isEmpty && !$0.initials.isEmpty }
+        let key = Self.normName(n)
+        let exact = pool.filter { Self.normName($0.name) == key || Self.emailLocal($0.email) == key }
+        if exact.count == 1 { return exact[0].initials }
+        let partial = pool.filter { let nm = Self.normName($0.name); return nm.contains(key) || key.contains(nm) }
+        return partial.count == 1 ? partial[0].initials : n
+    }
+    nonisolated static func normName(_ s: String) -> String { s.lowercased().replacingOccurrences(of: " ", with: "") }
+    nonisolated static func emailLocal(_ e: String) -> String {
+        let l = e.lowercased().trimmingCharacters(in: .whitespaces)
+        return l.split(separator: "@").first.map(String.init) ?? ""
+    }
+    /// 실험자·예약자 칸 공용 규칙 (0.40.0 C1, F0-1) — 빈 값·'Project' 는 '', 이니셜·별칭·이름 전체·이메일 local part 가 **정확히** 맞으면 그 멤버 이니셜,
+    /// 그 밖은 '외부'. 부분 일치는 쓰지 않는다(원문 이름이 화면·덤프·경보에 새지 않게). Prolific 프로젝트 폴백·Resource User 가 쓴다
+    func ownerInitials(raw: String) -> String { Self.ownerInitials(raw: raw, members: members, aliases: cfg.initialsAliases) }
+    nonisolated static func ownerInitials(raw: String, members: [Member], aliases: [String: String]) -> String {
+        let n = raw.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty || n == "Project" { return "" }
+        let pool = members.filter { !$0.initials.isEmpty }
+        let ini = (aliases[n] ?? aliases[n.uppercased()] ?? n).uppercased()
+        if let m = pool.first(where: { $0.initials.uppercased() == ini }) { return m.initials }
+        let key = normName(n)
+        let exact = pool.filter { (!$0.name.isEmpty && normName($0.name) == key) || (!$0.email.isEmpty && emailLocal($0.email) == key) }
+        return exact.count == 1 ? exact[0].initials : "외부"
+    }
+    /// SLab 한 행 → 오늘의 실험 줄 (0.40.0 C1, F0-1 — 순수 함수, text-check 'slab' 과 같은 함수).
+    /// owner = '실험자' relation id → people(Project People id(하이픈 없음) → 제목 이니셜)의 첫 값 → canonical(멤버면 정본 이니셜, 별칭 포함).
+    /// relation 이 있고 풀렸는데 멤버가 아니면 '외부', relation 이 비었거나 풀리지 않으면 ''(카드 '실험자 미확인').
+    /// title = [프로젝트 text(앞 40자, 비면 '프로젝트 미기재'), 'n회차'] 를 ' · ' 로 — 집계(aggregate_daily slab.keys)와 같은 '프로젝트' 칸.
+    /// 제목 칸(실험명)은 쓰지 않는다: 실험명에 피험자 이름·ID 가 들어 있다(qa040 M8 — 244·15건) (검증 1).
+    /// detail = 시간. '상태' 가 '취소' 면 nil. 피험자 이름·ID 칸과 실험명은 읽지 않는다(키 문자열도 코드에 없다)
+    nonisolated static func slabRow(_ p: [String: Any], people: [String: String], canonical: (String) -> String?) -> ExperimentRow? {
+        let status = NotionAPI.text(p, "상태")
+        guard status != "취소" else { return nil }
+        let resolved = NotionAPI.relationIDs(p, "실험자").compactMap { people[$0.replacingOccurrences(of: "-", with: "")] }
+            .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let owner = resolved.first.map { canonical($0) ?? "외부" } ?? ""
+        let round = NotionAPI.number(p, "회차").map { "\(Int($0))회차" } ?? ""
+        let project = String(NotionAPI.text(p, "프로젝트").trimmingCharacters(in: .whitespacesAndNewlines).prefix(40))
+        let title = [project.isEmpty ? "프로젝트 미기재" : project, round].filter { !$0.isEmpty }.joined(separator: " · ")
+        let detail = NotionAPI.text(p, "시간").trimmingCharacters(in: .whitespaces)
+        let id = p["id"] as? String
+        return ExperimentRow(id: id ?? UUID().uuidString, source: "SLab", title: title, detail: detail,
+                             status: status, url: nil, notionID: id, owner: owner)
     }
     /// 쉼표 목록("박준오, 이보현")을 이니셜 목록("JOP, BHL")으로 — 경보·공정 보드·안내판 리본 공용 (UX 0.34.0).
     /// 멤버가 아닌 이름(외부 발표자·Guest)은 그대로. 이니셜·전체 이름이 같으면 바로, 아니면 부분 일치가 **한 명일 때만** —
@@ -526,16 +621,22 @@ final class NotionHubModel: ObservableObject {
         loading = true
         refreshStartedAt = Date()
         defer { loading = false }
+        NotionQueryStats.reset()
+        // 시험 훅 (0.40.0 C1, M8) — DESKHUB_SLAB_SIM=all 이면 SLab 날짜 조건을 빼고 전 페이지(최대 10쪽)를 받는다. 372행이 카드·공정 보드에 쏟아지므로 시험 전용
+        let slabAll = ProcessInfo.processInfo.environment["DESKHUB_SLAB_SIM"] == "all"
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        let weekAgo = f.string(from: Calendar.current.date(byAdding: .day, value: -7, to: today)!)
+        let weekAgoDate = Calendar.current.date(byAdding: .day, value: -7, to: today)!
+        let yearStart = f.string(from: Calendar.current.date(from: DateComponents(year: Calendar.current.component(.year, from: today), month: 1, day: 1))!)
         let todayS = f.string(from: today)
         let horizon = f.string(from: Calendar.current.date(byAdding: .day, value: max(cfg.eventsDays, cfg.checklistDays), to: today)!)
         let twoWeeksAgo = f.string(from: Calendar.current.date(byAdding: .day, value: -14, to: today)!)
+        let twoWeeksAhead = f.string(from: Calendar.current.date(byAdding: .day, value: 14, to: today)!)
         do {
             async let membersRaw = api.query(db: cfg.membersDB, body: ["page_size": 50, "sorts": [["property": "Rotation order", "direction": "ascending"]]])
+            // 올해 1월 1일부터 (0.40.0 C6, A6 — 49행 1쪽). grm 은 이 중 지난 1주 이후만
             async let grmRaw = api.query(db: cfg.grmScheduleDB, body: [
-                "page_size": 40,
-                "filter": ["property": "날짜", "date": ["on_or_after": weekAgo]],
+                "page_size": 100,
+                "filter": ["property": "날짜", "date": ["on_or_after": yearStart]],
                 "sorts": [["property": "날짜", "direction": "ascending"]]])
             async let notesRaw = api.query(db: cfg.presentationsDB, body: [
                 "page_size": max(cfg.recentNotesCount, cfg.upcomingGRMCount) + 4,
@@ -544,10 +645,10 @@ final class NotionHubModel: ObservableObject {
                 "page_size": 100,
                 "filter": ["and": [["property": "날짜", "date": ["on_or_after": twoWeeksAgo]], ["property": "날짜", "date": ["on_or_before": horizon]]]],
                 "sorts": [["property": "날짜", "direction": "ascending"]]])
-            async let resRaw = api.query(db: cfg.resourcesDB, body: ["page_size": 20])
             async let cwllRaw = api.query(db: cfg.cwllDB, body: ["page_size": 8, "sorts": [["property": "Date", "direction": "descending"]]])
+            // 전부(15행) — 카드는 앞 recentMinutesCount 만, 자료 지도 '회의록' 열은 같은 날짜 전부를 본다 (0.40.0 C6)
             async let minRaw = api.query(db: cfg.meetingNotesDB, body: [
-                "page_size": cfg.recentMinutesCount + 2,
+                "page_size": 100,
                 "filter": ["property": "Title", "title": ["is_not_empty": true]],
                 "sorts": [["property": "Date", "direction": "descending"]]])
             // 선택 섹션: DB 가 없거나 공유되지 않았으면 비워 둔다 (전체 갱신을 막지 않음)
@@ -559,27 +660,35 @@ final class NotionHubModel: ObservableObject {
             async let projRaw = cfg.projectsDB.isEmpty ? [] : ((try? await api.query(db: cfg.projectsDB, body: [
                 "page_size": 100,
                 "filter": ["or": [["property": "상태", "status": ["equals": "In Progress"]], ["property": "상태", "status": ["equals": "Review"]]]]])) ?? [])
-            async let slabRaw = cfg.slabDB.isEmpty ? [] : ((try? await api.query(db: cfg.slabDB, body: [
-                "page_size": 20,
-                "filter": ["property": "실험날짜", "date": ["equals": todayS]],
-                "sorts": [["property": "시간", "direction": "ascending"]]])) ?? [])
-            async let resourceRaw = cfg.resourceDB.isEmpty ? [] : ((try? await api.query(db: cfg.resourceDB, body: [
-                "page_size": 20,
-                "filter": ["and": [["property": "Status", "status": ["equals": "Running"]], ["property": "date", "date": ["on_or_before": todayS]]]]])) ?? [])
-            async let manuRaw = cfg.publicationsDB.isEmpty ? [] : ((try? await api.query(db: cfg.publicationsDB, body: [
-                "page_size": 30,
-                "filter": ["property": cfg.manuscriptStageProp, "select": ["is_not_empty": true]],
-                "sorts": [["property": cfg.manuscriptDeadlineProp, "direction": "ascending"]]])) ?? [])
+            async let slabRaw = cfg.slabDB.isEmpty ? [] : ((try? await api.query(db: cfg.slabDB, body: slabAll
+                ? ["page_size": 100, "sorts": [["property": "실험날짜", "direction": "descending"]]]
+                : ["page_size": 20,
+                   "filter": ["property": "실험날짜", "date": ["equals": todayS]],
+                   "sorts": [["property": "시간", "direction": "ascending"]]], maxPages: slabAll ? 10 : 3)) ?? [])
+            // 장비 예약 (0.40.0 C5, A5) — Canceled 아님 · 시작 ≤ 오늘+14, 최근 순 100행(33행, 1쪽). 앱이 다시 거른다(EquipmentBoard.window).
+            // nil = 조회 실패·DB 없음 — '닫기 누락' 실측을 0 으로 오인하지 않게
+            async let resourceRaw: [[String: Any]]? = cfg.resourceDB.isEmpty ? nil : (try? await api.query(db: cfg.resourceDB, body: [
+                "page_size": 100,
+                "filter": ["and": [["property": "Status", "status": ["does_not_equal": "Canceled"]], ["property": "date", "date": ["on_or_before": twoWeeksAhead]]]],
+                "sorts": [["property": "date", "direction": "descending"]]]))
             let (m, g, n, e) = try await (membersRaw, grmRaw, notesRaw, eventsRaw)
-            let (rs, cw, mn) = try await (resRaw, cwllRaw, minRaw)
+            let (cw, mn) = try await (cwllRaw, minRaw)
             let (cf, pr) = await (confRaw, paperRaw)
-            let (sl, rm, mu) = await (slabRaw, resourceRaw, manuRaw)
+            let (sl, rm) = await (slabRaw, resourceRaw)
             let pj = await projRaw
-            // 담당자 relation 은 별도 사람 DB(제목 = 이니셜)를 가리킨다 → id → 이니셜
+            // 담당자 relation 은 별도 사람 DB(제목 = 이니셜)를 가리킨다 → id → 이니셜. SLab '실험자' relation 도 같은 DB (0.40.0 C1, F0-1)
             var peopleInit: [String: String] = [:]
             if !cfg.projectPeopleDB.isEmpty, let ppl = try? await api.query(db: cfg.projectPeopleDB, body: ["page_size": 100]) {
                 for p in ppl { if let id = p["id"] as? String { peopleInit[id.replacingOccurrences(of: "-", with: "")] = NotionAPI.title(p).trimmingCharacters(in: .whitespaces).uppercased() } }
             }
+            // 갱신 본체의 질의는 여기까지 (members·grm·notes·events·cwll·minutes·conferences·paperRec(+폴백)·projects·slab·resource·projectPeople)
+            NotionQueryStats.settle()
+            // 멤버를 먼저 — SLab 실험자·자원 예약자 이니셜이 이번 갱신의 Members 로 풀리게 (첫 갱신에서 빈 목록으로 모두 '외부' 가 되지 않게)
+            members = m.map { p in
+                Member(id: p["id"] as? String ?? UUID().uuidString, name: NotionAPI.title(p),
+                       initials: NotionAPI.text(p, "Initials"), email: NotionAPI.text(p, "Email"),
+                       active: NotionAPI.bool(p, "Active"), order: Int(NotionAPI.number(p, "Rotation order") ?? 99))
+            }.sorted { $0.order < $1.order }
             projects = pj.compactMap { p in
                 let name = NotionAPI.title(p).trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty, NotionAPI.text(p, "분류") != "Lab Chore" else { return nil }
@@ -608,8 +717,6 @@ final class NotionHubModel: ObservableObject {
                 settleWaits.insert("comments")
                 Task { @MainActor [weak self] in await self?.loadPaperComments(); self?.settleDone("comments") }
             }
-            resources = rs.map { p in LinkRow(id: p["id"] as? String ?? UUID().uuidString, name: NotionAPI.title(p), url: URL(string: NotionAPI.text(p, "Link")), date: nil) }
-                .filter { !$0.name.isEmpty }
             cwll = cw.map { p in LinkRow(id: p["id"] as? String ?? UUID().uuidString, name: NotionAPI.title(p), url: URL(string: NotionAPI.text(p, "URL")), date: NotionAPI.date(p, "Date")?.date) }
             minutes = mn.map { p in
                 MeetingNote(id: p["id"] as? String ?? UUID().uuidString, title: NotionAPI.title(p), date: NotionAPI.date(p, "Date")?.date,
@@ -618,46 +725,32 @@ final class NotionHubModel: ObservableObject {
                             magazine: NotionAPI.date(p, "Date").flatMap { Self.magazineURL(dir: cfg.magazineDir, date: $0.date) },
                             speakers: NotionAPI.text(p, "Speakers"), sourceFile: NotionAPI.text(p, "Source File"))
             }.filter { $0.type != "Other" }
+            minuteDaysAll = GRMMap.minuteDays(mn.map { p in (NotionAPI.text(p, "Type"), NotionAPI.title(p), NotionAPI.date(p, "Date")?.date) })
             loadHighlights()
             loadMinutesPending()
 
-            // 오늘의 실험
-            var ex: [ExperimentRow] = []
-            for p in sl where NotionAPI.text(p, "상태") != "취소" {
-                let time = NotionAPI.text(p, "시간"), sbj = NotionAPI.text(p, "피험자 ID"), who = NotionAPI.text(p, "참여자")
-                let round = NotionAPI.number(p, "회차").map { " \(Int($0))회차" } ?? ""
-                ex.append(ExperimentRow(id: p["id"] as? String ?? UUID().uuidString, source: "SLab", title: NotionAPI.title(p),
-                                        detail: [time, sbj + round].filter { !$0.isEmpty }.joined(separator: " · "),
-                                        status: NotionAPI.text(p, "상태"), url: nil, notionID: p["id"] as? String, owner: initials(forName: who)))
+            // 오늘의 실험 — SLab 실험자는 '실험자' relation 으로만 (0.40.0 C1, F0-1: 피험자 이름·ID 를 읽지 않는다)
+            let pool = members, aliases = cfg.initialsAliases
+            let canonical: (String) -> String? = { raw in
+                let ini = (aliases[raw] ?? raw).uppercased()
+                return pool.first { !$0.initials.isEmpty && $0.initials.uppercased() == ini }?.initials
             }
-            for p in rm {
-                guard let d = NotionAPI.dateRange(p, "date"), (d.end ?? d.start) >= today else { continue }
-                let res = ((NotionAPI.prop(p, "Resource")?["multi_select"] as? [[String: Any]]) ?? []).compactMap { $0["name"] as? String }.joined(separator: "·")
-                ex.append(ExperimentRow(id: p["id"] as? String ?? UUID().uuidString, source: "자원", title: NotionAPI.title(p),
-                                        detail: [res, Hub.range(d.start, d.end)].filter { !$0.isEmpty }.joined(separator: " · "),
-                                        status: "Running", url: nil, notionID: p["id"] as? String, owner: initials(forName: NotionAPI.text(p, "User"))))
+            let ex: [ExperimentRow] = sl.compactMap { Self.slabRow($0, people: peopleInit, canonical: canonical) }
+            // 장비 예약은 오늘의 실험에 넣지 않고 장비 카드로 (0.40.0 C5 — 예전 '자원' Running 줄과 (끝 ?? 시작) ≥ 오늘 guard(F0-2)를 대체)
+            if let rm {
+                let all = rm.compactMap { EquipmentBoard.parse($0, owner: { self.ownerInitials(raw: $0) }) }
+                equipmentMachines = EquipmentBoard.machines(all)
+                equipment = EquipmentBoard.window(all, today: today)
+                equipmentReceived = all.count
+                equipmentLatestStart = all.map { Calendar.current.startOfDay(for: $0.start) }.filter { $0 <= today }.max()
+                equipmentLoaded = true
+            } else {
+                equipmentLoaded = false
             }
             // Prolific 행은 loadProlific 이 30분에 한 번만 다시 채운다 — 여기서 통째로 바꾸면 팝오버를 열 때마다
             // Prolific 진행·준비 중 연구가 최대 30분 사라졌다 (0.37.0 리뷰 2). 지난 Prolific 행(정렬된 채, id 'prolific-' 접두라 겹치지 않음)을 뒤에 그대로 붙인다
             experiments = ex + experiments.filter { $0.source == "Prolific" }
-            // 논문 진행
-            manuscripts = mu.compactMap { p in
-                let stage = NotionAPI.text(p, cfg.manuscriptStageProp)
-                guard cfg.manuscriptStages.contains(stage) else { return nil }
-                let ids = NotionAPI.relationIDs(p, "BCS Authors")
-                return Manuscript(id: p["id"] as? String ?? UUID().uuidString, title: NotionAPI.title(p),
-                                  journal: NotionAPI.text(p, cfg.manuscriptJournalProp), stage: stage,
-                                  deadline: NotionAPI.date(p, cfg.manuscriptDeadlineProp)?.date, authors: ids,
-                                  doi: URL(string: NotionAPI.text(p, "DOI")))
-            }
-            manuscriptsNote = mu.isEmpty ? "Publications DB 에 \(cfg.manuscriptStageProp)(select: \(cfg.manuscriptStages.joined(separator: "/")))·\(cfg.manuscriptDeadlineProp)(date) 속성을 두고 진행 중인 원고에 값을 넣으면 표시됩니다" : nil
-
-            members = m.map { p in
-                Member(id: p["id"] as? String ?? UUID().uuidString, name: NotionAPI.title(p),
-                       initials: NotionAPI.text(p, "Initials"), email: NotionAPI.text(p, "Email"),
-                       active: NotionAPI.bool(p, "Active"), order: Int(NotionAPI.number(p, "Rotation order") ?? 99))
-            }.sorted { $0.order < $1.order }
-            grm = g.compactMap { p in
+            grmAll = g.compactMap { p in
                 guard let d = NotionAPI.date(p, "날짜") else { return nil }
                 let doc = NotionAPI.text(p, "Contents")
                 return GRMSlot(id: p["id"] as? String ?? UUID().uuidString, date: Calendar.current.startOfDay(for: d.date),
@@ -665,6 +758,8 @@ final class NotionHubModel: ObservableObject {
                                notified: NotionAPI.bool(p, "공지 발송"), abstractDone: NotionAPI.bool(p, "Abstract 완료"),
                                docURL: doc.isEmpty ? nil : URL(string: doc), noteIDs: NotionAPI.relationIDs(p, "Meeting Notes"))
             }
+            let since = Calendar.current.startOfDay(for: weekAgoDate)
+            grm = grmAll.filter { $0.date >= since }
             notes = n.map { p in
                 Presentation(id: p["id"] as? String ?? UUID().uuidString, title: NotionAPI.title(p),
                              date: NotionAPI.date(p, "날짜")?.date, status: NotionAPI.text(p, "상태"),
@@ -674,7 +769,7 @@ final class NotionHubModel: ObservableObject {
                 guard let d = NotionAPI.date(p, "날짜") else { return nil }
                 return EventRow(id: p["id"] as? String ?? UUID().uuidString, title: NotionAPI.title(p).trimmingCharacters(in: .whitespaces),
                                 date: d.date, hasTime: d.hasTime, type: NotionAPI.text(p, "Type"),
-                                status: NotionAPI.text(p, "상태"), priority: NotionAPI.text(p, "우선도"))
+                                status: NotionAPI.text(p, "상태"))
             }
             error = nil
             lastUpdated = Date()
@@ -690,8 +785,8 @@ final class NotionHubModel: ObservableObject {
         grants = await Task.detached(priority: .utility) { GrantsFile.load(gf) }.value
         let rp = remindersPath
         switch await Task.detached(priority: .utility, operation: { RemindersFile.load(rp) }).value {
-        case .ok(let items): reminders = items; remindersLocked = nil
-        case .missing: reminders = []; remindersLocked = nil
+        case .ok(let items): reminders = items; remindersLocked = nil; remindersLoadedOK = true
+        case .missing: reminders = []; remindersLocked = nil; remindersLoadedOK = false
         case .corrupt(let why): remindersLocked = why       // 이전 목록은 그대로 보이고 버튼만 잠근다
         }
         let mf = ((gf as NSString).deletingLastPathComponent as NSString).appendingPathComponent("member_links.json")
@@ -699,6 +794,7 @@ final class NotionHubModel: ObservableObject {
         // 다가오는 학회: Notion Conferences + NAS conferences_upcoming.json (#7). 접수 중인 마감이 가까운 순 → 개최일 순
         let cfPath = ((gf as NSString).deletingLastPathComponent as NSString).appendingPathComponent("conferences_upcoming.json")
         let fileConfs = await Task.detached(priority: .utility) { ConferencesFile.load(cfPath) }.value
+        conferencesGenerated = await Task.detached(priority: .utility) { ConferencesFile.generated(cfPath) }.value
         let t0 = today
         let notionNames = Set(conferences.filter { $0.link == nil }.map { $0.conference.lowercased() })
         conferences = (conferences.filter { $0.link == nil } + fileConfs.filter { !notionNames.contains($0.conference.lowercased()) })
@@ -716,6 +812,10 @@ final class NotionHubModel: ObservableObject {
         await loadInterest()
         // Members 현황판 Milestone 열 (0.37.0 C7) — NAS MM 폴더 읽기만
         await loadMilestones()
+        // 일일 집계 (0.40.0 C2) — 이 맥의 latest.json 읽기만
+        await loadMetrics()
+        // GRM 회차 자료 지도 (0.40.0 C6) — NAS 목록은 기다리지 않는다('다 옴'·첫 그림을 늦추지 않게)
+        loadGRMMap()
         // 여기까지가 갱신 본체. 따로 띄운 로더가 남았으면 그것들이 끝날 때, 아니면 지금 '다 옴'
         if settleWaits.isEmpty { markSettled() }
         else {
@@ -739,6 +839,8 @@ final class NotionHubModel: ObservableObject {
     private func markSettled() {
         settledDay = HubClock.today
         settledAt = Date()
+        // '내 것' 배지 — 데이터가 다 온 뒤에만 (부분 데이터로 기준선을 만들지 않게, 0.40.0 C4)
+        SeenCards.shared.update(self)
     }
 
     /// 논문 추천: "Sent At" 최신순 (속성이 없는 DB 면 생성 시각 순)
@@ -957,6 +1059,7 @@ final class NotionHubModel: ObservableObject {
         case .ok(let list):
             prolificNote = nil
             prolificOKAt = Date()
+            prolificStudies = list
             experiments.removeAll { $0.source == "Prolific" }
             // 진행(ACTIVE)·준비(UNPUBLISHED) 중만 — 랩장 10-16 18:12 'Prolific은 현재 draft나 active인 것들로', 옛 PAUSED 실험(BYL 19/20) 제외.
             // config 의 prolific.showStatuses 는 읽지 않는다(Config.swift·config.json 그대로, 계획 0.37.0 §4-2). 전체 조회 폴백(studies/?limit=50)도 여기서 걸러진다
@@ -964,7 +1067,8 @@ final class NotionHubModel: ObservableObject {
             for st in list where ProlificFilter.keep(st.status) {
                 // 코드 기본값(로스터와 맞춘 이름 → 이니셜)이 이긴다. 사용자 설정은 새 이름만 더할 수 있다
                 // (예전 설정 파일에 남은 "Boyun Lee": "BHL" 같은 낡은 값이 덮어쓰지 못하게 — 이보연 BYL ≠ 이보현 BHL, 메타 리뷰 W1 2026-10-13)
-                let owner = (ProlificConfig().projectInitials.merging(prolific.projectInitials) { def, _ in def })[st.project] ?? initials(forName: st.project)
+                // 표에 없는 프로젝트 이름은 정확 일치만(ownerInitials, 0.40.0 C1) — 못 찾으면 '외부'(원문 이름을 owner 로 두지 않는다)
+                let owner = (ProlificConfig().projectInitials.merging(prolific.projectInitials) { def, _ in def })[st.project] ?? ownerInitials(raw: st.project)
                 rows.append(ExperimentRow(id: "prolific-" + st.id, source: "Prolific", title: st.name,
                                           detail: "\(st.submissions)/\(st.places) 제출" + (st.rewardPence > 0 ? String(format: " · £%.2f", Double(st.rewardPence) / 100) : ""),
                                           status: ProlificFilter.label(st.status), url: URL(string: "https://app.prolific.com/researcher/workspaces/studies/\(st.id)"), notionID: nil,
@@ -995,7 +1099,9 @@ final class NotionHubModel: ObservableObject {
         defer { blitzLoading = false }
         let blitzDB = paperBlitzDB
         if !blitzDB.isEmpty, let api {
-            let rows = (try? await api.query(db: blitzDB, body: ["page_size": 40, "sorts": [["property": "Date", "direction": "descending"]]])) ?? []
+            // 전부(53행) — 최신 회차는 아래에서 고르고, 모든 날짜는 자료 지도 PB 열에 (0.40.0 C6, 예전 40행)
+            let rows = (try? await api.query(db: blitzDB, body: ["page_size": 100, "sorts": [["property": "Date", "direction": "descending"]]])) ?? []
+            if !rows.isEmpty { blitzDates = Set(rows.compactMap { NotionAPI.date($0, "Date").map { Calendar.current.startOfDay(for: $0.date) } }) }
             let all: [(Date, BlitzPaper)] = rows.enumerated().compactMap { i, p in
                 guard let d = NotionAPI.date(p, "Date") else { return nil }
                 let title = NotionAPI.title(p)
@@ -1398,17 +1504,20 @@ struct SectionTitle: View {
     let text: String
     var trailing: String? = nil
     var fresh: Freshness? = nil
+    /// '내 것' 배지 카드 id — 꼬리표 옆 '새 n' 칩 (0.40.0 C4, A3-badge)
+    var badge: String? = nil
     var action: (() -> Void)? = nil
     /// 카드 글자 역할 (0.37.0) — 제목 = cs.title, 꼬리 링크 = cs.aux
     @Environment(\.cardStyle) private var cs
-    init(text: String, trailing: String? = nil, fresh: Freshness? = nil, action: (() -> Void)? = nil) {
-        self.text = text; self.trailing = trailing; self.fresh = fresh; self.action = action
+    init(text: String, trailing: String? = nil, fresh: Freshness? = nil, badge: String? = nil, action: (() -> Void)? = nil) {
+        self.text = text; self.trailing = trailing; self.fresh = fresh; self.badge = badge; self.action = action
     }
     var body: some View {
         HStack(spacing: 6) {
             // 좁은 열에서 한 글자씩 꺾이지 않게 한 줄 + 제목이 꼬리표보다 먼저 폭을 받는다 (0.37.0 리뷰 2)
             Text(text).font(.hub(cs.title, weight: .semibold)).foregroundStyle(Hub.text2).tracking(0.3).lineLimit(1).layoutPriority(1)
             if let f = fresh { FreshnessTag(f: f) }
+            if let b = badge { SeenBadge(card: b) }
             Spacer()
             if let t = trailing, let a = action {
                 // 꼬리 링크는 줄바꿈 없이 — 1.3배에서 'Pap/ers' 로 꺾이지 않게, 제목이 먼저 줄어든다 (검증 1)
@@ -1726,7 +1835,10 @@ actor DOIResolver {
 
 // MARK: - Prolific
 
-struct ProlificStudy { let id: String; let name: String; let status: String; let places: Int; let submissions: Int; let rewardPence: Int; var project: String = "" }
+/// places = total_available_places, submissions = number_of_submissions(study 누적). publishedAt·placesTaken 은 0.40.0 C7(A4 온라인 수집) —
+/// 금액(rewardPence)은 기존 카드 detail 에만 남고 새 계산에는 쓰지 않는다
+struct ProlificStudy { let id: String; let name: String; let status: String; let places: Int; let submissions: Int; let rewardPence: Int; var project: String = ""
+    var publishedAt: Date? = nil; var placesTaken: Int = 0 }
 enum ProlificResult { case noToken, error(String), ok([ProlificStudy]) }
 
 /// 허브·관제탑에 보일 Prolific study (0.37.0 C4, 랩장 10-16 18:12) — 진행(ACTIVE)·준비(UNPUBLISHED) 중만.
@@ -1792,7 +1904,15 @@ struct ProlificClient {
     static func study(_ r: [String: Any], project: String) -> ProlificStudy {
         ProlificStudy(id: r["id"] as? String ?? "", name: (r["internal_name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? (r["name"] as? String ?? ""),
                       status: (r["status"] as? String ?? "").uppercased(), places: r["total_available_places"] as? Int ?? 0,
-                      submissions: r["number_of_submissions"] as? Int ?? 0, rewardPence: r["reward"] as? Int ?? 0, project: project)
+                      submissions: r["number_of_submissions"] as? Int ?? 0, rewardPence: r["reward"] as? Int ?? 0, project: project,
+                      publishedAt: publishedAt(r["published_at"]), placesTaken: r["places_taken"] as? Int ?? 0)
+    }
+    /// '2026-10-03T09:00:00.000000Z' — 소수 초(자릿수 제각각)를 떼고 ISO 로 (0.40.0 C7)
+    static func publishedAt(_ v: Any?) -> Date? {
+        guard let s = v as? String, !s.isEmpty else { return nil }
+        let t = s.replacingOccurrences(of: "\\.\\d+", with: "", options: .regularExpression)
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime]
+        return iso.date(from: t) ?? MetricsSnapshot.day(t)
     }
     /// 워크스페이스 → 프로젝트(이름 = 실험자) → 프로젝트별 study. /studies/ 전체 조회(263개, 30초)보다 빠르고 실험자가 붙는다.
     /// 프로젝트 조회가 안 되면 전체 조회로 돌아간다(실험자 없음)
@@ -1831,14 +1951,17 @@ struct Dashboard: View {
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: HubSpace.card) {
+                // 연구실 상태 한 줄 (0.40.0 C4, A3) — 허브 마감 적색은 이 줄 '확정 n' 한 칸으로 모은다(카드 D-day 는 quiet, 결정 D-b). 클릭 = 8주 띠
+                StatusLineView(model: model, quiet: false)
                 // 2026-10-13: 다음 GRM 은 한 줄로 작게, 연구원 + 진행 프로젝트 버튼, 논문 추천을 왼쪽 큰 칸(반응·댓글),
                 // 회의록은 최근 하나(펼치기), 아래 줄: 최신 원고 · 다가오는 학회 · 지난 Paper Blitz
                 // 다음 GRM 과 오늘 캘린더(지금·다음)는 다른 카드로 (#13 JYK — 한 카드에 섞이면 헷갈림)
                 // 0.37.0 (랩장 10-16 18:12): 여백 12 → 8(HubSpace), 글자는 CardStyle.large(제목 16·본문 15·보조 14), 윗줄 두 칸 300 → 320
                 HStack(alignment: .top, spacing: HubSpace.column) {
-                    CompactGRMBar(model: model).frame(width: 320).frame(maxHeight: .infinity)
-                    if let cal = model.todayCalendar { NowNextCard(cal: cal).frame(width: 320).frame(maxHeight: .infinity) }
-                    MembersProjectsStrip(model: model).frame(maxWidth: .infinity, alignment: .leading)
+                    // 카드 끝 캡션 '출처 · 기준 · n · 정의 id' (0.40.0 C2, A1) — 윗줄 세 카드는 허브에서만
+                    CompactGRMBar(model: model, caption: true).frame(width: 320).frame(maxHeight: .infinity)
+                    if let cal = model.todayCalendar { NowNextCard(cal: cal, caption: true).frame(width: 320).frame(maxHeight: .infinity) }
+                    MembersProjectsStrip(model: model, caption: true).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // 가운데 3열 (R-J1, 0.36.0 — 열 바닥 빈 면에 묻혀 있던 카드를 올림, 결정 D5):
@@ -1850,8 +1973,9 @@ struct Dashboard: View {
                     column1
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: HubSpace.card) {
-                            RemindersSection(model: model, nearOnly: true); AppsScriptSection(model: model); ExperimentsCard(model: model, nearOnly: true)
-                            UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true); GrantsSection(model: model, nearOnly: true)   // 메일 초안 버튼은 할 일 바로 아래 (스크롤 없이 보이게)   // GRM 자료 칸은 뺌 (랩장 의견 2026-10-13)
+                            RemindersSection(model: model, nearOnly: true, quiet: true); AppsScriptSection(model: model); ExperimentsCard(model: model, nearOnly: true)
+                            EquipmentCard(model: model)   // 장비 예약 6줄 · 닫기 누락 (0.40.0 C5, A5)
+                            UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true); GrantsSection(model: model, quiet: true, nearOnly: true)   // 메일 초안 버튼은 할 일 바로 아래 (스크롤 없이 보이게)   // GRM 자료 칸은 뺌 (랩장 의견 2026-10-13)
                         }
                         .hubProbe("2", .content)
                     }
@@ -1862,7 +1986,7 @@ struct Dashboard: View {
                             MinutesCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                             BlitzCompact(model: model, fill: false, nearOnly: true)
                             // 다가오는 학회 — 열2 그랜트 아래(R2-01 BHL)에서 열3 Blitz 아래 빈 면으로 (R-J1). 최신 원고는 열1 (검증 1)
-                            ConferencesCard(model: model, maxRows: 5, nearOnly: true)
+                            ConferencesCard(model: model, maxRows: 5, quiet: true, nearOnly: true)
                         }
                         .hubProbe("3", .content)
                     }
@@ -1890,9 +2014,10 @@ struct Dashboard: View {
     /// 열1 — 논문 추천 + 최신 원고 + 만든 앱. 추천을 펼치면 0.36.0 처럼 추천 스크롤 칸이 열을 채우고(빈 면 = 그 칸, probe "1"),
     /// 접히면 세 카드가 내용 높이로 쌓이고 열 전체가 스크롤(넘칠 때만) — 빈 면은 열 바닥 (probe "1" 을 열에서 잰다)
     @ViewBuilder private var column1: some View {
-        if expansion.isOpen("papers") {
+        // 생산자가 멈췄으면 펼침 저장값이 있어도 접힌 갈래 — 논문 추천은 한 줄, 열은 스크롤·바닥 빈 면 측정 (0.40.0 C8, R4). HubExpansion 값은 지우지 않는다
+        if expansion.isOpen("papers") && !model.papersStopped {
             VStack(alignment: .leading, spacing: HubSpace.card) {
-                PaperRecBoard(model: model, probeKey: "1", nearOnly: true)
+                PaperRecBoard(model: model, probeKey: "1", nearOnly: true, fold: true)
                 LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                 AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)   // 만든 앱 (랩장 10-16) — 열2 끝에서 열1 바닥으로
             }
@@ -1900,7 +2025,7 @@ struct Dashboard: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: HubSpace.card) {
-                    PaperRecBoard(model: model, nearOnly: true)
+                    PaperRecBoard(model: model, nearOnly: true, fold: true)
                     LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
                     AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)
                 }

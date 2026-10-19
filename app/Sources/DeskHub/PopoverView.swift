@@ -7,7 +7,8 @@ import AppKit
 // 새 것 = 마지막으로 본 뒤 들어온 회의록·Paper Blitz·추천 — 이 맥 로컬 seen-<이니셜>.json
 
 enum SeenStore {
-    struct Seen: Codable { var minutes: Date?; var blitz: Date?; var papers: Date? }
+    /// cards — '내 것' 배지 기준선: 카드 → 행 id → 화면 필드 해시 (0.40.0 C4, A3-badge — SeenCards). 옛 파일은 nil 로 읽힌다
+    struct Seen: Codable { var minutes: Date?; var blitz: Date?; var papers: Date?; var cards: [String: [String: String]]? }
     static func url(_ me: String) -> URL { Config.directory.appendingPathComponent("seen-\(me.isEmpty ? "anon" : me).json") }
     static func load(_ me: String) -> Seen {
         guard let d = try? Data(contentsOf: url(me)), let s = try? JSONDecoder().decode(Seen.self, from: d) else { return Seen() }
@@ -200,6 +201,8 @@ struct PopoverView: View {
         s.minutes = model.minutes.compactMap(\.date).max() ?? s.minutes
         s.blitz = model.blitzDate ?? s.blitz
         s.papers = model.papers.compactMap(\.sentAt).max() ?? s.papers
+        // 배지 기준선은 SeenCards 가 따로 쓴다 — 팝오버를 연 뒤 바뀐 기준선을 옛 값으로 덮지 않게 파일에서 다시 읽어 둔다 (0.40.0 C4)
+        s.cards = SeenStore.load(me).cards
         SeenStore.save(s, me)
     }
 }

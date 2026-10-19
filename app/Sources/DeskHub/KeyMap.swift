@@ -65,8 +65,9 @@ struct KeyLayer: ViewModifier {
         if let w = NSApp.keyWindow, w.firstResponder is NSTextView { return .ignored }
         switch press.key {
         case .escape:
-            // '글자' 판이 열려 있으면 그것부터 닫는다 (0.37.0 C3)
-            if HubDisplay.shared.panelOpen { withAnimation(.easeOut(duration: 0.12)) { HubDisplay.shared.panelOpen = false } }
+            // 8주 띠(0.40.0 C4) → '글자' 판(0.37.0 C3) → 키 표 순으로 닫는다
+            if StatusBand.shared.open { StatusBand.shared.close() }
+            else if HubDisplay.shared.panelOpen { withAnimation(.easeOut(duration: 0.12)) { HubDisplay.shared.panelOpen = false } }
             else if bus.showHelp { withAnimation(.easeOut(duration: 0.12)) { bus.showHelp = false } } else { bus.send("esc") }
             return .handled
         case .return: bus.send("enter"); return .handled

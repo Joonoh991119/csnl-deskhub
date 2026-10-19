@@ -236,6 +236,8 @@ struct FlowLayout: Layout {
 /// 폭이 모자라면 단추가 발표자 아래 줄로 내려간다 — 발표자 이름은 잘리지 않는다
 struct CompactGRMBar: View {
     @ObservedObject var model: NotionHubModel
+    /// 랩 허브만 — 카드 끝 캡션 한 줄 (0.40.0 C2, A1)
+    var caption = false
     @Environment(\.cardStyle) private var cs
     var body: some View {
         if let g = model.nextGRM {
@@ -246,6 +248,9 @@ struct CompactGRMBar: View {
                     Text(Hub.day(g.date)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).foregroundStyle(Hub.text2).monospacedDigit()
                     Text(Hub.dday(g.date)).font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.onAccent)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(soon ? Hub.signal : Hub.ink))
+                    // 꼬리표 = 지난 GRM 날짜 (허브만, 0.40.0 C3)
+                    if caption, let f = model.cardTag("grm") { FreshnessTag(f: f).layoutPriority(-1) }   // 좁으면 꼬리표가 먼저 줄어든다
+                    if caption { SeenBadge(card: "grm-mine") }   // 내가 발표자인 GRM 이 바뀌면 '새 n' (0.40.0 C4)
                     Spacer(minLength: 0)
                 }
                 ViewThatFits(in: .horizontal) {
@@ -255,12 +260,16 @@ struct CompactGRMBar: View {
                         HStack(spacing: 6) { actions(g); Spacer(minLength: 0) }
                     }
                 }
+                if caption { SourceCaption(text: CardMetas.caption("grm", model)) }
             }
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
             .frame(maxHeight: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.heroBG))
         } else {
-            Text(model.loading ? "Notion 에서 불러오는 중…" : "예정된 GRM 이 없습니다").font(.hub(cs.body)).foregroundStyle(Hub.text2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.loading ? "Notion 에서 불러오는 중…" : "예정된 GRM 이 없습니다").font(.hub(cs.body)).foregroundStyle(Hub.text2)
+                if caption { SourceCaption(text: CardMetas.caption("grm", model)) }
+            }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
         }
@@ -332,6 +341,8 @@ struct MemberLinks {
 /// (GRM 발표자 강조는 하지 않는다 — 다음 GRM 칸에 이미 있음, 랩장 의견 2026-10-13)
 struct MembersProjectsStrip: View {
     @ObservedObject var model: NotionHubModel
+    /// 랩 허브만 — 칩 아래 캡션 한 줄 (0.40.0 C2, A1)
+    var caption = false
 
     private static func isHidden(_ model: NotionHubModel, _ m: Member) -> Bool { model.memberLinks.hidden.contains { $0.ini == m.initials || $0.name == m.name } }
     static func awayLabel(_ model: NotionHubModel, _ m: Member) -> String? {
@@ -343,13 +354,18 @@ struct MembersProjectsStrip: View {
     }
 
     var body: some View {
-        FlowLayout(spacing: 5, lineSpacing: 4) {
-            ForEach(Self.shown(model)) { m in
-                // 칩 항목 = model.memberLinkEntry(for:) — 팝오버 '진행 프로젝트'와 같은 매칭 (R-32)
-                let e = model.memberLinkEntry(for: m)
-                MemberGroup(model: model, member: m, entry: e, away: Self.awayLabel(model, m))
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Hub.surface))
+        VStack(alignment: .leading, spacing: 4) {
+            FlowLayout(spacing: 5, lineSpacing: 4) {
+                ForEach(Self.shown(model)) { m in
+                    // 칩 항목 = model.memberLinkEntry(for:) — 팝오버 '진행 프로젝트'와 같은 매칭 (R-32)
+                    let e = model.memberLinkEntry(for: m)
+                    MemberGroup(model: model, member: m, entry: e, away: Self.awayLabel(model, m))
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Hub.surface))
+                }
+                // 칩 줄 끝 한 칸 — Members 편집 시각(집계) 꼬리표 (허브만, 0.40.0 C3)
+                if caption, let f = model.cardTag("members") { FreshnessTag(f: f).padding(.vertical, 4) }
             }
+            if caption { SourceCaption(text: CardMetas.caption("members", model)).padding(.leading, 4) }
         }
     }
 }
@@ -400,6 +416,8 @@ struct PaperRecBoard: View {
     var nearOnly = false
     /// 연구 탭만 — 반응 줄 끝 '같이 읽자' 단추·제안자·모임 후보 (0.39.0 C5). 허브·관제탑·공정 보드·나 뷰는 false 그대로(열 높이 불변)
     var talk = false
+    /// 큰 자리 4곳(허브 열1·관제탑·안내판·나 뷰) — 생산자가 멈췄으면(papersStopped) 한 줄로 접는다 (0.40.0 C8, R4). 연구 탭은 false
+    var fold = false
     @ObservedObject private var expansion = HubExpansion.shared
     @ObservedObject private var fill = HubFill.shared
     @State private var openComments: String? = nil
@@ -441,6 +459,31 @@ struct PaperRecBoard: View {
     private var holdOn: Bool { (askWho && !pickerStanding) || (openComments.map { drawnIDs.contains($0) } ?? false) }
 
     var body: some View {
+        if fold && model.papersStopped { folded } else { board }
+    }
+
+    /// 접힌 한 줄 (R4) — 제목·신선도 + '새 추천이 오면 자동으로 다시 펼칩니다 · 연구 탭 ↗'(Hub.text2). 새 Sent At 이 오면 저절로 원래 보드
+    private var folded: some View {
+        VStack(alignment: .leading, spacing: cs.gap) {
+            SectionTitle(text: "논문 추천", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Papers", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
+            Button { KeyBus.shared.send("tab:연구") } label: {
+                HStack(spacing: 4) {
+                    Text("새 추천이 오면 자동으로 다시 펼칩니다 · 연구 탭")
+                    Image(systemName: "arrow.up.forward")
+                }
+                .font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
+                .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("논문 추천 생산자(P23)가 \(model.papersStoppedSince) 이후 멈춤 — 전체 목록·반응은 연구 탭 (R4-fold)")
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+    }
+
+    private var board: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
             HStack(spacing: 8) {
                 SectionTitle(text: "논문 추천", trailing: model.cfg.paperRecDB.isEmpty ? nil : "Papers", fresh: model.papersFreshness) { model.openInApp(id: model.cfg.paperRecDB) }
@@ -473,7 +516,7 @@ struct PaperRecBoard: View {
                             .onAppear { let h = g.size.height; MainActor.assumeIsolated { HubFill.shared.rowsMeasured("papers", height: h, rows: rows.count) } }
                             .onChange(of: g.size.height) { _, h in MainActor.assumeIsolated { HubFill.shared.rowsMeasured("papers", height: h, rows: rows.count) } }
                     })
-                    MoreToggle(key: "papers", more: cut.toggleCount(open: false, extra: e))
+                    CardFooter(caption: CardMetas.caption("papers", model), toggleKey: "papers", more: cut.toggleCount(open: false, extra: e))
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -484,7 +527,7 @@ struct PaperRecBoard: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .hubProbe(probeKey, .visible)
-                    if let cut { MoreToggle(key: "papers", more: cut.more) }
+                    if let cut { CardFooter(caption: CardMetas.caption("papers", model), toggleKey: "papers", more: cut.more) }
                 }
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
             }
@@ -677,7 +720,7 @@ struct PaperRecBoard: View {
     }
 }
 
-/// 최신 원고 — Publications(Stage) + OpenAlex(지정 저자의 최근 프리프린트·논문)
+/// 최신 원고 — OpenAlex(지정 저자의 최근 프리프린트·논문). Publications Stage 질의는 0.40.0 C1(F0-3)에서 뺌(늘 0행)
 struct LatestManuscripts: View {
     @ObservedObject var model: NotionHubModel
     /// 랩 허브만 — 30일 안 2편, 나머지는 '▸ 더 보기' (0.37.0 C2). 열 바닥이 비면 다음 원고를 더 (HubFill, 0.38.0 C3)
@@ -687,12 +730,13 @@ struct LatestManuscripts: View {
     @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "최신 원고 · " + model.cfg.manuscriptAuthors.keys.sorted().joined(separator: "·"), trailing: "Publications") { model.openInApp(id: model.cfg.publicationsDB) }
+            SectionTitle(text: "최신 원고 · " + model.cfg.manuscriptAuthors.keys.sorted().joined(separator: "·"), trailing: "Publications",
+                         fresh: nearOnly ? model.cardTag("preprints") : nil) { model.openInApp(id: model.cfg.publicationsDB) }
             VStack(spacing: 0) {
                 let cut = nearOnly ? HubNear.preprints(model) : nil
                 let open = expansion.isOpen("preprints"), e = fill.extra["preprints"] ?? 0
                 let rows = cut.map { $0.shown(open: open, extra: e) } ?? Array(model.preprints.prefix(4))
-                if rows.isEmpty && model.manuscripts.isEmpty {
+                if rows.isEmpty {
                     Text(model.preprintsLoading ? "OpenAlex 에서 찾는 중…" : "최근 원고 없음").font(.hub(cs.body)).foregroundStyle(Hub.text2)
                         .padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -715,7 +759,7 @@ struct LatestManuscripts: View {
                     .buttonStyle(.plain).help(r.url?.absoluteString ?? r.title)
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "preprints", more: cut.toggleCount(open: open, extra: e)) }
+                if let cut { CardFooter(caption: CardMetas.caption("preprints", model), toggleKey: "preprints", more: cut.toggleCount(open: open, extra: e)) }
             }
             .frame(maxWidth: .infinity, alignment: .topLeading)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -824,7 +868,7 @@ struct BlitzCompact: View {
             } else {
                 VStack(spacing: 0) {
                     list
-                    if nearOnly { MoreToggle(key: "blitz", more: HubNear.blitz(model, me: HubPrefs.me).toggleCount(open: expansion.isOpen("blitz"), extra: hubFill.extra["blitz"] ?? 0)) }
+                    if nearOnly { CardFooter(caption: CardMetas.caption("blitz", model), toggleKey: "blitz", more: HubNear.blitz(model, me: HubPrefs.me).toggleCount(open: expansion.isOpen("blitz"), extra: hubFill.extra["blitz"] ?? 0)) }
                 }
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
             }
@@ -967,7 +1011,7 @@ struct GrantsSection: View {
     @ObservedObject private var fill = HubFill.shared
     var body: some View {
         VStack(alignment: .leading, spacing: cs.gap) {
-            SectionTitle(text: "그랜트 · 보고와 지원", trailing: "NAS") {
+            SectionTitle(text: "그랜트 · 보고와 지원", trailing: "NAS", fresh: nearOnly ? model.cardTag("grants") : nil) {
                 NSWorkspace.shared.open(URL(fileURLWithPath: (model.cfg.grantsFile as NSString).deletingLastPathComponent))
             }
             VStack(spacing: 0) {
@@ -1019,7 +1063,7 @@ struct GrantsSection: View {
                     .help([g.agency, g.folder].filter { !$0.isEmpty }.joined(separator: " · "))
                     if i < rows.count - 1 { RowDivider() }
                 }
-                if let cut { MoreToggle(key: "grants", more: cut.toggleCount(open: open, extra: e)) }
+                if let cut { CardFooter(caption: CardMetas.caption("grants", model), toggleKey: "grants", more: cut.toggleCount(open: open, extra: e)) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -1030,6 +1074,11 @@ struct GrantsSection: View {
 
 // MARK: - 다가오는 학회 (NAS Grant/_ssot/conferences_upcoming.json — scripts/import_conferences.py, JYK 제공 #7)
 enum ConferencesFile {
+    /// 파일의 generated 날짜(앞 10자 yyyy-MM-dd) — 학회 카드 꼬리표 (0.40.0 C3, A2-src-ssot_conferences)
+    static func generated(_ path: String) -> Date? {
+        guard let d = FileManager.default.contents(atPath: path), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return nil }
+        return MetricsSnapshot.day(o["generated"] ?? o["updated"])
+    }
     static func load(_ path: String) -> [ConferenceRow] {
         guard let d = FileManager.default.contents(atPath: path),
               let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],

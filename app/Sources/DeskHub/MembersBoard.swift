@@ -105,59 +105,122 @@ enum ScoreboardLive {
 struct MilestoneFile: Equatable {
     let path: String
     let date: Date
-    /// true = 파일 이름(MM<yymmdd>_<이니셜>)의 날짜, false = 수정 시각(복사로 바뀔 수 있어 '수정일' 로 표시)
+    /// true = 파일 이름(또는 상위 폴더 이름)의 날짜(MilestoneFiles.fileDate 4규칙), false = 수정 시각(복사로 바뀔 수 있어 '수정일' 로 표시)
     let fromName: Bool
     var label: String { Hub.shortDay(date) + (fromName ? " 이름" : " 수정일") }
 }
 
 /// NAS MM/<이니셜>/ 의 최신 발표 파일 — 순수 함수(파일 목록만 읽는다, 이름을 바꾸지 않는다)
+/// 0.40.0 C1 (F0-4): 날짜 형식 4종 + 하위 폴더 2단계. BHL·MSY·JYK·SMJ 가 '수정일' 로 보이던 것(이름 'MM<yymmdd>_' 만·최상위만 읽음)
 enum MilestoneFiles {
     static let exts: Set<String> = ["pptx", "ppt", "key", "pdf"]
+    /// 하위 폴더 깊이 — 0 = MM/<이니셜> 바로 아래 파일, 2 = 하위 폴더 두 단계 안의 파일까지
+    static let maxSubfolderDepth = 2
 
     /// 폴더 후보 = 이니셜 + 그 이니셜로 가는 옛 이니셜(initialsAliases: SK → SJK)
     static func folders(for ini: String, aliases: [String: String]) -> [String] {
         [ini] + aliases.filter { $0.value.uppercased() == ini.uppercased() }.map(\.key).sorted()
     }
 
-    /// 'MM261016_JOP…' → 2026-10-16 (이니셜이 후보 중 하나일 때만)
+    /// 연·월·일 → 날짜. 연도는 2015–2035 만, 월·일은 달력으로 검증(2026-02-30 → nil)
+    static func validDate(_ y: Int, _ m: Int, _ d: Int) -> Date? {
+        guard (2015...2035).contains(y), (1...12).contains(m), (1...31).contains(d) else { return nil }
+        var c = DateComponents(); c.year = y; c.month = m; c.day = d
+        guard let date = Calendar.current.date(from: c),
+              Calendar.current.component(.month, from: date) == m, Calendar.current.component(.day, from: date) == d else { return nil }
+        return date
+    }
+    private static func yy(_ s: Substring) -> Int? { Int(s).map { s.count == 2 ? 2000 + $0 : $0 } }
+
+    /// 규칙 ① 'MM261016_JOP…' → 2026-10-16 (이니셜이 후보 중 하나일 때만)
     static func nameDate(_ file: String, initials: [String]) -> Date? {
         guard let m = file.range(of: "^MM(\\d{6})_([A-Za-z]+)", options: .regularExpression) else { return nil }
         let s = String(file[m])
-        let digits = String(s.dropFirst(2).prefix(6))
+        let digits = s.dropFirst(2).prefix(6)
         let who = String(s.dropFirst(9)).uppercased()
         guard initials.contains(where: { $0.uppercased() == who }),
               let yy = Int(digits.prefix(2)), let mm = Int(digits.dropFirst(2).prefix(2)), let dd = Int(digits.suffix(2)) else { return nil }
-        var c = DateComponents(); c.year = 2000 + yy; c.month = mm; c.day = dd
-        guard let d = Calendar.current.date(from: c), Calendar.current.component(.month, from: d) == mm else { return nil }
-        return d
+        return validDate(2000 + yy, mm, dd)
+    }
+    /// 규칙 ② 이름 앞 6자리 yymmdd(바로 뒤가 숫자가 아님) — '260903 진척.pptx' · '261014_GRM.pdf'
+    static func leadingDate(_ name: String) -> Date? {
+        guard let r = name.range(of: "^\\d{6}(?!\\d)", options: .regularExpression) else { return nil }
+        let d = name[r]
+        guard let y = yy(d.prefix(2)), let m = Int(d.dropFirst(2).prefix(2)), let dd = Int(d.suffix(2)) else { return nil }
+        return validDate(y, m, dd)
+    }
+    private static let sepRE = try! NSRegularExpression(pattern: "(?<!\\d)(\\d{4}|\\d{2})[._-](\\d{2})[._-](\\d{2})(?!\\d)")
+    /// 규칙 ③ 이름 어디든 (yyyy|yy)[.-_]mm[.-_]dd — SMJ '… 2026.10.14', BYL '…(26.10.14)'. 앞뒤가 숫자인 조각은 받지 않는다. 처음 맞는 유효한 날짜
+    static func separatedDate(_ name: String) -> Date? {
+        let ns = name as NSString
+        for m in sepRE.matches(in: name, range: NSRange(location: 0, length: ns.length)) {
+            let y = ns.substring(with: m.range(at: 1)), mo = ns.substring(with: m.range(at: 2)), d = ns.substring(with: m.range(at: 3))
+            if let yv = yy(Substring(y)), let mv = Int(mo), let dv = Int(d), let date = validDate(yv, mv, dv) { return date }
+        }
+        return nil
+    }
+    /// 파일 하나의 날짜 — 우선순위 ① MM<yymmdd>_<이니셜> ② 앞 6자리 yymmdd ③ 어디든 yyyy.mm.dd·yy.mm.dd ④ 이름에 없으면 상위 하위 폴더 이름(가까운 것부터)에 ②·③.
+    /// relPath = MM/<이니셜>/ 아래 상대 경로('sub/260903 진척.pptx'). 못 찾으면 nil(→ 수정 시각). --text-check 'mm' 과 같은 함수
+    static func fileDate(_ relPath: String, initials: [String]) -> Date? {
+        let parts = relPath.split(separator: "/").map(String.init)
+        guard let name = parts.last else { return nil }
+        if let d = nameDate(name, initials: initials) ?? leadingDate(name) ?? separatedDate(name) { return d }
+        for folder in parts.dropLast().reversed() {
+            if let d = leadingDate(folder) ?? separatedDate(folder) { return d }
+        }
+        return nil
     }
 
-    /// 한 멤버의 최신 파일. 최신 = 날짜(이름 날짜 또는 수정 시각) → 같으면 pptx·key 먼저 → 수정 시각. 폴더·'~$'·'.' 로 시작하는 것 제외
+    /// 한 멤버 폴더들의 발표 파일 (상대 경로, 절대 경로) — 하위 폴더 2단계까지, 숨김·'~$' 제외, .key 는 패키지 폴더여도 파일 하나로(그 안은 보지 않음)
+    static func files(root: String, initials ini: String, aliases: [String: String]) -> [(rel: String, path: String)] {
+        let fm = FileManager.default
+        var out: [(String, String)] = []
+        for folder in folders(for: ini, aliases: aliases) {
+            let dir = (root as NSString).appendingPathComponent(folder)
+            guard let e = fm.enumerator(atPath: dir) else { continue }
+            while let rel = e.nextObject() as? String {
+                let name = (rel as NSString).lastPathComponent
+                let isDir = (e.fileAttributes?[.type] as? FileAttributeType) == .typeDirectory
+                if name.hasPrefix(".") || name.hasPrefix("~$") { if isDir { e.skipDescendants() }; continue }
+                let ext = (name as NSString).pathExtension.lowercased()
+                if isDir {
+                    // e.level: 1 = 폴더 바로 아래. 하위 폴더 안 파일은 level 2·3 — 그보다 깊으면 들어가지 않는다
+                    if ext == "key" { e.skipDescendants() } else if e.level > maxSubfolderDepth { e.skipDescendants(); continue } else { continue }
+                }
+                guard exts.contains(ext) else { continue }
+                out.append((rel, (dir as NSString).appendingPathComponent(rel)))
+            }
+        }
+        return out
+    }
+
+    /// 한 멤버의 최신 파일. 최신 = 날짜(이름 날짜 또는 수정 시각) → 같으면 pptx·key 먼저 → 수정 시각
     static func latest(root: String, initials ini: String, aliases: [String: String]) -> MilestoneFile? {
         let fm = FileManager.default
         let cands = folders(for: ini, aliases: aliases)
         var best: (file: MilestoneFile, pref: Int, mtime: Date)?
-        for folder in cands {
-            let dir = (root as NSString).appendingPathComponent(folder)
-            guard let names = try? fm.contentsOfDirectory(atPath: dir) else { continue }
-            for n in names where !n.hasPrefix("~$") && !n.hasPrefix(".") && exts.contains((n as NSString).pathExtension.lowercased()) {
-                let p = (dir as NSString).appendingPathComponent(n)
-                var isDir: ObjCBool = false
-                guard fm.fileExists(atPath: p, isDirectory: &isDir), !isDir.boolValue else { continue }
-                let mtime = ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantPast
-                let nd = nameDate(n, initials: cands)
-                let day = Calendar.current.startOfDay(for: nd ?? mtime)
-                let pref = ["pptx", "key"].contains((n as NSString).pathExtension.lowercased()) ? 0 : 1
-                let f = MilestoneFile(path: p, date: day, fromName: nd != nil)
-                if let b = best {
-                    if day != b.file.date { if day < b.file.date { continue } }
-                    else if pref != b.pref { if pref > b.pref { continue } }
-                    else if mtime <= b.mtime { continue }
-                }
-                best = (f, pref, mtime)
+        for (rel, p) in files(root: root, initials: ini, aliases: aliases) {
+            let mtime = ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantPast
+            let nd = fileDate(rel, initials: cands)
+            let day = Calendar.current.startOfDay(for: nd ?? mtime)
+            let pref = ["pptx", "key"].contains((p as NSString).pathExtension.lowercased()) ? 0 : 1
+            let f = MilestoneFile(path: p, date: day, fromName: nd != nil)
+            if let b = best {
+                if day != b.file.date { if day < b.file.date { continue } }
+                else if pref != b.pref { if pref > b.pref { continue } }
+                else if mtime <= b.mtime { continue }
             }
+            best = (f, pref, mtime)
         }
         return best?.file
+    }
+
+    /// 그 해 이름 날짜(fileDate)의 고유 날짜 수 — 같은 날 여러 파일(확장자만 다른 것 포함)은 1건. 수정 시각은 세지 않는다
+    static func dayCount(root: String, initials ini: String, aliases: [String: String], year: Int) -> Int {
+        let cands = folders(for: ini, aliases: aliases)
+        let days = Set(files(root: root, initials: ini, aliases: aliases).compactMap { fileDate($0.rel, initials: cands) }
+            .filter { Calendar.current.component(.year, from: $0) == year }.map { Calendar.current.startOfDay(for: $0) })
+        return days.count
     }
 
     /// 멤버 전원 — root(MM 폴더)가 없으면(NAS 끊김) nil → Milestone 열 숨김
@@ -166,6 +229,17 @@ enum MilestoneFiles {
         guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else { return nil }
         var out: [String: MilestoneFile] = [:]
         for ini in initials where !ini.isEmpty { if let f = latest(root: root, initials: ini, aliases: aliases) { out[ini] = f } }
+        return out
+    }
+    /// 멤버별 그 해 고유 날짜 수 — 폴더가 있는 멤버만. root 가 없으면 nil
+    static func dayCounts(root: String, initials: [String], aliases: [String: String], year: Int) -> [String: Int]? {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: root, isDirectory: &isDir), isDir.boolValue else { return nil }
+        var out: [String: Int] = [:]
+        for ini in initials where !ini.isEmpty {
+            let has = folders(for: ini, aliases: aliases).contains { FileManager.default.fileExists(atPath: (root as NSString).appendingPathComponent($0)) }
+            if has { out[ini] = dayCount(root: root, initials: ini, aliases: aliases, year: year) }
+        }
         return out
     }
 }
@@ -179,7 +253,12 @@ extension NotionHubModel {
     /// refresh 에서 (메인 스레드 밖) — 읽기만
     func loadMilestones() async {
         let root = milestoneRoot, ini = members.map(\.initials).filter { !$0.isEmpty }, aliases = cfg.initialsAliases
-        milestones = await Task.detached(priority: .utility) { MilestoneFiles.scan(root: root, initials: ini, aliases: aliases) }.value
+        let year = Calendar.current.component(.year, from: HubClock.today)
+        let r = await Task.detached(priority: .utility) {
+            (MilestoneFiles.scan(root: root, initials: ini, aliases: aliases), MilestoneFiles.dayCounts(root: root, initials: ini, aliases: aliases, year: year))
+        }.value
+        milestones = r.0
+        milestoneDays = r.1.map { (year, $0) }
     }
     /// 그 멤버가 발표자인 첫 예정 GRM
     func nextGRM(for m: Member) -> GRMSlot? {
@@ -251,6 +330,11 @@ struct MembersBoardRow {
             out.append(f.joined(separator: " · "))
         }
         out.append("각주: " + purpose)
+        // 이름 날짜 4규칙의 그 해 고유 날짜 수 (0.40.0 C1, F0-4) — 숫자만, 많은 순(같으면 이니셜). 폴더가 있는 멤버만
+        if let (year, days) = model.milestoneDays {
+            let parts = days.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.map { "\($0.key) \($0.value)" }
+            out.append("MM 고유 날짜 \(year): " + (parts.isEmpty ? "—" : parts.joined(separator: " · ")))
+        }
         return out
     }
 

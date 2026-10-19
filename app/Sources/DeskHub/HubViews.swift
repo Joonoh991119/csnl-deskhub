@@ -65,6 +65,12 @@ struct HubViewSwitch: View {
     @ObservedObject var store = ViewModeStore.shared
     var body: some View {
         content.keyLayer(model)
+            // 첫 그림까지 시간 (M5, 0.40.0 C2) — 데이터 다 옴(settledAt) 뒤 이 뷰가 그려진 다음 런루프에서 한 번
+            .onChange(of: model.settledAt != nil, initial: true) { _, settled in
+                guard settled else { return }
+                let mode = store.mode.rawValue
+                DispatchQueue.main.async { MainActor.assumeIsolated { RenderClock.mark(view: mode) } }
+            }
     }
 
     @ViewBuilder private var content: some View {
@@ -165,7 +171,7 @@ struct MeView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             HStack(alignment: .top, spacing: 12) {
-                PaperRecBoard(model: model)
+                PaperRecBoard(model: model, fold: true)   // 멈춤이면 한 줄 (0.40.0 C8, R4)
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 12) {
                         myTurn
