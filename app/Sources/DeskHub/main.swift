@@ -134,7 +134,8 @@ enum TextCheck {
             case "react": got = PaperReact.check(input)
             // 시간표 (0.42.0 C4, R1) — tt-slots(수업시간 → '요일 HH:mm–HH:mm (강의실)') · tt-sem(날짜 → 학기 id[ 휴일]|학기 밖) · tt-today. fixtures/timetable-check.tsv
             // tt-merge (0.43.0 C3, #47 #48) — Timetable.prepare(조교 제외·같은 과목 합치기) 뒤 모든 덩어리
-            case "tt-slots", "tt-sem", "tt-today", "tt-merge": got = Timetable.check(kind, input, tsv: path)
+            // tt-mine (0.43.1 C1, #53) — 'me=;rows=' → '내 수업: …'. tt-today·tt-merge 도 선택 키 me= (별칭은 testAliases 로 풂, 내 덩어리 앞 '★ ')
+            case "tt-slots", "tt-sem", "tt-today", "tt-merge", "tt-mine": got = Timetable.check(kind, input, tsv: path, aliases: testAliases)
             // 멤버 상태 (0.42.0 C5, R2) — 'now=;ini=;cal=;notion=;slab=;class=;away=;members=' → 'kind · why · ~HH:mm' | '—'. fixtures/status-check.tsv
             case "mstatus": got = MemberStatus.check(input, tsv: path)
             // Joint projects 한 줄 (0.42.0 C6, R9-d) — 'id=;v=;owner=;done=;waiting=' → JointProjects.line. fixtures/joint-check.tsv

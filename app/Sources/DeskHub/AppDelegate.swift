@@ -787,6 +787,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
         menu.addItem(withTitle: "설정 파일 열기…", action: #selector(openConfig), keyEquivalent: "")
         menu.addItem(withTitle: "설정 다시 읽기 (위젯 재생성)", action: #selector(reloadConfig), keyEquivalent: "")
+        menu.addItem(withTitle: "내 이니셜 다시 고르기", action: #selector(rechooseMe), keyEquivalent: "")
         menu.addItem(withTitle: "웹 로그인 데이터 지우기…", action: #selector(clearWebData), keyEquivalent: "")
         let login = NSMenuItem(title: "로그인 시 자동 실행", action: #selector(toggleLaunchAtLogin), keyEquivalent: "")
         login.state = LaunchAgent.isInstalled ? .on : .off
@@ -926,6 +927,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reloadConfig()
     }
     @objc private func openConfig() { config.save(); NSWorkspace.shared.open(Config.fileURL) }
+    /// 이니셜 확인 줄을 다시 띄운다 — 한 번 고른 뒤 잘못 고른 맥(내 수업·내 것이 안 보임)의 되돌릴 길 (0.43.1, #53 리뷰)
+    @objc private func rechooseMe() { HubPrefs.meChosen = false; reloadConfig() }
     @objc private func reloadConfig() {
         tearDownAll()
         config = Config.load()
