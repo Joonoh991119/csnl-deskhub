@@ -202,7 +202,7 @@ enum MemberStatus {
 
     // MARK: text-check (main.swift kind mstatus)
 
-    /// 'now=;ini=;cal=제목@HH:mm-HH:mm|제목@종일;notion=제목@HH:mm|제목@종일;slab=이니셜/프로젝트/HH:mm - HH:mm/상태|…;class=이니셜/과목/수업시간|…;away=이니셜:라벨,…;members=…'
+    /// 'now=;ini=;cal=제목@HH:mm-HH:mm|제목@종일;notion=제목@HH:mm|제목@종일;slab=이니셜/프로젝트/HH:mm - HH:mm/상태|…;class=이니셜/과목/수업시간[@구분]|…;away=이니셜:라벨,…;members=…'
     /// → 'kind · why · ~HH:mm' 또는 '—'. class 는 Timetable.todayGroups(휴일 제외, 학기 파일 = tsv 옆 Resources)
     static func check(_ input: String, tsv: String) -> String {
         var k: [String: String] = [:]
@@ -233,12 +233,8 @@ enum MemberStatus {
             let p = s.components(separatedBy: "/"); return p.count == 4 ? Lab(owner: p[0], project: p[1], time: p[2], status: p[3]) : nil
         }
         let sems = Timetable.loadSemesters(bundleURL: URL(fileURLWithPath: tsv).deletingLastPathComponent().appendingPathComponent("../Resources/semesters.json").standardizedFileURL, userURL: nil)
-        let rows: [CourseRow] = (k["class"] ?? "").components(separatedBy: "|").compactMap { r in
-            let p = r.components(separatedBy: "/")
-            guard p.count >= 3 else { return nil }
-            let ss = Timetable.slots(p[2...].joined(separator: "/"))
-            return ss.isEmpty ? nil : CourseRow(initials: p[0], course: p[1], kind: "수강", confirmed: true, slots: ss)
-        }
+        // 앱과 같이 Timetable.prepare(조교 제외·같은 과목 합치기)를 거친다 — 행 형식 '이니셜/과목/수업시간[@구분]' (0.43.0 C3)
+        let rows = Timetable.prepare(Timetable.fixtureRows(k["class"] ?? "")).rows
         i.classes = Timetable.todayGroups(rows, now: now, sems: sems).flatMap { b in b.initials.map { ClassSlot(initials: $0, course: b.course, start: b.start, end: b.end) } }
         for a in (k["away"] ?? "").components(separatedBy: ",") {
             let p = a.split(separator: ":", maxSplits: 1).map(String.init); if p.count == 2 { i.away[p[0]] = p[1] }
@@ -271,7 +267,9 @@ extension NotionHubModel {
 
 // MARK: - 아이콘
 
-/// 상태 아이콘 하나 — Hub.text2(내 것 Hub.ink), 적색 없음. 상태가 없으면 빈 칸(placeholder 면 같은 폭)
+/// 상태 아이콘 하나 — Hub.text2(내 것 Hub.ink), 적색 없음. 상태가 없으면 빈 칸. 폭은 부르는 쪽 frame 이 맞춘다
+/// (Members 카드·Members 탭 행 모두 `placeholder: true` + `frame(width: cs.col(16))` — 상태 없는 행의 이니셜이 왼쪽으로 붙지 않게, 0.43.0 C2 #44.
+/// placeholder 없이 빈 뷰에 frame 을 걸면 폭을 잡지 못한다 — 검증 1)
 struct MemberStatusIcon: View {
     let status: MemberStatusValue?
     var mine = false
@@ -362,7 +360,7 @@ struct MembersCard: View {
         let projs = e?.projects ?? []
         let away = MembersProjectsStrip.awayLabel(model, m)
         return HStack(spacing: 6) {
-            MemberStatusIcon(status: model.status(of: m.initials), mine: mine).frame(width: cs.col(16), alignment: .center)
+            MemberStatusIcon(status: model.status(of: m.initials), mine: mine, placeholder: true).frame(width: cs.col(16), alignment: .center)
             Text(m.initials).font(.hub(cs.aux, weight: .bold, design: .rounded)).foregroundStyle(mine ? Hub.ink : Hub.text)
                 .lineLimit(1).frame(width: cs.col(38), alignment: .leading)
             Button { model.openInApp(id: m.id) } label: {

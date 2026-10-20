@@ -303,6 +303,9 @@ final class NotionHubModel: ObservableObject {
     /// 시간표 (0.42.0 C4, Timetable.swift) — Notion Courses 지금 학기 행(정규화) · 못 읽은 행 수 · 읽기 실패 이유(적색 아님) · 6시간 캐시
     @Published var courses: [CourseRow] = []
     @Published var coursesUnparsed = 0
+    /// Timetable.prepare 결과 (0.43.0 C3) — 뺀 조교 행 수 · 병합 메모(덤프 줄)
+    @Published var coursesTA = 0
+    var coursesMergeNotes: [String] = []
     @Published var coursesNote: String?
     @Published var coursesSource = "Notion"
     var coursesFetchedAt: Date?
@@ -1338,6 +1341,8 @@ enum Hub {
     static var text3: Color { Theme.color(\.text3) }
     static var divider: Color { Theme.color(\.divider) }
     static var fillNeutral: Color { Theme.color(\.fillNeutral) }
+    /// 연구 탭 태그 색 (0.43.0 C4, #49) — 테마 토큰에서 만든 범주색 7개(TagPalette). 적색 계열 없음, 글자로 쓰면 표면 위 14% 바탕 대비 ≥4.5
+    static func tag(_ slot: Int) -> Color { Color(nsColor: TagPalette.ns(slot)) }
 
     /// 날짜 옆 요일 표시 여부 (config notionHub.display.showWeekday)
     static var showWeekday = false

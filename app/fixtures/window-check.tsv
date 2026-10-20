@@ -1,0 +1,14 @@
+# 제목 막대 더블클릭 (0.43.0 C7, #51) — 종류<TAB>입력<TAB>기대. 입력 'action=<시스템 AppleActionOnDoubleClick 값>;legacy=<AppleMiniaturizeOnDoubleClick 0|1>'
+# 기대 = zoom(확대/원래 크기) · lower(꺼냈으면 바탕화면 층, 이미 바탕화면이면 그대로 — 숨기기·Dock 최소화 아님) · none
+dblclick	action=Maximize;legacy=0	zoom
+dblclick	action=Fill;legacy=0	zoom
+dblclick	action=Zoom;legacy=0	zoom
+# 값 없음 = macOS 기본 '확대'(이 맥 macOS 26.6.2 는 값 없음)
+dblclick	action=;legacy=0	zoom
+dblclick	action=Minimize;legacy=0	lower
+dblclick	action=;legacy=1	lower
+# 새 키가 있으면 옛 키보다 먼저
+dblclick	action=Maximize;legacy=1	zoom
+dblclick	action=None;legacy=0	none
+dblclick	action=Do Nothing;legacy=0	none
+dblclick	action=Something;legacy=0	none

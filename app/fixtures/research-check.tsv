@@ -1,0 +1,34 @@
+# 연구 탭 '분야 최근 이슈' 태그 (0.43.0 C4, #49) — 종류<TAB>입력<TAB>기대
+# topiclabel: 주제 id → '칩 이름 · slot n' (../Resources/research-topics.json — id 는 그대로, 이름은 영어 초안 D-8) · '*' → 이름들의 한글 글자 수
+topiclabel	decision	Perceptual decision · slot 0
+topiclabel	wm	Working memory · slot 1
+topiclabel	history	History effects · slot 2
+topiclabel	vision	Visual cortex · slot 3
+topiclabel	arousal	Arousal & pupil · slot 4
+topiclabel	model	Network models · slot 5
+topiclabel	memory	Hippocampus & memory · slot 6
+topiclabel	*	0
+# tagcolor: 테마 id → 라이트·다크 모두 7색이 '표면 위 14% 바탕' 대비 ≥4.5 · 적색 판정 아님 · 서로 다른 두 색 sRGB 거리 ≥40 이면 'ok 7' (번들 14개 + contrast)
+tagcolor	csnl	ok 7
+tagcolor	catppuccin	ok 7
+tagcolor	rosepine	ok 7
+tagcolor	nord	ok 7
+tagcolor	solarized	ok 7
+tagcolor	gruvbox	ok 7
+tagcolor	tokyonight	ok 7
+tagcolor	primer	ok 7
+tagcolor	carbon	ok 7
+tagcolor	radix	ok 7
+tagcolor	tokyonight-daynight	ok 7
+tagcolor	catppuccin-frappe	ok 7
+tagcolor	catppuccin-macchiato	ok 7
+tagcolor	everforest	ok 7
+tagcolor	contrast	ok 7
+# feedtags: 'sel=고른 id;topic=1(관심만)|0(전체);items=항목별 걸린 id(빈 칸 = 주제 없음)' → 보이는 항목 번호. 고른 태그 중 하나라도(OR, D-9), 모르는 id 는 버림
+feedtags	sel=;topic=1;items=decision|wm,vision|history|	0,1,2
+feedtags	sel=decision;topic=1;items=decision|wm,vision|history|	0
+feedtags	sel=decision,vision;topic=1;items=decision|wm,vision|history|	0,1
+feedtags	sel=foo;topic=1;items=decision|wm,vision|history|	0,1,2
+feedtags	sel=;topic=0;items=decision|wm,vision|history|	0,1,2,3
+feedtags	sel=history;topic=0;items=decision|wm,vision|history|	2
+feedtags	sel=memory;topic=1;items=decision|wm,vision|history|	

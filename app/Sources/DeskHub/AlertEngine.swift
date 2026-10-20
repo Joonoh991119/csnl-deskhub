@@ -29,7 +29,8 @@ struct HubAlert: Identifiable, Equatable {
     var sources: [String] = []
     /// W 행(과 지난 리마인더 C)에만 붙는 행동 한 개의 이름 (버튼은 뷰가 그린다)
     var action: String? = nil
-    /// 마감이 지난 리마인더 — 같은 등급 안에서 맨 위로 (UX mobile-productivity-11)
+    /// 마감 날이 어제 이전(달력 날짜)인 리마인더 (0.43.0 C1, #46 결정 D-1 — '24시간' 이 아니라 날짜: 10-18 마감은 10-19 0시부터).
+    /// 같은 날 시각이 지난 것은 overdue 아님(맨 위 유지). 같은 등급 안에서 맨 아래로, 상한 밖(AlertEngine.order) — 팝오버는 한 줄로 접는다
     var overdue: Bool = false
     /// 호버 레일 '미루기'(+7일) 를 보일지 — 지난 리마인더이고, 이 맥에서 확인한 신원(actor)이 있고, 그 사람 것이거나 그 사람이 등록한 것일 때만
     /// (남의 마감을 공용 맥에서 미루지 않게). 보기 렌즈(me — 관제탑 로스터에서 고른 10분 '대상')로는 판정하지 않는다
@@ -229,16 +230,23 @@ enum AlertEngine {
             out.append(HubAlert(id: "fresh-" + key, level: .advisory, title: f.text, detail: f.help, sources: [key]))
         }
 
-        // 정렬: 등급 → 지난 것 먼저 → (C·A 는) 내 것 → 마감 가까운 순. 상한 — 지난 리마인더가 먼저 살아남는다
-        out.sort { a, b in
+        return order(out)
+    }
+
+    /// 정렬·상한 (0.43.0 C1, #46) — 순수 함수. evaluate · text-check `todo` 가 같이 부른다.
+    /// 정렬: 등급 → 어제 이전 마감(overdue)은 맨 뒤 → (C·A 는) 내 것 → 마감 가까운 순.
+    /// 상한 W3·C5·A3 는 overdue 가 아닌 것에만 — overdue 는 늘 남긴다(7일 창이라 개수에 끝이 있음, '끝남' 정리가 닿게). 그래서 각 등급 안에서 지난 것이 맨 아래
+    static func order(_ input: [HubAlert]) -> AlertSet {
+        let out = input.sorted { a, b in
             if a.level != b.level { return a.level < b.level }
-            if a.overdue != b.overdue { return a.overdue }
+            if a.overdue != b.overdue { return !a.overdue }
             if a.level != .warning && a.mine != b.mine { return a.mine }
             return (a.due ?? .distantFuture) < (b.due ?? .distantFuture)
         }
         var kept: [HubAlert] = [], overflow: [HubAlert.Level: Int] = [:]
         for a in out {
-            let n = kept.filter { $0.level == a.level }.count
+            if a.overdue { kept.append(a); continue }
+            let n = kept.filter { $0.level == a.level && !$0.overdue }.count
             if n < (caps[a.level] ?? 3) { kept.append(a) } else { overflow[a.level, default: 0] += 1 }
         }
         return AlertSet(alerts: kept, overflow: overflow)

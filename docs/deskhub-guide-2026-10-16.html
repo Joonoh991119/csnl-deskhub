@@ -34,10 +34,26 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.42.0 · 2026년 10월 19일 · 절 제목을 누르면 펼쳐집니다</div>
+<div class="sub">연구실 바탕화면 대시보드 · 0.43.0 · 2026년 10월 20일 · 절 제목을 누르면 펼쳐집니다</div>
 <p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM(매주 연구실 미팅) 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기), 미팅 후속 체크(끝남·확정·아님·직접 적기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
+<summary><span class="chev"></span>0.43.0 에서 바뀐 것</summary>
+<div class="body">
+<ul>
+<!-- 줄마다 해당 변경(C1–C7)이 실제로 들어간 판에만 남긴다. 빠진 변경의 줄은 지운다. -->
+<li><b>지난 마감은 맨 아래 한 줄로</b> <!-- C1 #46 --> — 팝오버 '할 것' 에서 마감 날이 어제 이전인 것은 더 이상 맨 위에 남지 않고, 맨 아래 '지난 마감 n건' 한 줄로 접힙니다. 누르면 그 자리에서 펼쳐지고, 끝난 것은 대시보드에서 '끝남' 으로 정리합니다(정리하지 않으면 7일 뒤 저절로 사라집니다). 오늘 마감인데 시각이 지난 것은 지금처럼 위에 '지남' 으로 보입니다.</li>
+<li><b>Members 탭 아이콘 뜻과 열 제목</b> <!-- C2 #44 #45 --> — 표 아래에 아이콘 뜻이 한 줄로 보입니다(비행기 On leave · 두 사람 In meeting · 플라스크 Running experiment · 책 In class). 아이콘이 있든 없든 이니셜이 한 줄로 맞춰지고, 잘리던 열 제목은 'Reactions' 처럼 짧게 바꿔 글자를 키워도 잘리지 않습니다.</li>
+<li><b>시간표: 같은 수업은 하나로, 조교 수업은 빼고</b> <!-- C3 #47 #48 --> — 같은 과목을 사람마다 시간을 조금 다르게 적었으면 한 수업으로 합쳐 보이고, 차이는 수업에 마우스를 올리면 '입력 시간 다름' 으로 나옵니다. 조교로 들어가는 수업은 Classes 카드 · Timetable · '수업 중' 아이콘에서 빠집니다. 청강은 그대로 보입니다.</li>
+<li><b>연구 탭 '최근 이슈' 태그</b> <!-- C4 #49 --> — 주제 태그가 영어 이름과 색으로 바뀌었습니다. 섹션 오른쪽 위 'Filter' 를 누르면 태그를 여러 개 고를 수 있고, 고른 태그 중 하나라도 걸린 글만 보입니다. 고른 태그는 이 맥에 저장돼 다시 켜도 그대로이고, 'Clear' 로 풉니다.</li>
+<li><b>CSNL GRM 탭: 일정과 순번 나란히</b> <!-- C5 #50 --> — 일정이 왼쪽, 로테이션 순서가 오른쪽에 같은 높이로 놓입니다. 창이 좁거나 글자를 키우면 일정이 위, 순번이 아래로 갑니다.</li>
+<li><b>창 확대와 왼쪽 위 단추</b> <!-- C7 #51 --> — 카드 제목 줄을 두 번 누르면 맥 설정(시스템 설정 → 데스크탑 및 Dock 의 제목 막대 이중 클릭)에 따라 화면을 채우도록 확대되거나 바탕화면으로 내려갑니다. <span class="kbd">⌃ ⌥ D</span> 로 앞으로 꺼냈을 때는 왼쪽 위에 닫기(모두 숨김) · 내리기(바탕화면으로) · 확대 단추가 보입니다. 확대는 잠깐 크게 보는 것이라, 원래 크기로 돌리면 카드 자리와 크기는 그대로입니다.</li>
+<li><b>의견은 GitHub 이슈로</b> <!-- C6 --> — 'deskhub-review' 라벨이나 제목 앞 '[DeskHub]' 로 올린 새 이슈 · 댓글 · 고친 댓글이 이제 모두 랩장 쪽에 저절로 모입니다. 따로 알리지 않아도 됩니다.</li>
+</ul>
+</div>
+</details>
+
+<details>
 <summary><span class="chev"></span>0.42.0 에서 바뀐 것</summary>
 <div class="body">
 <ul>
@@ -85,7 +101,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.42.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.43.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -184,7 +200,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.42.0, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.43.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>

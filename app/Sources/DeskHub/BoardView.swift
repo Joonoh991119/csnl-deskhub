@@ -205,6 +205,10 @@ struct BoardView: View {
     static func clean(_ what: String) -> String { what.replacingOccurrences(of: "◆ ", with: "") }
     /// 진행 중 일정 (시작했고 끝나기 전)
     static func isLive(_ it: BoardItem, now: Date) -> Bool { it.end.map { e in (it.date ?? .distantFuture) <= now && now < e } ?? false }
+    /// '지남' 표시 — 마감 행(리마인더·그랜트)·학회 행 모두 같은 규칙: 마감 시각이 지났나 (0.43.0 C1, #46). 어제 이전 마감은 안내판 데이터에 없다(오늘 0시 이후만)
+    static func isPast(_ it: BoardItem, now: Date) -> Bool {
+        (it.kind == .deadline || it.kind == .conference) && (it.date ?? .distantFuture) < now
+    }
     /// 시각 칸 글자 — 종일 일정은 '종일', 시각 없는 마감은 '—'
     static func timeText(_ it: BoardItem) -> String { it.hasTime ? (it.date.map(Hub.time) ?? "") : (it.kind == .event ? "종일" : "—") }
 
@@ -218,7 +222,7 @@ struct BoardView: View {
         func who(_ it: BoardItem) -> String { (it.who.isEmpty ? "" : " @" + it.who) + (it.mine ? " (내 것)" : "") }
         func todayLine(_ it: BoardItem) -> String {
             (isLive(it, now: now) ? "● " : "") + "\(timeText(it)) \(it.what)\(who(it)) [\(status(it, now: now).0)]"
-                + (it.id.hasPrefix("rem-") && (it.date ?? .distantFuture) < now ? " (지남)" : "")
+                + (isPast(it, now: now) ? " (지남)" : "")
         }
         section("마감:", d.deadlines.map { "\(clean($0.what)) [\(status($0, now: now).0)]" })
         section("오늘:", d.today.map(todayLine))
@@ -300,7 +304,7 @@ struct BoardView: View {
 
     /// far '오늘 남은 일정' 한 줄 — 시각(폭 120) · 제목. 진행 중 ●(ink), 내 것 왼쪽 2pt ink 막대, 지난 리마인더 '지남' (near leftRow 와 같은 규칙)
     private func farRow(_ it: BoardItem, now: Date) -> some View {
-        let overdue = it.id.hasPrefix("rem-") && (it.date ?? .distantFuture) < now
+        let overdue = Self.isPast(it, now: now)
         return HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(Self.timeText(it)).font(FarType.title.monospacedDigit()).frame(width: Hub.s(120), alignment: .leading)
             if Self.isLive(it, now: now) { Text("●").font(FarType.aux).foregroundStyle(Hub.ink) }
@@ -480,7 +484,7 @@ struct BoardView: View {
     }
 
     private func leftRow(_ it: BoardItem, now: Date) -> some View {
-        let overdue = it.id.hasPrefix("rem-") && (it.date ?? .distantFuture) < now
+        let overdue = Self.isPast(it, now: now)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(Self.timeText(it)).font(BoardType.title.monospacedDigit()).frame(width: Hub.s(64), alignment: .leading)
             if Self.isLive(it, now: now) { Text("●").font(BoardType.aux).foregroundStyle(Hub.ink) }

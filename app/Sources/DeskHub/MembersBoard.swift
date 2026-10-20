@@ -5,7 +5,7 @@ import AppKit
 // 'Members' 탭은 웹뷰 대신 이 표(탭 이름·설정 기본값·config.json 그대로 — 탭 대체 아님, 랩장 15:58).
 // 실제 열: 이니셜 · 진행 프로젝트(NAS Memory 폴더, 칩 줄과 같은 member_links) · 다음 GRM(GRM Schedule) · Milestone(NAS MM 폴더 최신 파일 날짜)
 // 실제 열(0.39.0 C4, SB-LIVE): 논문 반응 — 최근 28일 Notion 논문 추천 댓글의 세 반응(취소 반영), 이니셜은 자기 신고. 머리 '실제 M.d–M.d' 칩.
-// 예시 열: Claude 사용량 · GitHub push — Resources/scoreboard-sample.json 의 표본 숫자. 열 머리마다 '예시' 칩 + 표 위 띠 + 무채색 막대.
+// 예시 열: Claude usage · GitHub push — Resources/scoreboard-sample.json 의 표본 숫자. 열 머리마다 '예시' 칩 + 표 위 띠 + 무채색 막대.
 // 교수님께 실제/예시를 구분해 보이기 위한 것(랩장 10-16 17:22). 순위가 아니다 — 행은 GRM 순번 순(정렬·1등 강조·색 구분 없음), 본인 행만 진한 막대. 적색 없음
 
 /// 예시 열 표본 — 훅 DESKHUB_SCOREBOARD_SAMPLE → 사용자 폴더(~/Library/Application Support/DeskHub/scoreboard-sample.json) → 번들. 실패면 예시 열 숨김.
@@ -295,6 +295,88 @@ struct MembersBoardRow {
         }
     }
 
+    /// 열 표 한 곳 (0.43.0 C2, #45) — 머리 뷰·행 폭·덤프 '열:'·text-check `mb-head` 가 이것만 읽는다. width 는 배율 1.0·colScale 곱하기 전.
+    /// Projects 는 남는 폭을 받는 열이라 표에 없다. 칩 = 머리 오른쪽 작은 테두리 글('실제'·'예시') — 기간(M.d–M.d)은 도움말·합계 줄·덤프에
+    struct Column: Identifiable, Equatable {
+        let id: String
+        let title: String
+        var chip: String? = nil
+        let width: CGFloat
+    }
+    static let fixedColumns: [Column] = [
+        Column(id: "ini", title: "Initials", width: 70),
+        Column(id: "grm", title: "Next GRM", width: 92),
+        Column(id: "mm", title: "Milestone", width: 96),
+        Column(id: "react", title: "Reactions", chip: "실제", width: 120),
+        Column(id: "fu", title: "Follow-ups", chip: "실제", width: 104),
+    ]
+    /// 예시 열 하나의 폭
+    static let sampleWidth: CGFloat = 120
+    /// 보이는 열(Projects 뺌) — Milestone 은 MM 폴더를 읽었을 때만, 예시 열은 표본이 있을 때만
+    static func columns(sample: ScoreboardSample?, milestone: Bool) -> [Column] {
+        fixedColumns.filter { milestone || $0.id != "mm" }
+            + (sample?.columns ?? []).map { Column(id: "sample-" + $0.id, title: $0.title, chip: "예시", width: sampleWidth) }
+    }
+    /// 고정 열 폭 합(배율 1.0, colScale 전) — 0.42.0 의 604(70+92+96+150+84+112, 예시 열은 한 번) 보다 늘리지 않는다(Projects 열이 줄지 않게)
+    static var fixedWidthSum: CGFloat { fixedColumns.map(\.width).reduce(0, +) + sampleWidth }
+    /// 머리 글 실측 폭(pt, 배율 반영) — 머리 글꼴(cs.tag 14 bold × 배율)과 칩(12 bold × 배율 + 좌우 안쪽 10, 간격 4) + 여유 4
+    static func headerNeed(_ c: Column, scale: CGFloat) -> CGFloat {
+        let cs = CardStyle.large
+        var need = StatusLine.measure(c.title, size: cs.tag * scale, weight: .bold) + 4
+        if let chip = c.chip { need += 4 + StatusLine.measure(chip, size: (cs.tag - 2) * scale, weight: .bold) + 10 }
+        return need
+    }
+    /// 머리 글이 열 폭에 들어가나 — headerNeed ≤ 열 폭 × colScale 1.2 × 배율
+    static func headerFits(_ c: Column, scale: CGFloat) -> Bool {
+        headerNeed(c, scale: scale) <= (c.width * CardStyle.large.colScale * scale).rounded()
+    }
+    /// 칸 내용 실측 최소 폭(pt) — 행 뷰와 같은 글꼴·막대. 이니셜 = 아이콘 칸 16 + 간격 4 + 굵은 세 글자, 막대 칸 = 막대 56 + 6 + 세 자리
+    static func cellNeed(_ id: String, scale: CGFloat) -> CGFloat {
+        let cs = CardStyle.large
+        let m = StatusLine.measure
+        switch id {
+        case "ini": return (16 * cs.colScale * scale).rounded() + 4 + m("WWW", cs.body * scale, .bold) + 4
+        case "grm": return m("12.31 D-99", cs.aux * scale, .semibold) + 4
+        case "mm": return m("12.31", cs.aux * scale, .semibold) + 4 + m("수정일", (cs.tag - 2) * scale, .regular) + 4
+        case "fu": return m("99", cs.aux * scale, .regular) + 4
+        default: return (56 * cs.colScale * scale).rounded() + 6 + m("999", cs.tag * scale, .regular) + 4
+        }
+    }
+    /// 열이 줄어들 수 있는 하한 — 머리·칸 실측 중 큰 것
+    static func minWidth(_ c: Column, scale: CGFloat) -> CGFloat { ceil(Swift.max(headerNeed(c, scale: scale), cellNeed(c.id, scale: scale))) }
+    /// Projects 열에 남길 최소 폭(배율 1.0·colScale 전)
+    static let projectsMin: CGFloat = 80
+    /// 열 폭(pt, cols 순서) — 표가 avail(탭 폭 − 좌우 여백) 안에 들어가게 (0.43.0 C2 검증 1: 1.6 배·1313pt 창에서 표가 창보다 넓어 양쪽이 잘림).
+    /// 넉넉하면 열 표 폭 그대로(cs.col 과 같은 값), 좁으면 모두 같은 비율로 줄이되 minWidth 아래로는 줄이지 않는다(머리 '…' 없음). 열 표 폭보다 넓히지는 않는다
+    static func fittedWidths(_ cols: [Column], scale: CGFloat, avail: CGFloat) -> [CGFloat] {
+        let cs = CardStyle.large
+        let base = cols.map { ($0.width * cs.colScale * scale).rounded() }
+        let mins = cols.indices.map { Swift.min(minWidth(cols[$0], scale: scale), base[$0]) }
+        // 행 좌우 안쪽 rowH × 2 + 열 사이 간격 8 (Projects 포함 n+1 칸 → n 간격) + Projects 하한
+        let other = 2 * cs.rowH + 8 * CGFloat(cols.count) + (projectsMin * cs.colScale * scale).rounded()
+        let budget = avail - other
+        guard avail > 0, base.reduce(0, +) > budget else { return base }
+        var clamped = Set<Int>()
+        var f: CGFloat = 1
+        for _ in 0...cols.count {
+            let fixed = clamped.reduce(CGFloat(0)) { $0 + mins[$1] }
+            let free = base.indices.filter { !clamped.contains($0) }.reduce(CGFloat(0)) { $0 + base[$1] }
+            f = free > 0 ? Swift.max(0, (budget - fixed) / free) : 0
+            let newly = base.indices.filter { !clamped.contains($0) && base[$0] * f < mins[$0] }
+            if newly.isEmpty { break }
+            clamped.formUnion(newly)
+        }
+        return base.indices.map { clamped.contains($0) ? mins[$0] : Swift.max(mins[$0], (base[$0] * f).rounded(.down)) }
+    }
+    /// 행 한 줄 전체 폭(pt) — 열 폭 + Projects 하한 + 간격·안쪽. text-check `mb-head` avail= 판정용
+    static func rowWidth(_ widths: [CGFloat], scale: CGFloat) -> CGFloat {
+        let cs = CardStyle.large
+        return widths.reduce(0, +) + 2 * cs.rowH + 8 * CGFloat(widths.count) + (projectsMin * cs.colScale * scale).rounded()
+    }
+    /// 상태 아이콘 범례 (0.43.0 C2, #44) — 화면 줄과 덤프 '범례:' 가 같은 allCases 에서
+    static let legendTitle = "Status"
+    static var legendDump: String { MemberStatusKind.allCases.map { "\($0.symbol) \($0.label)" }.joined(separator: " · ") }
+
     static let band = "일부 열은 예시 — 표본 자료, 실제 집계 아님"
     static let bandAux = "논문 반응은 Notion 논문 추천 댓글에서 센 실제 값"
     static let purpose = "순위가 아닙니다 — 행은 GRM 순번 순, 비교는 본인의 지난 기간과. 숫자는 읽은 양·기여도가 아니며 평가·장학·인사에 쓰지 않습니다."
@@ -319,12 +401,10 @@ struct MembersBoardRow {
         let tally = ScoreboardLive.tally(model)
         let period = ScoreboardLive.period(today: HubClock.today)
         let rs = rows(model, sample: sample, tally: tally)
-        // 머리 글은 영어 (0.42.0 C3, R3) — 열은 그대로
-        var cols = ["Initials", "Projects", "Next GRM"]
-        if model.milestones != nil { cols.append("Milestone") }
-        cols.append("Paper reactions(실제 \(period.label))")
-        cols.append("Follow-ups(실제)")
-        cols += (sample?.columns ?? []).map { $0.title + "(예시)" }
+        // 머리 글은 영어 (0.42.0 C3, R3) — 열 표(Column) 한 곳에서. 덤프는 Reactions 기간을 계속 적는다 (0.43.0 C2)
+        let table = columns(sample: sample, milestone: model.milestones != nil)
+        var cols = table.map { c in c.title + (c.chip.map { "(" + $0 + (c.id == "react" ? " " + period.label : "") + ")" } ?? "") }
+        cols.insert("Projects", at: 1)
         var out = ["열: " + cols.joined(separator: " · ")]
         if sample != nil { out.append("띠: " + band + " · " + bandAux) }
         out.append("합계: " + summary(model, rows: rs, tally: tally))
@@ -337,6 +417,7 @@ struct MembersBoardRow {
             f += r.samples.map { $0.map(String.init) ?? "—" }
             out.append(f.joined(separator: " · "))
         }
+        out.append("범례: " + legendDump)
         out.append("각주: " + purpose)
         // 이름 날짜 4규칙의 그 해 고유 날짜 수 (0.40.0 C1, F0-4) — 숫자만, 많은 순(같으면 이니셜). 폴더가 있는 멤버만
         if let (year, days) = model.milestoneDays {
@@ -369,9 +450,12 @@ struct MembersBoardView: View {
     private let sample = ScoreboardSample.load()
 
     var body: some View {
-        ScrollView(.vertical) {
-            Inner(model: model, notionURL: notionURL, sample: sample)
-                .padding(16)
+        // 탭 폭을 읽어 열 폭을 맞춘다 (검증 1 — 1.6 배에서 표 최소 폭이 창보다 넓어 탭 막대·제목까지 양쪽이 잘림)
+        GeometryReader { geo in
+            ScrollView(.vertical) {
+                Inner(model: model, notionURL: notionURL, sample: sample, avail: Swift.max(0, geo.size.width - 32))
+                    .padding(16)
+            }
         }
         .environment(\.cardStyle, .large)
     }
@@ -380,20 +464,35 @@ struct MembersBoardView: View {
         @ObservedObject var model: NotionHubModel
         let notionURL: URL?
         let sample: ScoreboardSample?
+        /// 표가 쓸 수 있는 폭(탭 폭 − 좌우 여백 32)
+        let avail: CGFloat
         @Environment(\.cardStyle) private var cs
 
-        // 열 폭 — 글자 배율을 따라 (CardStyle.col)
-        /// 상태 아이콘 + 이니셜 (0.42.0 C5 — 54 → 70, 열은 그대로)
-        private var wIni: CGFloat { cs.col(70) }
-        private var wGRM: CGFloat { cs.col(92) }
-        private var wMM: CGFloat { cs.col(96) }
-        private var wSample: CGFloat { cs.col(112) }
-        private var wLive: CGFloat { cs.col(150) }
-        private var wFU: CGFloat { cs.col(84) }
+        /// 열 폭 — 열 표(MembersBoardRow.Column) 값에 글자 배율을 따르고(CardStyle.col), 탭이 좁으면 fittedWidths 로 줄인다 (검증 1)
+        private struct Widths {
+            let byID: [String: CGFloat]
+            /// 하한까지 줄여도 탭보다 넓다(아주 좁은 창) — 표만 가로로 넘긴다
+            let over: Bool
+            /// 표 전체 폭 — 넘칠 때 가로 ScrollView 안의 내용 폭으로 고정(Projects 열이 행마다 달라지지 않게, 검증 2)
+            let total: CGFloat
+            func callAsFunction(_ id: String) -> CGFloat { byID[id] ?? 0 }
+        }
+        private func widths(_ table: [MembersBoardRow.Column]) -> Widths {
+            let ws = MembersBoardRow.fittedWidths(table, scale: HubDisplay.scale, avail: avail)
+            let total = MembersBoardRow.rowWidth(ws, scale: HubDisplay.scale)
+            return Widths(byID: Dictionary(zip(table.map(\.id), ws), uniquingKeysWith: { a, _ in a }),
+                          over: avail > 0 && total > avail, total: total)
+        }
+        /// 표 — 넘칠 때만 가로 ScrollView 안에(제목·탭 막대가 함께 잘리지 않게, 검증 1)
+        @ViewBuilder private func tableBox<V: View>(_ w: Widths, @ViewBuilder _ content: () -> V) -> some View {
+            if w.over { ScrollView(.horizontal, showsIndicators: true) { content().frame(width: w.total, alignment: .leading) } } else { content() }
+        }
 
         var body: some View {
             let tally = ScoreboardLive.tally(model)
             let rows = MembersBoardRow.rows(model, sample: sample, tally: tally)
+            let table = MembersBoardRow.columns(sample: sample, milestone: model.milestones != nil)
+            let w = widths(table)
             // 논문 반응 막대 기준 — 그 열 행 값의 최댓값
             let liveMax = Swift.max(1, rows.compactMap(\.live).max() ?? 1)
             VStack(alignment: .leading, spacing: 10) {
@@ -422,19 +521,27 @@ struct MembersBoardView: View {
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Hub.surface))
                 }
-                VStack(spacing: 0) {
-                    header
+                tableBox(w) { VStack(spacing: 0) {
+                    header(table, w)
                     RowDivider()
                     if rows.isEmpty {
                         Text(model.loading ? "불러오는 중…" : "Members 를 읽지 못함").font(.hub(cs.body)).foregroundStyle(Hub.text2)
                             .padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach(Array(rows.enumerated()), id: \.element.member.id) { i, r in
-                        row(r, liveMax: liveMax)
+                        row(r, liveMax: liveMax, w: w)
                         if i < rows.count - 1 { RowDivider() }
                     }
                 }
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface)) }
+                // 상태 아이콘 범례 한 줄 (#44) — 출처 줄보다 읽히게 text2, 적색 없음. 좁으면 두 줄
+                ViewThatFits(in: .horizontal) {
+                    legend(MemberStatusKind.allCases)
+                    VStack(alignment: .leading, spacing: 4) {
+                        legend(Array(MemberStatusKind.allCases.prefix(2)))
+                        legend(Array(MemberStatusKind.allCases.dropFirst(2)), title: false)
+                    }
+                }
                 Text(MembersBoardRow.source)
                     .font(.hub(cs.tag)).foregroundStyle(Hub.text3).fixedSize(horizontal: false, vertical: true)
                 // 목적·한계 한 줄 — 정렬·1등 강조·색 구분은 넣지 않는다
@@ -443,60 +550,78 @@ struct MembersBoardView: View {
             }
         }
 
-        private var header: some View {
-            HStack(spacing: 8) {
-                Text("Initials").frame(width: wIni, alignment: .leading)
-                Text("Projects").frame(maxWidth: .infinity, alignment: .leading)
-                Text("Next GRM").frame(width: wGRM, alignment: .leading)
-                if model.milestones != nil { Text("Milestone").frame(width: wMM, alignment: .leading) }
-                HStack(spacing: 4) {
-                    Text("Paper reactions").lineLimit(1).minimumScaleFactor(0.8)
-                    RealChip(label: "실제 " + ScoreboardLive.period(today: HubClock.today).label)
+        /// 범례 조각 — 'Status' + 아이콘·라벨
+        private func legend(_ kinds: [MemberStatusKind], title: Bool = true) -> some View {
+            HStack(spacing: 12) {
+                if title { Text(MembersBoardRow.legendTitle).font(.hub(cs.tag, weight: .bold)) }
+                ForEach(kinds, id: \.self) { k in
+                    HStack(spacing: 4) {
+                        Image(systemName: k.symbol).font(.hub(cs.tag, weight: .semibold))
+                        Text(k.label).font(.hub(cs.tag)).lineLimit(1)
+                    }
                 }
-                .frame(width: wLive, alignment: .leading)
-                .help(ScoreboardLive.help)
-                // 미팅 후속 (0.41.0 C5) — 실제 열, 숫자만(막대·정렬·강조 없음)
-                HStack(spacing: 4) {
-                    Text("Follow-ups").lineLimit(1).minimumScaleFactor(0.8)
-                    RealChip(label: "실제")
-                }
-                .frame(width: wFU, alignment: .leading)
-                .help(MembersBoardRow.followupsHelp)
-                ForEach(sample?.columns ?? []) { c in
+            }
+            .foregroundStyle(Hub.text2).fixedSize()
+            .help("상태 아이콘 뜻 — 이니셜 왼쪽. 캘린더·SLab·시간표에서 지금 시각으로 계산")
+        }
+
+        /// 머리 — 열 표(MembersBoardRow.columns) 순서대로, Projects 는 둘째 자리(남는 폭)
+        /// 'Projects' 는 lineLimit(1) — 좁을 때 글자마다 줄을 바꿔 머리 줄이 위아래로 크게 비던 것 (검증 1)
+        private func header(_ table: [MembersBoardRow.Column], _ w: Widths) -> some View {
+            let period = ScoreboardLive.period(today: HubClock.today).label
+            return HStack(spacing: 8) {
+                ForEach(table) { c in
+                    if c.id == "grm" { Text("Projects").lineLimit(1).frame(maxWidth: .infinity, alignment: .leading) }
                     HStack(spacing: 4) {
                         Text(c.title).lineLimit(1).minimumScaleFactor(0.8)
-                        ExampleChip()
+                        if let chip = c.chip { if chip == "예시" { ExampleChip() } else { RealChip(label: chip) } }
                     }
-                    .frame(width: wSample, alignment: .leading)
-                    .help("예시 — 표본 자료, 실제 집계 아님 (\(c.unit))")
+                    .frame(width: w(c.id), alignment: .leading)
+                    .help(headerHelp(c, period: period))
                 }
             }
             .font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text3)
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
         }
 
-        private func row(_ r: MembersBoardRow, liveMax: Int) -> some View {
+        private func headerHelp(_ c: MembersBoardRow.Column, period: String) -> String {
+            switch c.id {
+            case "react": return "실제 \(period) — " + ScoreboardLive.help
+            // 미팅 후속 (0.41.0 C5) — 실제 열, 숫자만(막대·정렬·강조 없음)
+            case "fu": return MembersBoardRow.followupsHelp
+            case "ini", "grm", "mm": return ""
+            default:
+                let unit = sample?.columns.first { "sample-" + $0.id == c.id }?.unit ?? ""
+                return "예시 — 표본 자료, 실제 집계 아님 (\(unit))"
+            }
+        }
+
+        private func row(_ r: MembersBoardRow, liveMax: Int, w: Widths) -> some View {
             HStack(spacing: 8) {
                 Button { model.openInApp(id: r.member.id) } label: {
                     HStack(spacing: 4) {
-                        MemberStatusIcon(status: model.status(of: r.member.initials), mine: isMe(r.member.initials))
+                        // 폭 고정 — 상태 없는 행의 이니셜도 같은 자리 (Members 카드와 같음, #44). placeholder: 상태가 없으면 빈 뷰라
+                        // frame 이 폭을 잡지 못해 이니셜이 왼쪽으로 붙던 것 (검증 1)
+                        MemberStatusIcon(status: model.status(of: r.member.initials), mine: isMe(r.member.initials), placeholder: true)
+                            .frame(width: cs.col(16), alignment: .center)
                         Text(r.member.initials.isEmpty ? "—" : r.member.initials).font(.hub(cs.body, weight: .bold, design: .rounded)).foregroundStyle(Hub.ink)
                     }
-                    .frame(width: wIni, alignment: .leading).contentShape(Rectangle())
+                    .frame(width: w("ini"), alignment: .leading).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain).help("Members 페이지 열기")
                 Text(r.projects.isEmpty ? "—" : r.projects).font(.hub(cs.aux)).foregroundStyle(r.projects.isEmpty ? Hub.text3 : Hub.text).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading).help(r.projectsHelp)
                 Text(r.nextGRM.isEmpty ? "—" : r.nextGRM).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit()
                     .foregroundStyle(r.nextGRM.isEmpty ? Hub.text3 : Hub.text2).lineLimit(1)
-                    .frame(width: wGRM, alignment: .leading)
-                if model.milestones != nil { milestoneCell(r.milestone).frame(width: wMM, alignment: .leading) }
-                sampleCell(r.live, max: liveMax, mine: isMe(r.member.initials)).frame(width: wLive, alignment: .leading)
+                    .frame(width: w("grm"), alignment: .leading)
+                if model.milestones != nil { milestoneCell(r.milestone).frame(width: w("mm"), alignment: .leading) }
+                sampleCell(r.live, max: liveMax, mine: isMe(r.member.initials)).frame(width: w("react"), alignment: .leading)
                     .help(ScoreboardLive.help)
                 Text(r.followups).font(.hub(cs.aux, design: .rounded)).monospacedDigit().foregroundStyle(r.followups == "—" ? Hub.text3 : Hub.text2)
-                    .frame(width: wFU, alignment: .leading).help(MembersBoardRow.followupsHelp)
+                    .frame(width: w("fu"), alignment: .leading).help(MembersBoardRow.followupsHelp)
                 ForEach(Array(r.samples.enumerated()), id: \.offset) { i, v in
-                    sampleCell(v, max: sample.map { $0.maxValue($0.columns[i].id) } ?? 1).frame(width: wSample, alignment: .leading)
+                    sampleCell(v, max: sample.map { $0.maxValue($0.columns[i].id) } ?? 1)
+                        .frame(width: w("sample-" + (sample?.columns[i].id ?? "")), alignment: .leading)
                 }
             }
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
@@ -554,7 +679,7 @@ struct RealChip: View {
 struct ExampleChip: View {
     @Environment(\.cardStyle) private var cs
     var body: some View {
-        Text("예시").font(.hub(cs.tag - 2, weight: .bold)).foregroundStyle(Hub.text2)
+        Text("예시").font(.hub(cs.tag - 2, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
             .padding(.horizontal, 5).padding(.vertical, 1)
             .overlay(Capsule().stroke(Hub.divider, lineWidth: 1))
     }

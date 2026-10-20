@@ -1,7 +1,7 @@
 {
  "note": "표본 자료 — 실제 집계 아님. Members 탭 '연구원 현황판'의 예시 열(화면 모양 확인용). 숫자는 고정된 가짜 값 · 논문 반응은 실제 열(0.39.0)",
  "columns": [
-  {"id": "claude", "title": "Claude 사용량", "unit": "회/주"},
+  {"id": "claude", "title": "Claude usage", "unit": "회/주"},
   {"id": "github", "title": "GitHub push", "unit": "회/주"}
  ],
  "values": {

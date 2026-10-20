@@ -206,8 +206,19 @@ struct GRMOrderView: View {
                             .buttonStyle(.plain).foregroundStyle(Hub.text2)
                     }
                 }
-                rotation
-                schedule
+                // 0.43.0 C5 (#50, R7): 일정 왼쪽 · 로테이션 오른쪽 — 두 제목이 같은 높이. 좁으면 위아래(일정이 위)
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        schedule.frame(minWidth: Hub.s(340), maxWidth: .infinity, alignment: .topLeading)
+                        rotation.fixedSize(horizontal: true, vertical: false)
+                    }
+                    .layoutChoice(mapDetail ? "grm-week" : "grm-tab", "2열")
+                    VStack(alignment: .leading, spacing: 14) {
+                        schedule
+                        rotation
+                    }
+                    .layoutChoice(mapDetail ? "grm-week" : "grm-tab", "1열")
+                }
                 // 지난 회차 자료 — 점 행렬 (0.40.0 C6, A6)은 GRM 주간 뷰에만, 'CSNL GRM' 탭은 이번 주·지난주 한 줄 (0.41.0 C6)
                 if mapDetail { GRMMapView(model: model) } else { GRMMapSummaryLine(model: model) }
             }
@@ -288,12 +299,12 @@ struct GRMOrderView: View {
                     let isPast = g.date < model.today
                     let isNext = g.id == model.nextGRM?.id
                     HStack(spacing: 10) {
-                        Text(Hub.day(g.date)).font(.hub(13, weight: .semibold, design: .rounded)).monospacedDigit().frame(width: 52, alignment: .leading)
+                        Text(Hub.day(g.date)).font(.hub(13, weight: .semibold, design: .rounded)).monospacedDigit().frame(width: Hub.s(52), alignment: .leading)
                         Text(isPast ? "지난" : Hub.dday(g.date)).font(.hub(11, weight: .bold)).monospacedDigit()
                             .foregroundStyle(isNext ? Hub.onAccent : Hub.text2)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Capsule().fill(isNext ? Hub.ink : Color.clear))
-                            .frame(width: 56, alignment: .leading)
+                            .frame(width: Hub.s(56), alignment: .leading)
                         TypePill(text: g.type)
                         Text(g.presenters.isEmpty ? "발표자 미정" : g.presenters).font(.hub(14, weight: isNext ? .bold : .medium)).lineLimit(1)
                         Spacer()

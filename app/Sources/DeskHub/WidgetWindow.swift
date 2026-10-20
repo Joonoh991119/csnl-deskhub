@@ -93,12 +93,18 @@ final class WidgetWindow: DesktopPanel {
     let slotID: String
     let kind: WidgetKind
     var onFrameChange: ((NSRect) -> Void)?
+    /// 머리 창 단추가 읽는 상태 (0.43.0 C7)
+    let chrome: WindowChromeState
+    /// 확대 전 프레임 — nil 이 아니면 확대 중(비율을 저장하지 않는다, AppDelegate.frameChanged 가드). AppDelegate.toggleZoom 만 바꾼다
+    var zoomRestore: NSRect? { didSet { chrome.zoomed = zoomRestore != nil } }
+    override var peeking: Bool { didSet { chrome.peeking = peeking } }
     private var container: NSView!
     private var hosting: NSView?
 
     init(slotID: String, kind: WidgetKind, frame: NSRect, cornerRadius: CGFloat, opaque: Bool, shadow: Bool) {
         self.slotID = slotID
         self.kind = kind
+        self.chrome = WindowChromeState(slotID: slotID)
         super.init(frame: frame, level: DesktopPanel.cardLevel, styleMask: [.borderless, .nonactivatingPanel, .resizable])
         hasShadow = shadow || !opaque
         becomesKeyOnlyIfNeeded = false
@@ -141,7 +147,8 @@ final class WidgetWindow: DesktopPanel {
     /// Claude 창은 쓰던 질문을 지키려고 false(위젯이 HubDisplay 관찰). 캘린더 모드는 CalendarModeBox 라 다시 만들어도 유지
     func setContent<V: View>(_ view: V, refresh: Bool = true) {
         hosting?.removeFromSuperview()
-        let h = NSHostingView(rootView: refresh ? AnyView(DisplayRefresh(view)) : AnyView(view))
+        let h = NSHostingView(rootView: refresh ? AnyView(DisplayRefresh(view.environment(\.windowChrome, chrome)))
+                                                : AnyView(view.environment(\.windowChrome, chrome)))
         h.frame = container.bounds
         h.autoresizingMask = [.width, .height]
         container.addSubview(h, positioned: .below, relativeTo: container.subviews.last)
@@ -211,7 +218,11 @@ struct WindowDragArea: NSViewRepresentable {
     func makeNSView(context: Context) -> DragView { DragView() }
     func updateNSView(_ nsView: DragView, context: Context) {}
     final class DragView: NSView {
-        override func mouseDown(with event: NSEvent) { window?.performDrag(with: event) }
+        /// 두 번 클릭 = 제목 막대 더블클릭(시스템 설정을 따름, 0.43.0 C7 #51) — 첫 클릭은 지금처럼 끌기
+        override func mouseDown(with event: NSEvent) {
+            if event.clickCount == 2 { NotificationCenter.default.post(name: DeskHubNotice.titleDoubleClick, object: window); return }
+            window?.performDrag(with: event)
+        }
         override var mouseDownCanMoveWindow: Bool { false }
     }
 }

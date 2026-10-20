@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var popoverCap: CGFloat?
     private var saveWork: DispatchWorkItem?
     private var relayouting = false
+    /// 확대/원래 크기로 setFrame 하는 동안 — 그 프레임 변화는 비율로 저장하지 않는다 (0.43.0 C7)
+    private var zoomChanging = false
     private var hotKey: HotKey?
     /// 사용자가 숨겼는지 (모니터를 다시 꽂아도 저절로 다시 뜨지 않게)
     private var hiddenByUser = false
@@ -69,6 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusItem()
         registerHotKey()
         NotificationCenter.default.addObserver(self, selector: #selector(hideAll), name: DeskHubNotice.hideAll, object: nil)
+        // 창 단추·제목 막대 더블클릭 (0.43.0 C7, #51)
+        NotificationCenter.default.addObserver(self, selector: #selector(titleDoubleClicked(_:)), name: DeskHubNotice.titleDoubleClick, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(windowZoomRequested(_:)), name: DeskHubNotice.windowZoom, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(settleAll), name: DeskHubNotice.windowLower, object: nil)
         for (cmd, sel) in [("show", #selector(showAll)), ("hide", #selector(hideAll)), ("toggle", #selector(toggleAll))] {
             DistributedNotificationCenter.default().addObserver(self, selector: sel, name: Notification.Name(AppDelegate.bundleID + "." + cmd), object: nil)
         }
@@ -231,7 +237,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func frameChanged(_ slotID: String, _ frame: NSRect) {
-        guard !relayouting, let i = config.layout.slots.firstIndex(where: { $0.id == slotID }) else { return }
+        // 확대 중(zoomRestore)·확대/원래 크기 전환 중에는 저장하지 않는다 — 확대는 비율 레이아웃에 남기지 않음 (0.43.0 C7)
+        guard !relayouting, !zoomChanging, windows[slotID]?.zoomRestore == nil,
+              let i = config.layout.slots.firstIndex(where: { $0.id == slotID }) else { return }
         config.layout.slots[i].frame = config.fraction(for: frame)
         scheduleSave()
     }
@@ -245,6 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 비율로부터 모든 창 프레임을 다시 계산 (화면 바뀜·기본 배치 복원)
     private func relayout() {
+        // 확대는 먼저 푼다(저장 없이) — 화면이 바뀌면 늘 비율대로 (0.43.0 C7)
+        for w in windows.values { w.zoomRestore = nil }
         relayouting = true
         if let screen = config.targetScreen() { backdrop?.setFrame(screen.visibleFrame, display: true) }
         for slot in config.layout.slots {
@@ -280,8 +290,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let proposals = (["", "제안 (\(props.count))"] + props.map { "- \($0.id) · \($0.title) · \($0.date)" }).joined(separator: "\n")
             // '레일 관련도' 줄 (0.35.0, SMJ #27 검증용) — 관제탑 기본 펼침이 쓰는 점수 그대로
             let relevance = "\n\n" + TowerRelevance.dumpLine(model: m, now: HubClock.now, me: HubPrefs.me)
-            return AlertEngine.dump(AlertEngine.evaluate(m, cal: m.todayCalendar, now: HubClock.now, me: HubPrefs.me), now: HubClock.now,
-                                    isMember: { ini in m.member(initials: ini).map { !$0.initials.isEmpty } ?? false }) + "\n" + proposals + relevance
+            let set = AlertEngine.evaluate(m, cal: m.todayCalendar, now: HubClock.now, me: HubPrefs.me)
+            // '팝오버 할 것' 절 (0.43.0 C1, #46) — 팝오버와 같은 PopoverTodo.split: 4줄 + 어제 이전 마감 접힌 한 줄
+            let todo = "\n\n" + PopoverTodo.dumpLines(set, now: HubClock.now).joined(separator: "\n")
+            return AlertEngine.dump(set, now: HubClock.now,
+                                    isMember: { ini in m.member(initials: ini).map { !$0.initials.isEmpty } ?? false }) + "\n" + proposals + relevance + todo
         }.joined(separator: "\n\n")
         try? text.write(to: dir.appendingPathComponent("alerts.txt"), atomically: true, encoding: .utf8)
     }
@@ -318,6 +331,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 분야 최근 이슈 보기 (0.39.0 C3) — '관심만'·'전체' 단추와 같은 경로(FeedPrefs, 이 맥 UserDefaults)
         else if k.hasPrefix("feed:") { FeedPrefs.shared.set(String(k.dropFirst("feed:".count))) }
+        // 태그 Filter (0.43.0 C4, #49) — 칩 클릭과 같은 경로(FeedPrefs.setTags, 이 맥 UserDefaults DeskHub.feedTags). 빈 값 = 지움.
+        // feedfilter(칩 줄 열기·닫기)는 아래 KeyBus 로
+        // 창 (0.43.0 C7, #51) — window:zoom|lower|close|dblclick[:<슬롯>](슬롯 없으면 허브) · hotkey(⌃⌥D 와 같은 toggleAll) · peek(대시보드 앞으로)
+        else if k.hasPrefix("window:") {
+            let p = k.dropFirst("window:".count).split(separator: ":", maxSplits: 1).map(String.init)
+            let slot = p.count > 1 && !p[1].isEmpty ? p[1] : hubSlotID
+            switch p.first ?? "" {
+            case "zoom": toggleZoom(slot)
+            case "lower": settleAll()
+            case "close": hideAll()
+            case "dblclick": handleDoubleClick(slot)
+            default: NSSound.beep()
+            }
+        }
+        else if k == "hotkey" { toggleAll() }
+        else if k == "peek" { bringFront() }
+        else if k.hasPrefix("feedtags:") { FeedPrefs.shared.setTags(k.dropFirst("feedtags:".count).split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }) }
         // 논문 소통 '같이 읽자' (0.39.0 C5) — 제목 일부가 맞는 첫 논문([논문 추천] 덤프 순서)에 단추와 같은 경로 · talk-undo = 마지막 대기 취소.
         // talk: 는 시험용 키라 드라이런 훅(DESKHUB_NOTION_WRITE=dry:)이 없으면 아무것도 쓰지 않고 삐 — Notion 댓글은 API 로 지울 수 없다 (검증 1).
         // talk-undo 는 대기 중인 쓰기를 취소만 하므로(쓰기 없음) 막지 않는다. 사람이 누르는 단추 경로는 그대로
@@ -475,6 +505,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (id, w) in windows {
             w.snapshot(to: dir.appendingPathComponent("\(id).png"))
             info.append("\(id): visible=\(w.isVisible) level=\(w.level.rawValue) frame=\(w.frame) key=\(w.isKeyWindow) active=\(NSApp.isActive)")
+        }
+        // 창 상태 (0.43.0 C7) — 'window: <슬롯> zoomed=yes|no peeking=yes|no controls=yes|no dblclick=<zoom|lower|none> usable=<rect>'
+        for id in windows.keys.sorted() {
+            guard let w = windows[id] else { continue }
+            let yn: (Bool) -> String = { $0 ? "yes" : "no" }
+            info.append("window: \(id) zoomed=\(yn(w.zoomRestore != nil)) peeking=\(yn(w.peeking)) controls=\(yn(w.peeking && w.isVisible))"
+                        + " dblclick=\(WindowChrome.current.rawValue) usable=\(config.usableRect(on: w.screen))")
         }
         if let b = backdrop { info.append("backdrop: visible=\(b.isVisible) level=\(b.level.rawValue) frame=\(b.frame)") }
         // 팝오버 '조각' 도 그림으로 (D12) — 화면에 띄우지 않고 그린다
@@ -690,6 +727,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let front = NSMenuItem(title: "대시보드 앞으로 (\(DeskHubNotice.hotkeyLabel))", action: #selector(bringFront), keyEquivalent: "")
         front.target = self
         menu.addItem(front)
+        // 허브 창 확대 (0.43.0 C7, #51) — 바탕화면 층에서도 (창 단추는 꺼낸 상태에서만)
+        let zoom = NSMenuItem(title: "허브 창 확대 / 원래 크기", action: #selector(zoomHubFromMenu), keyEquivalent: "")
+        zoom.target = self; zoom.state = windows[hubSlotID]?.zoomRestore != nil ? .on : .off
+        menu.addItem(zoom)
         let dock = NSMenuItem(title: "Dock·⌘Tab 에 보이기", action: #selector(toggleDock), keyEquivalent: "")
         dock.target = self; dock.state = AppDelegate.showInDock ? .on : .off
         menu.addItem(dock)
@@ -787,6 +828,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         placeAll(peek: false)
     }
     @objc private func hideAll() {
+        // 확대한 창은 원래 크기로 돌린 뒤 숨긴다 — 다시 꺼내면 늘 원래 비율 (0.43.0 C7)
+        for id in windows.keys where windows[id]?.zoomRestore != nil { toggleZoom(id) }
         hiddenByUser = true
         for w in windows.values { w.orderOut(nil); w.peeking = false }
         backdrop?.orderOut(nil)
@@ -809,6 +852,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if windows.values.contains(where: { $0.isVisible }) { hideAll() }
         else { hiddenByUser = false; placeAll(peek: true) }
     }
+    // MARK: 창 확대·더블클릭 (0.43.0 C7, #51) — styleMask 는 그대로(borderless), 확대 = 쓸 수 있는 화면 영역 채우기
+
+    /// 허브 슬롯 id — 메뉴·--key window:* 기본 대상
+    private var hubSlotID: String { config.layout.slots.first { $0.kind == .notionhub }?.id ?? "csnl-hub" }
+    /// 확대 ↔ 원래 크기. 확대 = 그 창 화면의 usableRect(읽기만), 원래 = zoomRestore. 어느 쪽도 config 에 저장하지 않는다
+    func toggleZoom(_ slotID: String) {
+        guard let w = windows[slotID] else { NSSound.beep(); return }
+        zoomChanging = true
+        if let r = w.zoomRestore {
+            w.zoomRestore = nil
+            w.setFrame(r, display: true)
+        } else {
+            w.zoomRestore = w.frame
+            w.setFrame(config.usableRect(on: w.screen), display: true)
+        }
+        zoomChanging = false
+    }
+    @objc private func windowZoomRequested(_ note: Notification) { toggleZoom((note.object as? String) ?? hubSlotID) }
+    @objc private func zoomHubFromMenu() { toggleZoom(hubSlotID) }
+    @objc private func titleDoubleClicked(_ note: Notification) {
+        guard let w = note.object as? WidgetWindow else { return }
+        handleDoubleClick(w.slotID)
+    }
+    /// 제목 막대 더블클릭과 --key window:dblclick 이 같은 처리 — 시스템 설정(WindowChrome.current)에 따라 확대 · 내리기(꺼냈으면 바탕화면 층, 이미 바탕화면이면 그대로 — 숨기지 않음) · 없음
+    private func handleDoubleClick(_ slotID: String) {
+        switch WindowChrome.current {
+        case .zoom: toggleZoom(slotID)
+        case .lower: if windows.values.contains(where: { $0.peeking }) { settleAll() }
+        case .none: break
+        }
+    }
+
     /// 꺼낸(위에 뜬) 카드를 바탕화면 층으로 내린다
     @objc private func settleAll() {
         for w in windows.values where w.peeking { w.peeking = false; w.orderFront(nil) }

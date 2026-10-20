@@ -230,8 +230,10 @@ struct ResearchTopic: Codable, Hashable {
     var phrases: [String] = []
     var caseSensitive: [String] = []
     var exclude: [String] = []
+    /// 태그 색 자리 0–6 (0.43.0 C4, #49 — Hub.tag). 없으면 파일 순서(ResearchTopicFile.slot)
+    var slot: Int? = nil
 
-    private enum CodingKeys: String, CodingKey { case id, title, phrases, caseSensitive, exclude }
+    private enum CodingKeys: String, CodingKey { case id, title, phrases, caseSensitive, exclude, slot }
     init(id: String, title: String, phrases: [String] = [], caseSensitive: [String] = [], exclude: [String] = []) {
         self.id = id; self.title = title; self.phrases = phrases; self.caseSensitive = caseSensitive; self.exclude = exclude
     }
@@ -242,6 +244,7 @@ struct ResearchTopic: Codable, Hashable {
         phrases = try c.decodeIfPresent([String].self, forKey: .phrases) ?? []
         caseSensitive = try c.decodeIfPresent([String].self, forKey: .caseSensitive) ?? []
         exclude = try c.decodeIfPresent([String].self, forKey: .exclude) ?? []
+        slot = try c.decodeIfPresent(Int.self, forKey: .slot)
     }
 }
 
@@ -251,6 +254,13 @@ struct ResearchTopicFile: Codable {
     var status: String?
     var topics: [ResearchTopic]
     var isDraft: Bool { (status ?? "") == "draft" }
+    /// 주제의 태그 색 자리 — 파일의 slot, 없으면 파일 순서 (0.43.0 C4)
+    func slot(_ id: String) -> Int {
+        guard let i = topics.firstIndex(where: { $0.id == id }) else { return 0 }
+        return topics[i].slot ?? i
+    }
+    /// 칩 이름(title) — 모르는 id 면 id 그대로
+    func label(_ id: String) -> String { topics.first { $0.id == id }?.title ?? id }
 }
 
 /// 한 항목이 한 주제에 걸린 근거 — 주제당 첫 일치 구(또는 약어) 하나

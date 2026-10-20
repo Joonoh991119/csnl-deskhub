@@ -100,8 +100,9 @@ enum StatusLine {
 
     /// 실제 폭(NSFont 13×배율, 숫자 굵게와 같은 semibold 로 넉넉히)으로 갈래를 고른다 — 420pt 미만은 M·S 만. 하나도 안 맞으면 (S, 잘림)
     static let horizontalPadding: CGFloat = 24
-    static func measure(_ s: String, size: CGFloat) -> CGFloat {
-        ceil((s as NSString).size(withAttributes: [.font: HubDisplay.nsFont(size: size, weight: .semibold)]).width)
+    /// weight — 기본 semibold(상태 한 줄). Members 열 머리 실측은 bold (0.43.0 C2)
+    static func measure(_ s: String, size: CGFloat, weight: NSFont.Weight = .semibold) -> CGFloat {
+        ceil((s as NSString).size(withAttributes: [.font: HubDisplay.nsFont(size: size, weight: weight)]).width)
     }
     static func variant(width: CGFloat, scale: CGFloat, parts: Parts, chips: [String] = []) -> (variant: Variant, fits: Bool) {
         // 뷰와 같은 자리 — 좌우 여백 24 + 오른쪽 띠 화살표(HStack 간격 8 이 Spacer 양쪽에 두 번 = 16, 10pt 굵은 글리프 ≈ 11pt × 배율 → 12 × 배율)

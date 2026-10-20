@@ -1,0 +1,21 @@
+# Members 열 머리 (0.43.0 C2, #45) — 종류<TAB>입력<TAB>기대. 실측 = 머리 글꼴 14 bold × 배율 + 칩(12 bold × 배율 + 안쪽 10, 간격 4) + 여유 4 ≤ 열 폭 × 1.2 × 배율
+# 고정 폭 = Initials·Next GRM·Milestone·Reactions·Follow-ups·예시 열 하나의 폭 합(배율 1.0, colScale 전) — 0.42.0 의 604 이하
+mb-head	scale=1.0	맞음 7/7 · 고정 폭 602
+mb-head	scale=1.3	맞음 7/7 · 고정 폭 602
+mb-head	scale=1.6	맞음 7/7 · 고정 폭 602
+# 옛 머리(0.42.0 'Paper reactions' + 기간 칩, 폭 150)는 잘렸다 — 판정이 그것을 잡는지
+mb-head	scale=1.0;title=Paper reactions;chip=실제 9.23–10.20;width=150	잘림
+# 새 머리 단일 열
+mb-head	scale=1.6;title=Reactions;chip=실제;width=120	맞음
+mb-head	scale=1.0;title=Claude usage;chip=예시;width=120	맞음
+# 옛 Follow-ups 폭 84 는 1.6 배에서 잘렸다(계획 §C2 추정 확인)
+mb-head	scale=1.6;title=Follow-ups;chip=실제;width=84	잘림
+# 탭 폭 맞춤 (검증 1) — avail = 탭 폭 − 좌우 여백 32. 1313pt 허브 창 → 1281 에서 세 배율 모두 줄 전체가 들어가고 머리 '…' 없음
+mb-head	scale=1.0;avail=1281	들어감 7/7
+mb-head	scale=1.3;avail=1281	들어감 7/7
+mb-head	scale=1.6;avail=1281	들어감 7/7
+# 열을 하한까지 줄여서 들어가는 폭 — 1.0 배 900 · 1.3 배 1100
+mb-head	scale=1.0;avail=900	들어감 7/7
+mb-head	scale=1.3;avail=1100	들어감 7/7
+# 하한보다 좁으면 넘침(표만 가로 스크롤) — 판정이 그것을 잡는지
+mb-head	scale=1.6;avail=1000	넘침 277

@@ -133,11 +133,25 @@ enum TextCheck {
             // 논문 반응 줄 (0.42.0 C1, #23) — 'me=;r=👍:JOP,BHL|✅:SMJ;notes=n;hover=0|1' → PaperReact.text(line)
             case "react": got = PaperReact.check(input)
             // 시간표 (0.42.0 C4, R1) — tt-slots(수업시간 → '요일 HH:mm–HH:mm (강의실)') · tt-sem(날짜 → 학기 id[ 휴일]|학기 밖) · tt-today. fixtures/timetable-check.tsv
-            case "tt-slots", "tt-sem", "tt-today": got = Timetable.check(kind, input, tsv: path)
+            // tt-merge (0.43.0 C3, #47 #48) — Timetable.prepare(조교 제외·같은 과목 합치기) 뒤 모든 덩어리
+            case "tt-slots", "tt-sem", "tt-today", "tt-merge": got = Timetable.check(kind, input, tsv: path)
             // 멤버 상태 (0.42.0 C5, R2) — 'now=;ini=;cal=;notion=;slab=;class=;away=;members=' → 'kind · why · ~HH:mm' | '—'. fixtures/status-check.tsv
             case "mstatus": got = MemberStatus.check(input, tsv: path)
             // Joint projects 한 줄 (0.42.0 C6, R9-d) — 'id=;v=;owner=;done=;waiting=' → JointProjects.line. fixtures/joint-check.tsv
             case "jp-row": got = JointProjects.check(input)
+            // 팝오버 '할 것' (0.43.0 C1, #46) — 'now=yyyy-MM-ddTHH:mm;a=<W|C|A>/<제목>/<yyyy-MM-dd[THH:mm]>[/mine]|…' → AlertEngine.order → PopoverTodo.split.
+            // 출력 = rows 의 PopoverTodo.line 을 ' / ' 로 + 지난 것이 있으면 ' | 지난 n'. fixtures/todo-check.tsv
+            case "todo": got = todo(input)
+            // Members 열 머리 (0.43.0 C2, #45) — 'scale=1.3' → '맞음 7/7 · 고정 폭 <합>' | '잘림 <id,…>' (예시 열은 tsv 옆 ../Resources/scoreboard-sample.json).
+            // 단일 열 'scale=;title=;chip=;width=' → '맞음' | '잘림'. fixtures/members-check.tsv
+            case "mb-head": got = mbHead(input, tsv: path)
+            // 연구 탭 태그 (0.43.0 C4, #49) — topiclabel(id → 칩 이름, '*' → 이름들의 한글 글자 수) · tagcolor(테마 id → 'ok 7' | 실패 목록)
+            // · feedtags('sel=;topic=0|1;items=id,id|…' → 보이는 항목 번호 ','). fixtures/research-check.tsv
+            case "topiclabel", "tagcolor", "feedtags": got = research(kind, input, tsv: path)
+            // 제목 막대 더블클릭 (0.43.0 C7, #51) — 'action=<AppleActionOnDoubleClick 값>;legacy=0|1' → zoom|lower|none. fixtures/window-check.tsv
+            case "dblclick":
+                let k = kv(input)
+                got = WindowChrome.doubleClickAction(action: k["action"], legacyMiniaturize: k["legacy"] == "1").rawValue
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
@@ -197,6 +211,76 @@ enum TextCheck {
         // 선택 키 note=<dueNote> (검증 1) · rem=1 → 컨펌 리마인더 경로(AlertEngine 리마인더 줄과 같은 Phase.deadlineTime)
         if k["rem"] == "1" { return MenuBarLine.compact(Phase.deadlineTime(k["title"] ?? "", day: day), now: now) }
         return MenuBarLine.compact(AlertEngine.grantDue(title: k["title"] ?? "", dueNote: k["note"] ?? "", day: day).due, now: now)
+    }
+    /// todo — 시각 없는 날짜는 그날 23:59(Phase.deadlineTime, 제목에 HH:mm 이 있으면 그 시각) · overdue = 마감 날 < 오늘(앱 리마인더 n < 0 과 같음)
+    static func todo(_ input: String) -> String {
+        let k = kv(input)
+        let tf = DateFormatter(); tf.locale = Locale(identifier: "en_US_POSIX"); tf.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        let df = DateFormatter(); df.locale = Locale(identifier: "en_US_POSIX"); df.dateFormat = "yyyy-MM-dd"
+        guard let now = k["now"].flatMap(tf.date(from:)) else { return "(입력 형식)" }
+        let cal = Calendar.current
+        var alerts: [HubAlert] = []
+        for (i, item) in (k["a"] ?? "").components(separatedBy: "|").enumerated() where !item.isEmpty {
+            let f = item.components(separatedBy: "/")
+            guard f.count >= 3 else { return "(입력 형식 \(item))" }
+            let level: HubAlert.Level = f[0] == "W" ? .warning : f[0] == "C" ? .caution : .advisory
+            let due: Date, hasTime: Bool
+            if let t = tf.date(from: f[2]) { due = t; hasTime = true }
+            else if let d = df.date(from: f[2]) { due = Phase.deadlineTime(f[1], day: d); hasTime = f[1].range(of: "\\d{1,2}:\\d{2}", options: .regularExpression) != nil }
+            else { return "(날짜 형식 \(f[2]))" }
+            let overdue = cal.startOfDay(for: due) < cal.startOfDay(for: now)
+            alerts.append(HubAlert(id: "t\(i)", level: level, title: f[1], due: due, hasTime: hasTime, mine: f.count > 3 && f[3] == "mine", overdue: overdue))
+        }
+        let (rows, lapsed) = PopoverTodo.split(AlertEngine.order(alerts))
+        return rows.map { PopoverTodo.line($0, now: now) }.joined(separator: " / ") + (lapsed.isEmpty ? "" : " | 지난 \(lapsed.count)")
+    }
+    /// mb-head — MembersBoardRow.headerFits 실측(시스템 글꼴 기준)
+    static func mbHead(_ input: String, tsv: String) -> String {
+        let k = kv(input)
+        guard let scale = k["scale"].flatMap(Double.init).map({ CGFloat($0) }) else { return "(입력 형식)" }
+        if let title = k["title"] {
+            let c = MembersBoardRow.Column(id: "one", title: title, chip: (k["chip"] ?? "").isEmpty ? nil : k["chip"], width: CGFloat(Double(k["width"] ?? "") ?? 0))
+            return MembersBoardRow.headerFits(c, scale: scale) ? "맞음" : "잘림"
+        }
+        let url = URL(fileURLWithPath: tsv).deletingLastPathComponent().appendingPathComponent("../Resources/scoreboard-sample.json").standardizedFileURL
+        let sample = (try? Data(contentsOf: url)).flatMap { try? JSONDecoder().decode(ScoreboardSample.self, from: $0) }
+        let cols = MembersBoardRow.columns(sample: sample, milestone: true)
+        // avail=<pt> (검증 1) — 그 탭 폭에 fittedWidths 로 맞춘 표: 줄 전체 폭 ≤ avail 이고 머리가 다 들어가면 '들어감 n/n', 아니면 '넘침 <pt>' · '잘림 <id들>'
+        if let avail = k["avail"].flatMap(Double.init).map({ CGFloat($0) }) {
+            let ws = MembersBoardRow.fittedWidths(cols, scale: scale, avail: avail)
+            let total = MembersBoardRow.rowWidth(ws, scale: scale)
+            let cut = cols.indices.filter { MembersBoardRow.headerNeed(cols[$0], scale: scale) > ws[$0] }.map { cols[$0].id }
+            if total > avail { return "넘침 \(Int((total - avail).rounded(.up)))" }
+            return cut.isEmpty ? "들어감 \(cols.count)/\(cols.count)" : "잘림 " + cut.joined(separator: ",")
+        }
+        let cut = cols.filter { !MembersBoardRow.headerFits($0, scale: scale) }.map(\.id)
+        return cut.isEmpty ? "맞음 \(cols.count)/\(cols.count) · 고정 폭 \(Int(MembersBoardRow.fixedWidthSum))" : "잘림 " + cut.joined(separator: ",")
+    }
+    /// topiclabel · tagcolor · feedtags — 주제 파일·테마 파일은 tsv 옆 ../Resources (앱 번들과 같은 내용)
+    static func research(_ kind: String, _ input: String, tsv: String) -> String {
+        let res = URL(fileURLWithPath: tsv).deletingLastPathComponent().appendingPathComponent("../Resources").standardizedFileURL
+        if topicFile == nil { topicFile = .some(TopicFilter.load(url: res.appendingPathComponent("research-topics.json"))) }
+        let topics = (topicFile ?? nil)
+        switch kind {
+        case "topiclabel":
+            guard let f = topics else { return "(주제 파일 없음)" }
+            if input == "*" { return String(f.topics.map(\.title).joined().unicodeScalars.filter { (0xAC00...0xD7A3).contains($0.value) || (0x3131...0x318E).contains($0.value) }.count) }
+            return f.topics.contains { $0.id == input } ? f.label(input) + " · slot \(f.slot(input))" : "(모르는 id)"
+        case "tagcolor":
+            var all: [String: ThemeDef] = ["csnl": Theme.builtin]
+            if let d = try? Data(contentsOf: res.appendingPathComponent("themes.json")), let m = try? JSONDecoder().decode([String: ThemeDef].self, from: d) {
+                all.merge(m) { _, new in new }
+            }
+            all["contrast"] = Theme.contrast
+            guard let def = all[input] else { return "(모르는 테마)" }
+            return TagPalette.check(def)
+        default:
+            let k = kv(input)
+            let known = topics?.topics.map(\.id) ?? []
+            let sel = Set(FeedPrefs.sanitize((k["sel"] ?? "").split(separator: ",").map(String.init), known: known))
+            let items = (k["items"] ?? "").components(separatedBy: "|").map { $0.split(separator: ",").map(String.init) }
+            return FeedFilter.shown(matches: items, tags: sel, topicOnly: k["topic"] != "0").map(String.init).joined(separator: ",")
+        }
     }
     /// metric — 정의서 표 첫 칸 id 집합(한 번 읽음) → MetricDefs.eval
     private static var defIDs: Set<String>??

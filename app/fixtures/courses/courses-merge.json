@@ -1,0 +1,156 @@
+[
+ {
+  "init": "MSY",
+  "course": "시험 과목 A",
+  "kind": "조교",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "수",
+    "start": "14:00",
+    "end": "17:00",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "BHL",
+  "course": "시험 과목 B",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "목",
+    "start": "18:00",
+    "end": "20:50",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "BHL",
+  "course": "시험 과목 D",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "수",
+    "start": "14:00",
+    "end": "16:50",
+    "room": "500-L308"
+   }
+  ]
+ },
+ {
+  "init": "SMJ",
+  "course": "시험 과목  B",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "목",
+    "start": "18:00",
+    "end": "20:00",
+    "room": ""
+   }
+  ],
+  "professor": "가짜교수 마루치"
+ },
+ {
+  "init": "SMJ",
+  "course": "시험 과목 D",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "수",
+    "start": "14:00",
+    "end": "16:50",
+    "room": "500-L308"
+   }
+  ]
+ },
+ {
+  "init": "JYK",
+  "course": "시험 과목 B",
+  "kind": "수강",
+  "confirmed": true,
+  "slots": [
+   {
+    "day": "목",
+    "start": "18:00",
+    "end": "20:50",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "JOP",
+  "course": "시험 과목 E",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "월",
+    "start": "17:00",
+    "end": "18:15",
+    "room": "302동"
+   },
+   {
+    "day": "수",
+    "start": "17:00",
+    "end": "18:15",
+    "room": "302동"
+   }
+  ]
+ },
+ {
+  "init": "JOP",
+  "course": "시험 과목 A",
+  "kind": "조교",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "수",
+    "start": "14:00",
+    "end": "17:00",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "SYJ",
+  "course": "시험 과목 F",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "화",
+    "start": "11:00",
+    "end": "12:00",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "BYL",
+  "course": "시험 과목 A",
+  "kind": "조교",
+  "confirmed": false,
+  "slots": [
+   {
+    "day": "수",
+    "start": "14:00",
+    "end": "17:00",
+    "room": ""
+   }
+  ]
+ },
+ {
+  "init": "SYJ",
+  "course": "시험 과목 G",
+  "kind": "수강",
+  "confirmed": false,
+  "slots": []
+ }
+]

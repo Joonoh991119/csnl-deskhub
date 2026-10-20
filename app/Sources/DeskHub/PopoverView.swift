@@ -3,7 +3,7 @@ import AppKit
 
 // MARK: - 메뉴 막대 팝오버 '조각' (디자인 계획 D12 — §2 D)
 // 창 없이: 메뉴 막대 아이콘 왼쪽 클릭 → 이 팝오버, 오른쪽 클릭 → 기존 메뉴.
-// 세 칸: 지금·다음 / 할 것(경보 W·C 4줄, 내 것 먼저) / 내 것(다음 GRM 차례·반응 안 한 추천·프로젝트) + '새 것 1줄'
+// 세 칸: 지금·다음 / 할 것(경보 W·C 4줄, C·A 안에서 내 것 먼저 · 어제 이전 마감은 맨 아래 '지난 마감 n건' 한 줄로 접힘, 0.43.0 #46) / 내 것(다음 GRM 차례·반응 안 한 추천·프로젝트) + '새 것 1줄'
 // 새 것 = 마지막으로 본 뒤 들어온 회의록·Paper Blitz·추천 — 이 맥 로컬 seen-<이니셜>.json
 
 enum SeenStore {
@@ -36,6 +36,27 @@ enum PopoverRefresh {
     }
 }
 
+/// 팝오버 '할 것' 칸 (0.43.0 C1, #46) — 뷰·alerts.txt '팝오버 할 것'·text-check `todo` 가 같은 함수를 쓴다
+enum PopoverTodo {
+    /// rows = advisory·어제 이전 마감(overdue)을 뺀 앞 limit 개, lapsed = advisory 아닌 overdue 전부(맨 아래 한 줄로 접힘)
+    static func split(_ set: AlertSet, limit: Int = 4) -> (rows: [HubAlert], lapsed: [HubAlert]) {
+        let todo = set.alerts.filter { $0.level != .advisory }
+        return (Array(todo.filter { !$0.overdue }.prefix(limit)), todo.filter(\.overdue))
+    }
+    /// 행 글 — '■ 제목 9h' (시간 칸은 MenuBarLine.compact, 마감 없으면 생략)
+    static func line(_ a: HubAlert, now: Date) -> String {
+        "\(a.level.mark) \(a.title)" + (a.due.map { " " + MenuBarLine.compact($0, now: now) } ?? "")
+    }
+    /// 접힌 줄 글
+    static func lapsedLabel(_ n: Int) -> String { "지난 마감 \(n)건" }
+    /// alerts.txt '팝오버 할 것' 절
+    static func dumpLines(_ set: AlertSet, now: Date) -> [String] {
+        let (rows, lapsed) = split(set)
+        return ["팝오버 할 것 (\(rows.count))"] + rows.map { "- " + line($0, now: now) }
+            + (lapsed.isEmpty ? [] : [lapsedLabel(lapsed.count) + " (접힘): " + lapsed.map(\.title).joined(separator: ", ")])
+    }
+}
+
 struct PopoverView: View {
     @ObservedObject var model: NotionHubModel
     @ObservedObject private var commits: DelayedCommit
@@ -46,6 +67,8 @@ struct PopoverView: View {
     /// 가용 높이보다 길면 이 높이의 스크롤 안에 넣는다 (R-33, 0.36.0) — nil 이면 지금처럼 자연 높이
     var scrollHeight: CGFloat? = nil
     @State private var seen: SeenStore.Seen
+    /// '지난 마감 n건' 펼침 — 제자리 토글, 저장 안 함 (0.43.0 C1)
+    @State private var lapsedOpen = false
 
     init(model: NotionHubModel, forSnapshot: Bool = false, scrollHeight: CGFloat? = nil, onOpenDashboard: @escaping () -> Void = {}, onClose: @escaping () -> Void = {}) {
         self.model = model
@@ -96,7 +119,7 @@ struct PopoverView: View {
     private var content: some View {
         let now = model.now
         let set = AlertEngine.evaluate(model, cal: model.todayCalendar, now: now, me: me)
-        let todo = Array(set.alerts.filter { $0.level != .advisory }.prefix(4))
+        let (todo, lapsed) = PopoverTodo.split(set)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(Hub.longDay(now)).font(.hub(13, weight: .bold))
@@ -120,15 +143,19 @@ struct PopoverView: View {
                 if let cal = model.todayCalendar { NowNextLine(cal: cal) } else { Text("캘린더 없음").foregroundStyle(Hub.text3) }
             }
             section("할 것 \(set.counts[.warning] ?? 0 > 0 ? "■\(set.counts[.warning]!)" : "")") {
-                if todo.isEmpty { Text("경보 없음").font(.hub(12)).foregroundStyle(Hub.text3) }
-                ForEach(todo) { a in
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(a.level.mark).font(.hub(11, weight: .bold)).foregroundStyle(a.level == .warning ? Hub.signal : Hub.text2)
-                        Text(a.title).font(.hub(12.5, weight: a.level == .warning ? .semibold : .regular)).lineLimit(1)
-                        Spacer(minLength: 4)
-                        if let d = a.due { Text(MenuBarLine.compact(d, now: now)).font(.hub(11.5, weight: .bold, design: .rounded)).foregroundStyle(Hub.text2) }
+                if todo.isEmpty && lapsed.isEmpty { Text("경보 없음").font(.hub(12)).foregroundStyle(Hub.text3) }
+                ForEach(todo) { a in todoRow(a, now: now) }
+                // 어제 이전 마감 — 맨 아래 한 줄로 접는다(상한 밖). 누르면 제자리에서 펼침/접음 (#46)
+                if !lapsed.isEmpty {
+                    // Button 이 아니라 탭 — 스냅샷(ImageRenderer)에도 그려진다
+                    HStack(spacing: 4) {
+                        Text(PopoverTodo.lapsedLabel(lapsed.count) + (lapsedOpen ? " ▾" : " ▸"))
+                        Spacer(minLength: 0)
                     }
-                    .link(a.link)
+                    .font(.hub(12)).foregroundStyle(Hub.text3).contentShape(Rectangle())
+                    .onTapGesture { lapsedOpen.toggle() }
+                    .help("마감 날이 어제 이전인 리마인더 — 7일 뒤 저절로 사라짐. 끝났으면 대시보드에서 '끝남'")
+                    if lapsedOpen { ForEach(lapsed) { a in todoRow(a, now: now) } }
                 }
             }
             section("내 것") { mine(now: now) }
@@ -175,6 +202,17 @@ struct PopoverView: View {
     /// 앞 2개(칩 표시 이름) + ' +n', 비면 '없음'
     static func projectsText(_ p: [MemberLinks.Project]) -> String {
         p.isEmpty ? "없음" : p.prefix(2).map { MemberGroup.display($0.name) }.joined(separator: " · ") + (p.count > 2 ? " +\(p.count - 2)" : "")
+    }
+
+    /// '할 것' 한 행 — ■/□ · 제목 · 시간 칸(MenuBarLine.compact, 지난 것은 '지남'). 글은 PopoverTodo.line 과 같은 조각
+    private func todoRow(_ a: HubAlert, now: Date) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(a.level.mark).font(.hub(11, weight: .bold)).foregroundStyle(a.level == .warning ? Hub.signal : Hub.text2)
+            Text(a.title).font(.hub(12.5, weight: a.level == .warning ? .semibold : .regular)).lineLimit(1)
+            Spacer(minLength: 4)
+            if let d = a.due { Text(MenuBarLine.compact(d, now: now)).font(.hub(11.5, weight: .bold, design: .rounded)).foregroundStyle(Hub.text2) }
+        }
+        .link(a.link)
     }
 
     private func row(_ k: String, _ v: String) -> some View {

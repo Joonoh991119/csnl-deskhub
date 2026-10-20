@@ -35,3 +35,7 @@ mstatus	now=2026-10-15T17:00;ini=BHL;slab=BHL/시험 프로젝트/16:00 - 18:00/
 mstatus	now=2026-10-15T17:00;ini=BHL;slab=JOP/시험 프로젝트/16:00 - 18:00/확정	—
 # 휴가 키워드가 있어도 이니셜이 없으면 그 사람에게 붙지 않음
 mstatus	now=2026-10-15T17:00;ini=SMJ;cal=연구실 워크숍@종일	—
+# 0.43.0 C3 (#47 #48) — 수업 중도 Timetable.prepare 를 거친다: SMJ 가 20:00 로 적었어도 같은 과목 대표 슬롯(20:50)까지 수업 중 · 조교 행은 수업 아님
+mstatus	now=2026-10-15T20:30;ini=SMJ;class=BHL/시험 과목 B/목 18:00-20:50|SMJ/시험 과목 B/목 18:00-20:00	class · 시험 과목 B · ~20:50
+mstatus	now=2026-10-14T15:00;ini=MSY;class=MSY/시험 과목 D/수 14:00-17:00@조교	—
+mstatus	now=2026-10-14T15:00;ini=BHL;class=MSY/시험 과목 D/수 14:00-17:00@조교|BHL/시험 과목 D/수 14:00-16:50	class · 시험 과목 D · ~16:50
