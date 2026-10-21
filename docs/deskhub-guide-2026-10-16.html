@@ -34,13 +34,14 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.43.1 · 2026년 10월 20일 · 절 제목을 누르면 펼쳐집니다</div>
+<div class="sub">연구실 바탕화면 대시보드 · 0.43.2 · 2026년 10월 21일 · 절 제목을 누르면 펼쳐집니다</div>
 <p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM(매주 연구실 미팅) 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기), 미팅 후속 체크(끝남·확정·아님·직접 적기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
 <summary><span class="chev"></span>0.43.0 에서 바뀐 것</summary>
 <div class="body">
 <ul>
+<li><b>0.43.2 · 좁은 세로 창 관제탑 · GRM 일정 · 내 수업 막대</b> <!-- 0.43.2 C1 C2 C5 C6 C7 #54 --> — 폭이 좁은 세로 창에서도 관제탑 맨 위 경보 수(■ □ ·)가 늘 보이고, 사람 고르기 줄은 자리가 모자라면 다음 줄로 내려갑니다. 경보 아래 빈 공간이 없어졌고, 창이 낮으면 아래 목록 줄을 조금 촘촘히 하고 한 번에 하나만 펼쳐 펼친 목록이 세 줄 이상 보입니다. GRM 일정에서 정오가 지나면 오늘 발표가 두 번 보이던 것을 고쳤고, Classes 카드의 내 수업 막대가 줄 높이만큼 길어졌습니다.</li>
 <li><b>0.43.1 · 시간표에서 내 수업 바로 보기</b> <!-- 0.43.1 C2 C3 #53 --> — Timetable 화면과 Dashboard 의 Classes 카드에서 이 맥 사용자 이니셜이 들어간 수업이 진하게 보입니다(Timetable 칸은 왼쪽 진한 막대와 굵은 테두리, Classes 카드 줄은 왼쪽 진한 막대와 진한 글자). 시간을 조금 다르게 적어 하나로 합쳐진 수업도 내 수업으로 칩니다. 다른 사람 수업은 그대로입니다. 내 수업이 표시되지 않으면 메뉴 막대 DeskHub 아이콘 → '내 이니셜 다시 고르기' 를 누른 뒤, 위에 뜨는 줄에서 본인 이니셜을 골라 주세요.</li>
 <!-- 줄마다 해당 변경(C1–C7)이 실제로 들어간 판에만 남긴다. 빠진 변경의 줄은 지운다. -->
 <li><b>지난 마감은 맨 아래 한 줄로</b> <!-- C1 #46 --> — 팝오버 '할 것' 에서 마감 날이 어제 이전인 것은 더 이상 맨 위에 남지 않고, 맨 아래 '지난 마감 n건' 한 줄로 접힙니다. 누르면 그 자리에서 펼쳐지고, 끝난 것은 대시보드에서 '끝남' 으로 정리합니다(정리하지 않으면 7일 뒤 저절로 사라집니다). 오늘 마감인데 시각이 지난 것은 지금처럼 위에 '지남' 으로 보입니다.</li>
@@ -102,7 +103,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.43.1.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.43.2.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -201,7 +202,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.43.1, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.43.2, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>

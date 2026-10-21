@@ -452,16 +452,11 @@ final class NotionHubModel: ObservableObject {
     var nextGRM: GRMSlot? { grm.first { $0.date >= today } }
     var upcomingGRM: [GRMSlot] { Array(grm.filter { $0.date >= today }.prefix(cfg.upcomingGRMCount)) }
     /// 지난 GRM — 오늘이 GRM 날이면 정오가 지나면 오늘 것을 '지난'으로 본다 (조사 원인 D: 당일엔 지난주를 정상으로 판정했음)
-    var lastGRM: GRMSlot? {
-        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
-        return grm.last { $0.date < today || (Calendar.current.isDate($0.date, inSameDayAs: today) && now >= noon) }
-    }
+    /// 정오 규칙은 GRMSchedule.last 한 곳 (0.43.2 C1, #54)
+    var lastGRM: GRMSlot? { GRMSchedule.last(grm, today: today, now: now) }
     /// 올해 GRM 전체(grmAll)에서 같은 정오 규칙의 마지막 GRM — 내용 날짜 꼬리표·자료 상태 'GRM Schedule' 행용.
     /// lastGRM 은 지난 1주(grm)만 봐서 늘 '정상'이고, 방학처럼 1주 넘게 GRM 이 없으면 nil 이 되어 꼬리표가 사라졌다 (리뷰, 검증 1)
-    var lastGRMContent: Date? {
-        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
-        return grmAll.filter { $0.date < today || (Calendar.current.isDate($0.date, inSameDayAs: today) && now >= noon) }.map(\.date).max()
-    }
+    var lastGRMContent: Date? { GRMSchedule.last(grmAll, today: today, now: now)?.date }
     /// 다가오는 일정: 오늘~eventsDays, GRM·할 일 Type 제외
     var visibleEvents: [EventRow] {
         let end = Calendar.current.date(byAdding: .day, value: cfg.eventsDays, to: today)!

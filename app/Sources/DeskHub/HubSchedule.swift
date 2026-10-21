@@ -284,10 +284,10 @@ struct GRMOrderView: View {
         return ns.compactMap { n in members.first { $0.name == n || $0.initials == n } ?? members.first { n.contains($0.name) } }
     }
 
-    /// 지난 한 번 + 앞으로의 GRM 일정
+    /// 지난 한 번 + 앞으로의 GRM 일정 — GRMSchedule.rows(같은 회차 한 번, 같은 날·발표자·Type 하나로, 0.43.2 C1 #54)
     private var schedule: some View {
-        let past = model.lastGRM.map { [$0] } ?? []
-        let rows = past + model.grm.filter { $0.date >= model.today }
+        let rows = GRMSchedule.rows(model.grm, today: model.today, now: model.now).rows
+        let nextKey = model.nextGRM.map(GRMSchedule.key)
         return VStack(alignment: .leading, spacing: 6) {
             Text("일정").font(.hub(12, weight: .bold)).foregroundStyle(Hub.text2)
             VStack(spacing: 0) {
@@ -297,7 +297,7 @@ struct GRMOrderView: View {
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, g in
                     let isPast = g.date < model.today
-                    let isNext = g.id == model.nextGRM?.id
+                    let isNext = GRMSchedule.key(g) == nextKey   // 합친 행의 id 가 nextGRM 과 달라도 강조
                     HStack(spacing: 10) {
                         Text(Hub.day(g.date)).font(.hub(13, weight: .semibold, design: .rounded)).monospacedDigit().frame(width: Hub.s(52), alignment: .leading)
                         Text(isPast ? "지난" : Hub.dday(g.date)).font(.hub(11, weight: .bold)).monospacedDigit()

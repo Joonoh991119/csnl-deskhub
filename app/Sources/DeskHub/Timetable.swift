@@ -527,6 +527,8 @@ struct ClassesCard: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
+                // 첫·끝 행의 내 수업 막대가 둥근 모서리 밖으로 나가지 않게 카드 쪽에서 자른다 (0.43.2 C2, #54)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
         }
     }
@@ -560,6 +562,13 @@ struct ClassesCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    /// windows.txt choices 'classes-bar <막대>/<행>pt' (0.43.2 C2) — 막대 = 행 − 4pt
+    private static func recordBar(_ h: CGFloat) {
+        guard h > 0 else { return }
+        let row = Int(h.rounded())
+        MainActor.assumeIsolated { LayoutChoice.record("classes-bar", "\(row - 4)/\(row)pt") }
+    }
+
     private func blockRow(_ b: Timetable.Block, me: String) -> some View {
         let mine = b.mine(me), live = b.live(model.now)
         return HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -571,8 +580,10 @@ struct ClassesCard: View {
             if !b.room.isEmpty { Text(b.room).font(.hub(cs.tag)).foregroundStyle(Hub.text3).lineLimit(1).fixedSize() }
         }
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
-        // 내 행 왼쪽 2pt ink 막대 — 안내판 '내 것' 막대와 같은 폭, 위아래 10pt(카드 모서리 반지름) 안쪽이라 첫 행도 둥근 모서리 밖으로 안 나감, 채움 없음 (0.43.1 C3, #53)
-        .overlay(alignment: .leading) { if mine { Rectangle().fill(Hub.ink).frame(width: 2).padding(.vertical, 10) } }
+        // 내 행 왼쪽 2pt ink 막대 — 안내판 '내 것' 막대와 같은 폭, 채움 없음 (0.43.1 C3, #53). 높이 = 행 − 4pt(위아래 2pt, 이웃 내 행과 4pt 틈),
+        // 둥근 모서리는 카드 clipShape 가 자른다 (0.43.2 C2, #54 — 0.43.1 은 위아래 10pt 라 막대가 ≈9pt 로 짧았음)
+        .overlay(alignment: .leading) { if mine { Rectangle().fill(Hub.ink).frame(width: 2).padding(.vertical, 2) } }
+        .background { if mine { GeometryReader { g in Color.clear.onChange(of: g.size.height, initial: true) { _, h in Self.recordBar(h) } } } }
         .help("\(b.day) \(b.start)–\(b.end) \(b.course) · \(b.initials.joined(separator: ","))" + (b.room.isEmpty ? "" : " · \(b.room)") + (live ? " · 진행 중" : "") + (mine ? " · 내 수업" : "")
               + (b.notes.isEmpty ? "" : "\n" + b.notes.joined(separator: "\n")))
         .layoutChoice(mine ? "classes-mine:\(b.start)" : nil, b.course)

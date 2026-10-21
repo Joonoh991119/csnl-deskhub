@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var relayouting = false
     /// 확대/원래 크기로 setFrame 하는 동안 — 그 프레임 변화는 비율로 저장하지 않는다 (0.43.0 C7)
     private var zoomChanging = false
+    /// 시험 키 window:size= 로 바꾼 임시 크기(슬롯별) — windows.txt 'sized=' 용. 확대 기록(zoomRestore)과 함께 풀린다 (0.43.2 C4, #54)
+    private var sizedTo: [String: NSSize] = [:]
     private var hotKey: HotKey?
     /// 사용자가 숨겼는지 (모니터를 다시 꽂아도 저절로 다시 뜨지 않게)
     private var hiddenByUser = false
@@ -342,6 +344,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "lower": settleAll()
             case "close": hideAll()
             case "dblclick": handleDoubleClick(slot)
+            // 시험 전용(0.43.2 C4, #54) — window:size=<w>x<h>[:<슬롯>] 저장 안 하는 임시 크기, window:zoom 으로 원래 크기
+            case let c where c.hasPrefix("size="): sizeWindow(slot, String(c.dropFirst("size=".count)))
             default: NSSound.beep()
             }
         }
@@ -510,8 +514,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for id in windows.keys.sorted() {
             guard let w = windows[id] else { continue }
             let yn: (Bool) -> String = { $0 ? "yes" : "no" }
+            let sized = w.zoomRestore != nil ? sizedTo[id].map { "\(Int($0.width))x\(Int($0.height))" } ?? "no" : "no"
             info.append("window: \(id) zoomed=\(yn(w.zoomRestore != nil)) peeking=\(yn(w.peeking)) controls=\(yn(w.peeking && w.isVisible))"
-                        + " dblclick=\(WindowChrome.current.rawValue) usable=\(config.usableRect(on: w.screen))")
+                        + " dblclick=\(WindowChrome.current.rawValue) usable=\(config.usableRect(on: w.screen)) sized=\(sized)")
         }
         if let b = backdrop { info.append("backdrop: visible=\(b.isVisible) level=\(b.level.rawValue) frame=\(b.frame)") }
         // 팝오버 '조각' 도 그림으로 (D12) — 화면에 띄우지 않고 그린다
@@ -861,6 +866,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func toggleZoom(_ slotID: String) {
         guard let w = windows[slotID] else { NSSound.beep(); return }
         zoomChanging = true
+        sizedTo[slotID] = nil
         if let r = w.zoomRestore {
             w.zoomRestore = nil
             w.setFrame(r, display: true)
@@ -868,6 +874,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.zoomRestore = w.frame
             w.setFrame(config.usableRect(on: w.screen), display: true)
         }
+        zoomChanging = false
+    }
+    /// 시험 키 window:size=<w>x<h> (0.43.2 C4, #54) — 확대와 같은 장치: zoomRestore 가 비었으면 지금 frame 을 넣고
+    /// 왼쪽 위 모서리를 고정한 채 크기만 바꾼다. frameChanged 가드로 config.json 에 저장되지 않고 window:zoom 이 원래 frame 으로 돌린다.
+    /// 메뉴·단축키 없음(QA 가 config.json 을 고치지 않고 세로 창을 재현하는 용도). 형식이 틀리면 삐
+    private func sizeWindow(_ slotID: String, _ spec: String) {
+        let parts = spec.lowercased().split(separator: "x", omittingEmptySubsequences: false)
+        guard let w = windows[slotID], parts.count == 2,
+              let width = Double(parts[0]), let height = Double(parts[1]),
+              width >= 200, height >= 200, width <= 10000, height <= 10000 else { NSSound.beep(); return }
+        zoomChanging = true
+        if w.zoomRestore == nil { w.zoomRestore = w.frame }
+        let top = w.frame.maxY
+        w.setFrame(NSRect(x: w.frame.minX, y: top - height, width: width, height: height), display: true)
+        sizedTo[slotID] = NSSize(width: width, height: height)
         zoomChanging = false
     }
     @objc private func windowZoomRequested(_ note: Notification) { toggleZoom((note.object as? String) ?? hubSlotID) }

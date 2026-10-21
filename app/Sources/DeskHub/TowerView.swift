@@ -11,12 +11,19 @@ import AppKit
 struct TowerView: View {
     @ObservedObject var model: NotionHubModel
     @ObservedObject private var commits: DelayedCommit
-    /// 펼친 섹션 — 열마다 관련 있는 것(TowerRelevance)을 하루 한 번 자동으로, 그 뒤는 사용자가 (SMJ #27, 0.35.0). 데이터 전 첫 프레임은 모두 접힘
+    /// 펼친 섹션 — 열마다 관련 있는 것(TowerRelevance)을 하루 한 번(창 크기로 갈래가 바뀌면 다시) 자동으로, 그 뒤는 사용자가 (SMJ #27, 0.35.0). 데이터 전 첫 프레임은 모두 접힘
     @State private var expanded: Set<String> = []
-    /// 자동 펼침을 결정한 날 — 하루 한 번만 (갱신마다 레이아웃이 바뀌지 않게)
-    @State private var decidedDay: Date? = nil
+    /// 자동 펼침을 결정한 갈래 '날짜|열 수|좁음' — 같은 갈래면 한 번만(갱신마다 레이아웃이 바뀌지 않게), 창 크기로 갈래가 바뀌면 그날도 다시 (0.43.2 C7)
+    @State private var decidedKey: String? = nil
+    /// 좁은 세로 관제탑 — tall 이고 GeometryReader 높이 < 1200pt (창 높이만으로 — 레일·경보 높이에서 정하면 되먹임) (0.43.2 C7, #54 ①).
+    /// 좁음이면 접힌 줄 촘촘히 · 한 번에 하나만 펼침 · 자동 펼침 1개 · 경보 상한 30%
+    @State private var railTight = false
+    /// 펼친 카드 높이 실측 — windows.txt choices 'tower-rail' 용 (0.43.2 C7)
+    @State private var cardH: [String: CGFloat] = [:]
     /// 사용자가 레일을 직접 펴거나 접은 날 — 그날은 자동 결정을 하지 않는다. 날짜로 두어 첫 결정 전에 만져도 다음 날엔 풀린다 (검증 1 리뷰)
     @State private var touchedDay: Date? = nil
+    /// 마지막으로 연 레일 — 좁은 세로로 바뀔 때 여러 개 열려 있으면 이것 하나만 남긴다 (0.43.2 C7 검증 1 리뷰)
+    @State private var lastOpened: String? = nil
     /// 확인함(ack) — C·A 만, 맥 단위 로컬, 7일 뒤 풀림 (W 는 ack 불가 — 처리해야 사라짐)
     @State private var acks: [String: Double] = AlertAck.load()
     @State private var showAcked = false
@@ -25,6 +32,11 @@ struct TowerView: View {
     @State private var targetUntil: Date? = nil
     /// 펼친 섹션이 남은 높이를 채우게 — 레일 열 높이 (GeometryReader 실측, 첫 프레임은 0)
     @State private var railHeight: CGFloat = 0
+    /// 머리 갈래(1줄|2줄)·카운터 실측 폭 — windows.txt choices 'tower-head' (0.43.2 C5, #54)
+    @State private var headLines = ""
+    @State private var headCounterW: CGFloat = 0
+    /// 경보 열 내용 높이 실측 (ScrollView 안 VStack — 바깥 높이와 무관해 되먹임 없음, 첫 프레임 0 = 추정 사용) (0.43.2 C6, #54)
+    @State private var alertContentH: CGFloat = 0
     /// 키보드로 고른 경보 (j/k)
     @State private var sel: Int? = nil
     @ObservedObject private var bus = KeyBus.shared
@@ -46,6 +58,7 @@ struct TowerView: View {
         let set = AlertSet(alerts: full.alerts.filter { a in !acked.contains(where: { $0.id == a.id }) }, overflow: full.overflow)
         GeometryReader { geo in
             let tall = geo.size.height / max(geo.size.width, 1) > 1.4
+            let tallTight = tall && geo.size.height < 1200
             // 가로: 경보 열은 440 이상, 넓은 화면(5K)에선 폭의 28% (R2-01 BHL — 오른쪽만 넓어지지 않게)
             let alertWidth = max(440, geo.size.width * 0.28)
             VStack(alignment: .leading, spacing: 10) {
@@ -55,8 +68,16 @@ struct TowerView: View {
                 // 이니셜 확인 줄이 보이면 안내 줄은 숨김 (둘 중 하나만, R2-05)
                 if HubPrefs.meChosen { HintBar() } else { MeConfirmBar(model: model) }
                 if tall {
-                    // 세로 화면: 경보 전폭 — 높이는 내용만큼(경보 수·오늘 일정 수로 추정), 최대 42%. 남는 높이는 레일(1열)이 쓴다 (R2-01 JYK)
-                    alertColumn(set, acked: acked).frame(maxHeight: min(geo.size.height * 0.42, alertEstimate(set, acked: acked)))
+                    // 세로 화면: 경보 전폭 — 높이는 내용 실측(첫 프레임만 추정), 최대 42%. 남는 높이는 레일(1열)이 쓴다 (R2-01 JYK).
+                    // maxHeight 대신 height — ScrollView 가 상한까지 늘어나 경보 아래 빈 띠(115pt)를 만들던 것 (0.43.2 C6, #54 ①)
+                    let est = alertEstimate(set, acked: acked)
+                    // 좁음이면 상한 30% — 경보가 많아도 접힌 줄 13개가 레일 안에 남게 (0.43.2 C7)
+                    let cap = geo.size.height * (tallTight ? 0.30 : 0.42)
+                    let h = min(cap, alertContentH > 0 ? alertContentH : est)
+                    alertColumn(set, acked: acked).frame(height: h)
+                        .onChange(of: "열 \(Int(h.rounded())) · 내용 \(Int(alertContentH.rounded())) · 추정 \(Int(est.rounded())) · 상한 \(Int(cap.rounded()))", initial: true) { _, v in
+                            LayoutChoice.record("tower-alert", v)
+                        }
                     rail(columns: 1).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 } else {
                     HStack(alignment: .top, spacing: 12) {
@@ -64,6 +85,11 @@ struct TowerView: View {
                         rail(columns: 2).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                 }
+            }
+            .onChange(of: tallTight, initial: true) { _, t in
+                railTight = t
+                // 좁은 세로로 바뀌면 한 번에 하나만 — 사용자가 만진 날은 decideExpansion 이 손대지 않아 여러 개가 남아 목록이 0–1행이 되던 것 (검증 1 리뷰)
+                if t { keepSingleExpanded() }
             }
         }
         .padding(12)
@@ -108,37 +134,91 @@ struct TowerView: View {
     static let railOrder = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps", "tools", "datastate"]
     /// 데이터 항목(꼬리표 대상, 0.40.0 C3 M3) — 도구·자료 상태 제외
     static let railDataItems = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"]
-    /// 같은 열의 다른 펼침은 접고 이것을 편다 (열 = 레일 순서 앞 절반·뒤 절반)
+    /// 같은 열의 다른 펼침은 접고 이것을 편다 (열 = 레일 순서 앞 절반·뒤 절반).
+    /// 좁은 세로(railTight)는 한 번에 하나만 — 세로 1열에서 둘이 열려 남은 높이를 나눠 목록이 0행이 되던 것 (0.43.2 C7, #54 ①). 클릭·rail: 키·경보 클릭·Space 공용
     private func open(_ key: String) {
+        lastOpened = key
+        if railTight { expanded = [key]; return }
         let half = (Self.railOrder.count + 1) / 2
         let col: (String) -> Int = { k in (Self.railOrder.firstIndex(of: k) ?? 0) < half ? 0 : 1 }
         expanded = expanded.filter { col($0) != col(key) }
         expanded.insert(key)
     }
 
-    /// 경보 열의 내용 높이 추정 (세로 화면 캡) — 경보 행 ~46pt, 오늘 일정 머리 ~24pt + 행 ~26pt(최대 8) + 넘침 줄 20, 제목·여백 (R-J2)
+    /// 좁은 세로에서 둘 이상 열려 있으면 하나만 남긴다 — 마지막으로 연 것(아직 열려 있으면), 아니면 레일 순서 맨 앞. 사용자 선택은 존중하되 하나로 (검증 1 리뷰)
+    private func keepSingleExpanded() {
+        guard expanded.count > 1 else { return }
+        let rank: (String) -> Int = { Self.railOrder.firstIndex(of: $0) ?? 99 }
+        let keep = lastOpened.flatMap { expanded.contains($0) ? $0 : nil } ?? expanded.min { rank($0) < rank($1) }!
+        withAnimation(.easeOut(duration: 0.2)) { expanded = [keep] }
+    }
+
+    /// 경보 열의 내용 높이 추정 — 실측(alertContentH) 전 첫 프레임만 쓴다 (0.43.2 C6: 끝의 '+96+24' 과대 추정 삭제, 열 안 실제 여백만).
+    /// 경보 행 ~46pt · 경보 없음 줄 44 · 넘침 26 · 확인함 30 · 되돌리기 줄 6+30 · 오늘 일정(위 14 + 머리 20 + 행 27(최대 8) + 넘침 20) · 스택 간격 8 (R-J2)
     private func alertEstimate(_ set: AlertSet, acked: [HubAlert]) -> CGFloat {
         let agenda = (model.todayCalendar?.events ?? []).filter { $0.end > model.now && Calendar.current.isDate($0.start, inSameDayAs: model.now) }.count
+        let toast = !commits.pending.isEmpty
+        // 스택 자식: [경보 없음 줄] · 경보 묶음 · [되돌리기] · [확인함] · 오늘 일정 — 간격은 자식 사이마다
+        let children = 2 + (set.isClear ? 1 : 0) + (toast ? 1 : 0) + (acked.isEmpty ? 0 : 1)
         return CGFloat(set.alerts.count) * 46 + (set.isClear ? 44 : 0) + CGFloat(set.overflow.count) * 26 + (acked.isEmpty ? 0 : 30)
-            + 24 + CGFloat(min(max(agenda, 1), 8)) * 26 + (agenda > 8 ? 20 : 0) + 96 + 24   // + 상태 한 줄 (0.40.0 C4)
+            + (toast ? 36 : 0)
+            + 14 + 20 + CGFloat(min(max(agenda, 1), 8)) * 27 + (agenda > 8 ? 20 : 0)
+            + CGFloat(children - 1) * 8
     }
 
     // MARK: 머리 — 경보 카운터 + 오늘 시간 띠
 
+    /// 0.43.2 C5 (#54 ②): 카운터는 늘 온전히(fixedSize·우선 2) — 좁은 세로 창(650pt)에서 로스터가 먼저 폭을 받아 '경보 ■0 □1 ·0' 이 0폭이던 것.
+    /// 한 줄(카운터 · 띠 ≥200 · 로스터 전체)이 들어가면 지금 모양, 아니면 로스터를 다음 줄로 (ViewThatFits — 이상적 폭으로 고른다)
     private func header(_ set: AlertSet, tall: Bool, alertWidth: CGFloat) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            HStack(spacing: 8) {
-                Text("경보").font(.hub(13, weight: .bold)).foregroundStyle(Hub.text2)
-                counter("■", set.counts[.warning] ?? 0, strong: true)
-                counter("□", set.counts[.caution] ?? 0, strong: false)
-                counter("·", set.counts[.advisory] ?? 0, strong: false)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: 14) {
+                headCounters(set, tall: tall, alertWidth: alertWidth)
+                headBand
+                // 1줄 판정이 로스터 전체 폭(라벨 포함)을 보장 — 예전 layoutPriority(1) 대신 (0.42.0 C5 검증 1 의 라벨 빠짐 방지 그대로)
+                roster.fixedSize()
             }
-            .frame(width: tall ? nil : alertWidth - 12, alignment: .leading)
-            if let cal = model.todayCalendar { NowNextBand(cal: cal) } else { Spacer() }
-            // 로스터가 먼저 폭을 받는다 — NowNextBand(유연한 Spacer·막대)가 먼저 차지해 'Filter by person' 라벨이 늘 빠지던 것 (0.42.0 C5 검증 1)
-            roster.layoutPriority(1)
+            .frame(height: 38)
+            .onAppear { recordHead("1줄") }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center, spacing: 14) {
+                    headCounters(set, tall: tall, alertWidth: alertWidth)
+                    headBand
+                }
+                .frame(height: 38)
+                roster.frame(height: Hub.s(26), alignment: .leading)
+            }
+            .onAppear { recordHead("2줄") }
         }
-        .frame(height: 38)
+    }
+
+    private func headCounters(_ set: AlertSet, tall: Bool, alertWidth: CGFloat) -> some View {
+        HStack(spacing: 8) {
+            Text("경보").font(.hub(13, weight: .bold)).foregroundStyle(Hub.text2)
+            counter("■", set.counts[.warning] ?? 0, strong: true)
+            counter("□", set.counts[.caution] ?? 0, strong: false)
+            counter("·", set.counts[.advisory] ?? 0, strong: false)
+        }
+        .fixedSize()
+        .frame(width: tall ? nil : alertWidth - 12, alignment: .leading)
+        .background(GeometryReader { g in
+            Color.clear.onChange(of: g.size.width, initial: true) { _, w in headCounterW = w; recordHead(nil) }
+        })
+        .layoutPriority(2)
+    }
+
+    /// 오늘 시간 띠 — 이상적 폭 200(1줄 판정에 들어감), 남은 폭 전부
+    private var headBand: some View {
+        Group {
+            if let cal = model.todayCalendar { NowNextBand(cal: cal) } else { Spacer() }
+        }
+        .frame(minWidth: Hub.s(200), maxWidth: .infinity)
+    }
+
+    private func recordHead(_ lines: String?) {
+        if let lines { headLines = lines }
+        guard !headLines.isEmpty else { return }
+        LayoutChoice.record("tower-head", "\(headLines) · 카운터 \(Int(headCounterW.rounded()))pt")
     }
 
     /// 로스터 띠 — 이니셜을 누르면 10분 동안 그 사람 기준 (다시 누르면 해제).
@@ -185,22 +265,28 @@ struct TowerView: View {
 
     private func alertColumn(_ set: AlertSet, acked: [HubAlert]) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
-            if set.isClear { clearLine.padding(.bottom, 8) }
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(set.alerts.enumerated()), id: \.element.id) { i, a in
-                    alertRow(a)
-                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(sel == i ? Hub.ink : Color.clear, lineWidth: 1.5))
-                    if i < set.alerts.count - 1 { RowDivider() }
+            // 명시적 스택 하나(암시 스택과 같은 간격) — 내용 높이 실측용 (0.43.2 C6)
+            VStack(spacing: nil) {
+                if set.isClear { clearLine.padding(.bottom, 8) }
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(set.alerts.enumerated()), id: \.element.id) { i, a in
+                        alertRow(a)
+                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(sel == i ? Hub.ink : Color.clear, lineWidth: 1.5))
+                        if i < set.alerts.count - 1 { RowDivider() }
+                    }
+                    ForEach(set.overflow.sorted(by: { $0.key < $1.key }), id: \.key) { l, n in
+                        RowDivider()
+                        Text("\(l.mark) +\(n) 더").font(.hub(11.5)).foregroundStyle(Hub.text3).padding(.horizontal, 12).padding(.vertical, 6)
+                    }
                 }
-                ForEach(set.overflow.sorted(by: { $0.key < $1.key }), id: \.key) { l, n in
-                    RowDivider()
-                    Text("\(l.mark) +\(n) 더").font(.hub(11.5)).foregroundStyle(Hub.text3).padding(.horizontal, 12).padding(.vertical, 6)
-                }
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(set.isClear ? Color.clear : Hub.surface))
+                UndoToast(commits: commits).padding(.top, 6)
+                if !acked.isEmpty { ackedBlock(acked) }
+                todayAgenda.padding(.top, 14)
             }
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(set.isClear ? Color.clear : Hub.surface))
-            UndoToast(commits: commits).padding(.top, 6)
-            if !acked.isEmpty { ackedBlock(acked) }
-            todayAgenda.padding(.top, 14)
+            .background(GeometryReader { g in
+                Color.clear.onChange(of: g.size.height, initial: true) { _, h in alertContentH = h }
+            })
         }
     }
 
@@ -434,6 +520,8 @@ struct TowerView: View {
                     // 날짜가 바뀐 뒤 첫 갱신도 여기서
                     .onChange(of: model.settledAt) { _, _ in decideExpansion(columns: columns, height: railHeight) }
                     .onChange(of: model.loading) { _, l in if !l { decideExpansion(columns: columns, height: railHeight) } }
+                    // 좁음 갈래가 바뀌면(창 크기) 다시 정한다 — 열 수가 바뀌면 레일이 새로 나타나 onAppear 가 받음 (0.43.2 C7)
+                    .onChange(of: railTight) { _, _ in decideExpansion(columns: columns, height: railHeight) }
                 // todayCalendar 는 @Published 가 아니라 TowerView 가 그 상태 변화를 못 받는다 — CalendarModel 을 관찰하는 프로브로 .ready 를 받음 (검증 1 리뷰)
                 if let cal = model.todayCalendar {
                     CalendarReadyProbe(cal: cal) { decideExpansion(columns: columns, height: railHeight) }
@@ -441,13 +529,23 @@ struct TowerView: View {
             })
             sourcesLine
         }
+        .onChange(of: railRecord(columns: columns), initial: true) { _, v in LayoutChoice.record("tower-rail", v) }
+    }
+
+    /// choices 'tower-rail' — '<1열|2열> <좁음|보통> · 레일 R · 줄 L · 펼침 id,… · id 카드높이pt …' (0.43.2 C7)
+    private func railRecord(columns: Int) -> String {
+        let ids = expanded.sorted()
+        let cards = ids.map { "\($0) \(Int((cardH[$0] ?? 0).rounded()))pt" }
+        return (["\(columns)열 \(railTight ? "좁음" : "보통")", "레일 \(Int(railHeight.rounded()))", "줄 \(Int(railLineH.rounded()))",
+                 "펼침 " + (ids.isEmpty ? "—" : ids.joined(separator: ","))] + cards).joined(separator: " · ")
     }
 
     /// 안쪽에서 스크롤하는 카드 — 남은 높이를 채운다. 나머지는 내용 높이 + 열 끝 Spacer
     private static let flexRail: Set<String> = ["papers", "blitz", "events", "conferences", "minutes"]
 
-    /// 결정용 접힌 줄 높이 — 줄 34 + 열 간격 6 (실측 40pt, 10-16 세로·가로 스냅샷)
-    private static let lineH: CGFloat = 40
+    /// 결정용 접힌 줄 높이 — 줄 34 + 열 간격 6 (실측 40pt, 10-16 세로·가로 스냅샷).
+    /// 좁은 세로는 줄 ≈26(여백 4) + 간격 4 = Hub.s(30) (0.43.2 C7). 자동 펼침 결정과 events 행 수가 이 하나를 쓴다
+    private var railLineH: CGFloat { railTight ? Hub.s(30) : 40 }
 
     /// 펼친 카드가 결정에서 차지하는 높이. 카드 안에서 스크롤해 줄어드는 카드(세로: flexRail·그랜트, 가로: papers·minutes·blitz·그랜트)는
     /// 쓸모 있는 최소 높이(세로 150, 가로 열의 30%·150 이상 — 가로 2열에서 셋째 카드가 끼어 모두 납작해지지 않게)만 센다 — 실제로는 남은 높이를 나눠 갖는다. 내용 높이로 고정되는 카드(실험·원고·멤버·앱·도구,
@@ -459,24 +557,24 @@ struct TowerView: View {
         return it.est
     }
 
-    /// 기본 펼침 = 관련도 (SMJ #27, 0.35.0) — 세로(1열)·가로(2열) 같은 규칙. 캘린더 .ready + 데이터 다 옴(settledAt) + 실측 높이 뒤 하루 한 번.
+    /// 기본 펼침 = 관련도 (SMJ #27, 0.35.0) — 세로(1열)·가로(2열) 같은 규칙. 캘린더 .ready + 데이터 다 옴(settledAt) + 실측 높이 뒤 갈래(날짜·열 수·좁음)마다 한 번.
     /// 열(가로 = 레일 순서 앞·뒤 절반, 세로 = 전체)마다 점수>0 이고 내용이 있는(est>0) 것만 점수 순(같으면 레일 순서)으로, 접힌 줄 + 펼친 카드(cost)가
-    /// 열 높이 안에 드는 것만 펼치고(세로는 최대 3개, DESKHUB_RAIL_FILL=0 은 1개) 나머지는 접는다. 열에 관련 항목이 없으면 그 열의 기본
+    /// 열 높이 안에 드는 것만 펼치고(세로는 최대 3개 · 좁은 세로 1개, DESKHUB_RAIL_FILL=0 은 1개) 나머지는 접는다. 열에 관련 항목이 없으면 그 열의 기본
     /// (앞 events · 뒤 conferences, 세로는 둘 다)을 같은 높이 규칙으로. 사용자가 펴거나 접은 날(touchedDay)은 정하지 않는다. 날짜가 바뀐 뒤 첫 갱신에서 다시
     private func decideExpansion(columns: Int, height: CGFloat) {
         // 날짜 키는 HubClock.today 하나 — settledDay·touchedDay·점수 안 today 가 같은 달력 (model.now 는 1분 늦게 넘어간다, R-L1)
         let today = HubClock.today
-        if let d = decidedDay, d != today { decidedDay = nil }
-        guard decidedDay == nil, touchedDay != today, height > 100, model.todayCalendar?.status == .ready,
+        let key = "\(Int(today.timeIntervalSince1970))|\(columns)|\(railTight ? "좁음" : "보통")"
+        guard decidedKey != key, touchedDay != today, height > 100, model.todayCalendar?.status == .ready,
               model.lastUpdated != nil, !model.loading, model.settledDay == today else { return }
-        decidedDay = today
+        decidedKey = key
         let scores = TowerRelevance.score(model: model, now: HubClock.now, me: HubPrefs.me)
         // 캡처한 items 는 마지막 body 계산 때 것이라(일정 0건) 추정이 틀린다 → 호출 시점에 railItems 를 다시 계산 (리뷰 2)
         let items = railItems
         let half = (items.count + 1) / 2
         let cols: [[RailItem]] = columns == 1 ? [items] : [Array(items.prefix(half)), Array(items.dropFirst(half))]
         let rank: (String) -> Int = { Self.railOrder.firstIndex(of: $0) ?? 99 }
-        let limit = !Self.fillLandscape ? 1 : (columns == 1 ? 3 : Int.max)
+        let limit = !Self.fillLandscape ? 1 : (columns == 1 ? (railTight ? 1 : 3) : Int.max)
         var next: Set<String> = []
         for (ci, col) in cols.enumerated() {
             let ranked = col.filter { (scores[$0.id]?.score ?? 0) > 0 && $0.est > 0 }
@@ -486,7 +584,7 @@ struct TowerView: View {
                 }
             let defaults: Set<String> = columns == 1 ? ["events", "conferences"] : [ci == 0 ? "events" : "conferences"]
             let candidates = ranked.isEmpty ? col.filter { defaults.contains($0.id) } : ranked
-            var used = CGFloat(col.count) * Self.lineH, n = 0
+            var used = CGFloat(col.count) * railLineH, n = 0
             for it in candidates where n < limit {
                 let c = cost(it, columns: columns, height: height)
                 if used + c > height { continue }   // 안 들어가면 다음 후보 (작은 고정 카드가 큰 카드 뒤에서 밀리지 않게)
@@ -497,7 +595,7 @@ struct TowerView: View {
     }
 
     private func railColumn(_ items: [RailItem], stretch: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: railTight ? 4 : 6) {
             ForEach(items) { it in
                 let on = expanded.contains(it.id)
                 VStack(alignment: .leading, spacing: 0) {
@@ -513,6 +611,10 @@ struct TowerView: View {
                 }
                 .frame(maxHeight: on && stretch && Self.flexRail.contains(it.id) ? .infinity : nil, alignment: .top)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? Hub.card.opacity(0.5) : Hub.surface))
+                // 펼친 카드 높이 실측 — choices 'tower-rail' (0.43.2 C7)
+                .background {
+                    if on { GeometryReader { g in Color.clear.onChange(of: g.size.height, initial: true) { _, h in cardH[it.id] = h } } }
+                }
                 // 펼친 카드가 남은 높이를 먼저 받는다 — 끝의 Spacer 와 반씩 나누면 줄어드는 카드(그랜트·논문)가 절반만 받았다 (검증 1)
                 .layoutPriority(on ? 1 : 0)
             }
@@ -536,7 +638,7 @@ struct TowerView: View {
                     .buttonStyle(.plain).foregroundStyle(Hub.text2).help(l.help)
             }
         }
-        .padding(.horizontal, 12).padding(.vertical, 9)
+        .padding(.horizontal, 12).padding(.vertical, railTight ? Hub.s(4) : 9)   // 좁은 세로는 촘촘히 (0.43.2 C7)
         .contentShape(Rectangle())
         .onTapGesture {
             markTouched()
@@ -556,10 +658,10 @@ struct TowerView: View {
         case "papers": PaperRecBoard(model: model, fold: true).frame(maxHeight: model.papersStopped ? nil : fit)
         case "minutes": ScrollView(.vertical, showsIndicators: false) { MinutesCard(model: model, minutesExpanded: true) }.frame(maxHeight: cap)
         case "events":
-            // 줄 수 = (열 높이 − 접힌 줄 rows×40 − 제목·여백) / 행 36, 최소 6 (첫 프레임 실측 0 이어도 6)
+            // 줄 수 = (열 높이 − 접힌 줄 rows×railLineH − 제목·여백) / 행 36, 최소 6 (첫 프레임 실측 0 이어도 6)
             if stretch {
                 ScrollView(.vertical, showsIndicators: false) {
-                    UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: max(6, Int((railHeight - CGFloat(rows) * 40 - 90) / 36)), excludeToday: true)
+                    UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: max(6, Int((railHeight - CGFloat(rows) * railLineH - 90) / 36)), excludeToday: true)
                 }
                 .frame(maxHeight: cap)
             } else {

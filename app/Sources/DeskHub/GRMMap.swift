@@ -232,6 +232,12 @@ enum GRMMap {
         out += shown.map { r in "\(Hub.shortDay(r.slot.date)) · \(r.who) · " + r.marks.map(\.rawValue).joined() + (r.mine ? " · 빈칸 \(r.blanks)" : "") }
         out.append("순번:")
         out += GRMRotation.rows(m).map { r in "\(r.order) · \(r.initials) · 지난 \(r.last) · 다음 \(r.next)" + (r.isNext ? " (다음 발표)" : "") }
+        // 일정 표와 같은 행 (0.43.2 C1, #54) — 'M.d 이니셜 · … · 중복 n'
+        let sched = GRMSchedule.rows(m.grm, today: m.today, now: m.now)
+        out.append("일정: " + GRMSchedule.line(sched.rows, who: { g in
+            let i = m.initialsList(g.presenters)
+            return i.isEmpty ? "미정" : i
+        }, marks: false) + " · 중복 \(sched.dup)")
         return out
     }
 }
@@ -261,6 +267,79 @@ struct GRMRotation {
                                next: next.map(Hub.shortDay) ?? "—",
                                isNext: !nextPresenters.isEmpty && (nextPresenters.contains(mem.name) || nextPresenters.contains(mem.initials)))
         }
+    }
+}
+
+/// GRM 일정 규칙 한 곳 (0.43.2 C1, #54 R4) — 정오 규칙(지난 회차)·같은 회차 판정·일정 표 행.
+/// 경보·꼬리표·파이프라인·관련도는 last 만 쓰고(원본 그대로), 데이터 중복 합치기는 일정 표·덤프(rows)에만.
+enum GRMSchedule {
+    /// 지난 GRM — 날짜 < 오늘, 또는 오늘이고 now ≥ 12:00. 같은 조건 중 날짜 최댓값(같으면 뒤에 나온 것) — 정렬된 grm 에서는 grm.last { … } 와 같다
+    static func last(_ slots: [GRMSlot], today: Date, now: Date) -> GRMSlot? {
+        let cal = Calendar.current
+        let noon = cal.date(bySettingHour: 12, minute: 0, second: 0, of: today)!
+        var best: GRMSlot?
+        for g in slots where g.date < today || (cal.isDate(g.date, inSameDayAs: today) && now >= noon) {
+            if best == nil || g.date >= best!.date { best = g }
+        }
+        return best
+    }
+    /// 같은 회차 — 그날 + 발표자(앞뒤 공백 제거·연속 공백 하나로) + Type
+    static func key(_ g: GRMSlot) -> String {
+        let day = Calendar.current.startOfDay(for: g.date).timeIntervalSince1970
+        let who = g.presenters.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+        return "\(Int(day))|\(who)|\(g.type)"
+    }
+    /// 일정 표 — 지난 한 번 + 오늘 이후(지난 회차와 같은 id 는 빼고). 같은 key 는 처음 자리 하나로(공지·초록 OR), 합친 수 = dup
+    static func rows(_ slots: [GRMSlot], today: Date, now: Date) -> (rows: [GRMSlot], dup: Int) {
+        let past = last(slots, today: today, now: now)
+        let all = (past.map { [$0] } ?? []) + slots.filter { $0.date >= today && $0.id != past?.id }
+        var out: [GRMSlot] = [], at: [String: Int] = [:], dup = 0
+        for g in all {
+            let k = key(g)
+            if let i = at[k] {
+                let f = out[i]
+                out[i] = GRMSlot(id: f.id, date: f.date, presenters: f.presenters, type: f.type,
+                                 notified: f.notified || g.notified, abstractDone: f.abstractDone || g.abstractDone,
+                                 docURL: f.docURL ?? g.docURL, noteIDs: f.noteIDs + g.noteIDs.filter { !f.noteIDs.contains($0) })
+                dup += 1
+            } else {
+                at[k] = out.count; out.append(g)
+            }
+        }
+        return (out, dup)
+    }
+    /// 'M.d 발표자[ 공지][ 초록] · …' — who 는 발표자 표기(덤프는 이니셜), 행이 없으면 '—'
+    static func line(_ rows: [GRMSlot], who: (GRMSlot) -> String, marks: Bool) -> String {
+        guard !rows.isEmpty else { return "—" }
+        return rows.map { g in
+            var s = Hub.shortDay(g.date) + " " + who(g)
+            if marks { if g.notified { s += " 공지" }; if g.abstractDone { s += " 초록" } }
+            return s
+        }.joined(separator: " · ")
+    }
+    /// text-check 'grm-sched' — 'now=yyyy-MM-ddTHH:mm;slots=yyyy-MM-dd/발표자/Type[/공지][/초록]|…'(id 는 's<순번>')
+    /// → 'M.d 발표자[ 공지] · … | 중복 n'(행 없으면 '— | 중복 0'). fixtures/grmweek-check.tsv
+    static func check(_ input: String) -> String {
+        var k: [String: String] = [:]
+        for part in input.components(separatedBy: ";") {
+            let p = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            if p.count == 2 { k[p[0].trimmingCharacters(in: .whitespaces)] = p[1] }
+        }
+        guard let now = MetricDefs.parseInstant(k["now"] ?? "") else { return "(입력 형식)" }
+        let today = Calendar.current.startOfDay(for: now)
+        let slots: [GRMSlot] = (k["slots"] ?? "").components(separatedBy: "|").enumerated().compactMap { i, s in
+            let f = s.components(separatedBy: "/")
+            guard f.count >= 3, let d = MetricDefs.parseDay(f[0]) else { return nil }
+            let extra = f.dropFirst(3).map { $0.trimmingCharacters(in: .whitespaces) }
+            return GRMSlot(id: "s\(i + 1)", date: d, presenters: f[1], type: f[2],
+                           notified: extra.contains("공지"), abstractDone: extra.contains("초록"), docURL: nil, noteIDs: [])
+        }
+        let r = rows(slots, today: today, now: now)
+        let who: (GRMSlot) -> String = { g in
+            let n = g.presenters.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }.joined(separator: " ")
+            return n.isEmpty ? "미정" : n
+        }
+        return line(r.rows, who: who, marks: true) + " | 중복 \(r.dup)"
     }
 }
 

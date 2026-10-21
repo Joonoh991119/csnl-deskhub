@@ -128,6 +128,8 @@ enum TextCheck {
             case _ where FollowupCheck.kinds.contains(kind): got = FollowupCheck.eval(kind, input, aliases: testAliases)
             // GRM 자료 지도 허브 한 줄 (0.41.0 C6, R2) — 'today=;rows=날짜 이니셜 ●○●–?|…;sched=날짜|…' → '이번 주 … · 지난주 …'. fixtures/grmweek-check.tsv
             case "grmweek": got = GRMMap.weekCheck(input)
+            // GRM 일정 표 (0.43.2 C1, #54) — 'now=yyyy-MM-ddTHH:mm;slots=yyyy-MM-dd/발표자/Type[/공지]|…' → 'M.d 발표자[ 공지] · … | 중복 n'. fixtures/grmweek-check.tsv
+            case "grm-sched": got = GRMSchedule.check(input)
             // 연구비 마감 시각 (0.42.0 C1, #39) — 'now=yyyy-MM-ddTHH:mm;title=…;day=yyyy-MM-dd[;note=…][;rem=1]' → MenuBarLine.compact(AlertEngine.grantDue(...).due)
             case "grantdue": got = grantdue(input)
             // 논문 반응 줄 (0.42.0 C1, #23) — 'me=;r=👍:JOP,BHL|✅:SMJ;notes=n;hover=0|1' → PaperReact.text(line)
