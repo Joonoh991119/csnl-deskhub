@@ -297,11 +297,12 @@ struct SmallAction: View {
         Button(action: action) {
             HStack(spacing: 4) { Image(systemName: symbol); Text(label).lineLimit(1) }
                 .font(.hub(cs.tag + 0.5, weight: .semibold))
-                .padding(.horizontal, 9).padding(.vertical, 4)
+                .padding(.horizontal, 9).frame(minHeight: TapTarget.min)   // 1.0.0 B1 — 44pt 누름 칸
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(prominent ? Hub.ink : Hub.fillNeutral))
                 .foregroundStyle(prominent ? Hub.onAccent : Hub.text)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressFillStyle(cornerRadius: 7))
     }
 }
 
@@ -1329,17 +1330,29 @@ struct TodayView: View {
     @ObservedObject var cal: CalendarModel
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(Hub.longDay(cal.now)).font(.hub(22, weight: .bold))
-                Spacer()
-                Text(Hub.time(cal.now)).font(.hub(18, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text2)
+            // 좁은 열(일정 탭 1/3, 1.5·2.0배)에서는 날짜·시각을 두 줄로 — '…' 로 자르지 않는다 (1.0.0 검증 1)
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline) {
+                    dayText.fixedSize()
+                    Spacer()
+                    timeText.fixedSize()
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    dayText.fixedSize(horizontal: false, vertical: true)
+                    timeText.fixedSize()
+                }
             }
             if !cal.allDay.isEmpty {
-                Text(cal.allDay.map(\.title).joined(separator: " · ")).font(.hub(13)).foregroundStyle(Hub.text2).lineLimit(1)
+                Text(cal.allDay.map(\.title).joined(separator: " · ")).font(.hub(13)).foregroundStyle(Hub.text2)
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
             }
             GeometryReader { geo in Timeline(model: cal, size: geo.size) }
         }
         .padding(16)
+    }
+    private var dayText: some View { Text(Hub.longDay(cal.now)).font(.hub(22, weight: .bold)).lineLimit(2) }
+    private var timeText: some View {
+        Text(Hub.time(cal.now)).font(.hub(18, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text2).lineLimit(1)
     }
 }
 

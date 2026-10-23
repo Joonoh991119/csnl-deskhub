@@ -165,6 +165,8 @@ struct PopoverView: View {
                     .help("바탕화면 층에 깔린 대시보드를 다른 창 위로 꺼냅니다. 같은 단축키로 다시 숨깁니다")
                 Spacer()
                 Menu("뷰") {
+                    // 1.0.0: 위 탭 줄의 Main 탭 (KeyBus 'tab:Main', §5 ②) — 검증 1 리뷰
+                    Button("Main") { KeyBus.shared.send("tab:Main"); onOpenDashboard() }
                     ForEach(HubViewMode.allCases) { m in Button(m.title) { ViewModeStore.shared.mode = m; onOpenDashboard() } }
                 }
                 .menuStyle(.borderlessButton).fixedSize()

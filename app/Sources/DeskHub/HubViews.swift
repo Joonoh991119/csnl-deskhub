@@ -7,10 +7,11 @@ import AppKit
 
 enum HubViewMode: String, CaseIterable, Identifiable {
     // timetable 은 끝에 (0.42.0 C4) — 숫자 키 = allCases 순서라 기존 키가 밀리지 않게(9)
-    case tower, process, board, hub, today, grm, me, ambient, timetable
+    // schedule · grmblitz · lab 은 1.0.0 탭 화면(A2, #55) — 끝에 더해 숫자 키 1–9 그대로. rawValue 는 위 탭 줄과의 약속(§5 ②)
+    case tower, process, board, hub, today, grm, me, ambient, timetable, schedule, grmblitz, lab
     var id: String { rawValue }
     /// 디자인 계획 2차(10-14) 이전의 뷰 — 메뉴 '이전' 묶음, 2주 비교 뒤 랩장이 정리 (결정 18)
-    var legacy: Bool { ![.tower, .process, .board, .timetable].contains(self) }
+    var legacy: Bool { ![.tower, .process, .board, .timetable, .schedule, .grmblitz, .lab].contains(self) }
     var title: String {
         switch self {
         // 화면 이름은 영어 (0.42.0 C3, R3 — 랩장 '가능한 전문 용어나 UI는 영어를 유지'). rawValue(--view·저장 값)는 그대로
@@ -23,6 +24,9 @@ enum HubViewMode: String, CaseIterable, Identifiable {
         case .me: return "Me"
         case .ambient: return "Ambient"
         case .timetable: return "Timetable"
+        case .schedule: return "일정"
+        case .grmblitz: return "GRM/Blitz"
+        case .lab: return "실험/장비"
         }
     }
     var symbol: String {
@@ -36,6 +40,9 @@ enum HubViewMode: String, CaseIterable, Identifiable {
         case .me: return "person.crop.circle"
         case .ambient: return "clock"
         case .timetable: return "calendar"
+        case .schedule: return "calendar.badge.clock"
+        case .grmblitz: return "person.3.sequence"
+        case .lab: return "flask"
         }
     }
     var blurb: String {
@@ -49,6 +56,9 @@ enum HubViewMode: String, CaseIterable, Identifiable {
         case .me: return "이 맥 사용자의 추천·프로젝트·차례"
         case .ambient: return "보조 모니터·벽용 큰 글자"
         case .timetable: return "이번 학기 수업 — 요일×시간 격자, 사람 고르기"
+        case .schedule: return "오늘 캘린더 · 학회 · 그랜트 일정과 과제 기간"
+        case .grmblitz: return "GRM 발표 순번·일정 · 지난 Paper Blitz"
+        case .lab: return "오늘의 실험 · 장비 예약(펼침)"
         }
     }
 }
@@ -113,6 +123,9 @@ struct HubViewSwitch: View {
         case .me: MeView(model: model)
         case .ambient: AmbientView(model: model)
         case .timetable: TimetableView(model: model)
+        case .schedule: ScheduleTabView(model: model)
+        case .grmblitz: GRMBlitzTabView(model: model)
+        case .lab: LabTabView(model: model)
         }
     }
 }

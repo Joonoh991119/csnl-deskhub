@@ -733,7 +733,8 @@ struct TimeScale {
 struct Timeline: View {
     @ObservedObject var model: CalendarModel
     let size: CGSize
-    private let gutter: CGFloat = 58
+    /// 시각 칸 폭 — 글자 배율(Hub.s)과 함께 늘린다. 고정 58 이면 1.5·2.0배에서 '10 AM' 이 '1 AM / 0' 으로 꺾였다 (1.0.0 검증 1)
+    private var gutter: CGFloat { Hub.s(58) }
     private let rightPad: CGFloat = 14
 
     private struct Placed: Identifiable { let id: String; let event: CalEvent; let col: Int; let cols: Int }
@@ -763,6 +764,7 @@ struct Timeline: View {
                         .font(.hub(inFocus ? 17 : 11.5, weight: inFocus ? .bold : .regular, design: .rounded)).monospacedDigit()
                     Text(h < 12 ? "AM" : "PM").font(.hub(inFocus ? 9.5 : 8, weight: .semibold))
                 }
+                .lineLimit(1).fixedSize()
                 .foregroundStyle(inFocus ? Color.primary : Color.secondary)
                 .frame(width: gutter - 10, alignment: .trailing)
                 .offset(x: 0, y: y - (inFocus ? 9 : 6))
@@ -834,18 +836,27 @@ struct EventBlock: View {
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             RoundedRectangle(cornerRadius: 2).fill(event.color).frame(width: 5)
-            VStack(alignment: .leading, spacing: 2) {
+            // 좁은 블록(일정 탭 1/3 열·겹친 일정, 1.5·2.0배)에서는 '…' 로 자르지 않고 줄바꿈 → 그래도 높이가 모자라면 시각 줄을 줄이거나 뺀다 (1.0.0 검증 2)
+            Group {
                 if height < 40 {
-                    HStack(spacing: 6) {
-                        Text(EventBlock.tf.string(from: event.start)).font(.hub(12, weight: .semibold)).monospacedDigit().foregroundStyle(Hub.text2)
-                        Text(Hub.canonicalNames(event.title)).font(.hub(13.5, weight: .semibold)).lineLimit(1)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { startText.fixedSize(); titleText(13.5).lineLimit(1).fixedSize() }
+                        titleText(13.5).lineLimit(1).fixedSize()
+                        titleText(13.5).lineLimit(1)
                     }
                 } else {
-                    Text(Hub.canonicalNames(event.title)).font(.hub(inFocus ? 15.5 : 13, weight: .bold)).lineLimit(height > 70 ? 3 : 1)
-                    Text("\(EventBlock.tf.string(from: event.start)) – \(EventBlock.tf.string(from: event.end))")
-                        .font(.hub(12.5, weight: .medium)).monospacedDigit().foregroundStyle(Hub.text2)
-                    if let l = event.location, height > 64 {
-                        Label(l, systemImage: "mappin").font(.hub(12)).foregroundStyle(Hub.text2).lineLimit(1)
+                    ViewThatFits(in: .vertical) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            wrapped(titleText(inFocus ? 15.5 : 13))
+                            wrapped(rangeText)
+                            if let l = event.location, height > 64 {
+                                Label(l, systemImage: "mappin").font(.hub(12)).foregroundStyle(Hub.text2).lineLimit(1)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 2) { wrapped(titleText(inFocus ? 15.5 : 13)); wrapped(rangeText) }
+                        VStack(alignment: .leading, spacing: 2) { wrapped(titleText(inFocus ? 15.5 : 13)); startText.lineLimit(1).fixedSize() }
+                        wrapped(titleText(inFocus ? 15.5 : 13))
+                        titleText(inFocus ? 15.5 : 13).lineLimit(height > 70 ? 3 : 1)
                     }
                 }
             }
@@ -857,4 +868,12 @@ struct EventBlock: View {
         .opacity(inFocus ? 1 : 0.8)
         .help(event.title + (event.location.map { "\n" + $0 } ?? ""))
     }
+
+    private func titleText(_ size: CGFloat) -> Text { Text(Hub.canonicalNames(event.title)).font(.hub(size, weight: size == 13.5 ? .semibold : .bold)) }
+    private var startText: Text { Text(EventBlock.tf.string(from: event.start)).font(.hub(12, weight: .semibold)).monospacedDigit().foregroundStyle(Hub.text2) }
+    private var rangeText: Text {
+        Text("\(EventBlock.tf.string(from: event.start)) – \(EventBlock.tf.string(from: event.end))")
+            .font(.hub(12.5, weight: .medium)).monospacedDigit().foregroundStyle(Hub.text2)
+    }
+    private func wrapped(_ t: Text) -> some View { t.lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
 }

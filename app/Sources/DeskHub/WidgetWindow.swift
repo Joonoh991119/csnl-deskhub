@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 /// 대시보드 색: 바닥판과 카드 — 테마(Theme.current)와 라이트/다크를 따른다
 enum Palette {
@@ -88,8 +89,99 @@ final class BackdropWindow: DesktopPanel {
     override var canBecomeKey: Bool { false }
 }
 
-/// 위젯 카드 창. 바탕화면 아이콘 위, 일반 앱 창 아래.
-final class WidgetWindow: DesktopPanel {
+// MARK: - 슬롯 창 두 종류 (1.0.0 A1, #55)
+
+/// 슬롯 하나의 창 — 일반 창(DeskHubAppWindow, 기본)과 바탕화면 패널(WidgetWindow, UserDefaults DeskHub.panelMode)을
+/// AppDelegate 가 한 경로로 쓰게 하는 작은 약속. 일반 창의 peeking 은 늘 false, zoomRestore·onFrameChange 는 쓰지 않는다
+@MainActor
+protocol DeskHubSlotWindow: NSWindow {
+    var slotID: String { get }
+    var kind: WidgetKind { get }
+    var chrome: WindowChromeState { get }
+    /// 비율 저장(config.json) — 패널 모드에서만 단다
+    var onFrameChange: ((NSRect) -> Void)? { get set }
+    var zoomRestore: NSRect? { get set }
+    var peeking: Bool { get set }
+    /// true = 제목 막대가 있는 일반 창
+    var isNormalWindow: Bool { get }
+    func setContent<V: View>(_ view: V, refresh: Bool)
+    func snapshot(to url: URL)
+}
+
+/// 일반 앱 창 (1.0.0 A1, 결정 D-1) — 제목 막대·닫기·최소화·확대·전체 화면, 다른 앱 창과 같은 층(.normal)·⌘Tab·윈도우 메뉴.
+/// 크기·위치는 시스템 프레임 자동 저장('NSWindow Frame DeskHub.<슬롯>', 결정 D-2) — 저장값이 없을 때만 config 비율 frame 으로 시작, config.json 은 쓰지 않는다
+final class DeskHubAppWindow: NSWindow, DeskHubSlotWindow {
+    let slotID: String
+    let kind: WidgetKind
+    let chrome: WindowChromeState
+    var onFrameChange: ((NSRect) -> Void)?
+    var zoomRestore: NSRect?
+    var peeking: Bool { get { false } set {} }
+    var isNormalWindow: Bool { true }
+    private var container: NSView!
+    private var hosting: NSView?
+    private var updatedSink: AnyCancellable?
+
+    init(slotID: String, kind: WidgetKind, frame: NSRect, title: String) {
+        self.slotID = slotID
+        self.kind = kind
+        self.chrome = WindowChromeState(slotID: slotID, normal: true)
+        super.init(contentRect: frame, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        isReleasedWhenClosed = false
+        level = .normal
+        collectionBehavior = [.managed, .participatesInCycle, .fullScreenPrimary]
+        isExcludedFromWindowsMenu = false
+        acceptsMouseMovedEvents = true
+        minSize = NSSize(width: 300, height: 220)
+        self.title = title
+        // content 가 아니라 frame 으로 — 제목 막대만큼 커지지 않게
+        setFrame(frame, display: false)
+
+        container = NSView(frame: NSRect(origin: .zero, size: contentRect(forFrameRect: frame).size))
+        container.autoresizingMask = [.width, .height]
+        let bg = AppearanceFillView(frame: container.bounds)   // 불투명 카드 바탕, 모서리 0·테두리 없음
+        bg.fill = Palette.card
+        bg.autoresizingMask = [.width, .height]
+        container.addSubview(bg)
+        contentView = container
+
+        let name = "DeskHub.\(slotID)"
+        setFrameUsingName(name)            // 저장값이 있으면 그것
+        setFrameAutosaveName(name)
+    }
+
+    func setContent<V: View>(_ view: V, refresh: Bool) {
+        hosting?.removeFromSuperview()
+        let h = NSHostingView(rootView: refresh ? AnyView(DisplayRefresh(view.environment(\.windowChrome, chrome)))
+                                                : AnyView(view.environment(\.windowChrome, chrome)))
+        h.frame = container.bounds
+        h.autoresizingMask = [.width, .height]
+        container.addSubview(h)
+        hosting = h
+    }
+
+    /// 부제 '갱신 HH:mm' — 허브 모델 lastUpdated 를 따른다
+    func followUpdates(_ updated: Published<Date?>.Publisher) {
+        updatedSink = updated.receive(on: RunLoop.main).sink { [weak self] d in
+            guard let d else { self?.subtitle = ""; return }
+            let f = DateFormatter(); f.locale = Locale(identifier: "ko_KR"); f.dateFormat = "HH:mm"
+            self?.subtitle = "갱신 " + f.string(from: d)
+        }
+    }
+
+    /// 자동 저장 이름을 놓는다 — 같은 슬롯 창을 다시 만들 때(설정 다시 읽기·모드 바꾸기) 새 창이 이름을 받게
+    func releaseAutosaveName() { setFrameAutosaveName("") }
+
+    func snapshot(to url: URL) {
+        let wid = CGWindowID(windowNumber)
+        guard let img = CGWindowListCreateImage(.null, .optionIncludingWindow, wid, [.boundsIgnoreFraming, .bestResolution]) else { return }
+        let rep = NSBitmapImageRep(cgImage: img)
+        if let data = rep.representation(using: .png, properties: [:]) { try? data.write(to: url) }
+    }
+}
+
+/// 위젯 카드 창. 바탕화면 아이콘 위, 일반 앱 창 아래. (1.0.0 부터 '바탕화면 패널 모드' 에서만)
+final class WidgetWindow: DesktopPanel, DeskHubSlotWindow {
     let slotID: String
     let kind: WidgetKind
     var onFrameChange: ((NSRect) -> Void)?
@@ -98,6 +190,7 @@ final class WidgetWindow: DesktopPanel {
     /// 확대 전 프레임 — nil 이 아니면 확대 중(비율을 저장하지 않는다, AppDelegate.frameChanged 가드). AppDelegate.toggleZoom 만 바꾼다
     var zoomRestore: NSRect? { didSet { chrome.zoomed = zoomRestore != nil } }
     override var peeking: Bool { didSet { chrome.peeking = peeking } }
+    var isNormalWindow: Bool { false }
     private var container: NSView!
     private var hosting: NSView?
 

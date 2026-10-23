@@ -179,6 +179,8 @@ struct ConferenceRow: Identifiable, Hashable {
 struct PaperRec: Identifiable, Hashable {
     let id: String; let title: String; let authors: String; let tier: String; let researcher: String; let doi: URL?
     var recommendation: String = ""; var presentPlanned: Bool = false; var sentAt: Date? = nil
+    /// APA 인용 (Notion 'APA' 원값 그대로, 1.0.0 C2) — Main 논문 카드 연도('(yyyy')
+    var apa: String = ""
 }
 /// 오늘의 실험 한 줄 (SLab 예약 · Prolific study — 장비 예약은 0.40.0 C5 부터 장비 카드)
 struct ExperimentRow: Identifiable, Hashable {
@@ -747,7 +749,8 @@ final class NotionHubModel: ObservableObject {
                          authors: Hub.cleanAuthors(NotionAPI.text(p, "저자")), tier: NotionAPI.text(p, "Tier"), researcher: NotionAPI.text(p, "Researcher"),
                          doi: URL(string: NotionAPI.text(p, "DOI")),
                          recommendation: Hub.noEmoji(NotionAPI.text(p, "Recommendation")).replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression),
-                         presentPlanned: NotionAPI.bool(p, "발표 예정"), sentAt: NotionAPI.date(p, "Sent At")?.date)
+                         presentPlanned: NotionAPI.bool(p, "발표 예정"), sentAt: NotionAPI.date(p, "Sent At")?.date,
+                         apa: NotionAPI.text(p, "APA"))
             }.filter { !$0.title.isEmpty }
             if !light || paperCommentsAt.map({ Date().timeIntervalSince($0) >= Self.commentsTTL }) ?? true {
                 settleWaits.insert("comments")
@@ -1641,122 +1644,401 @@ struct ActionButton: View {
 
 // MARK: - 위젯
 
+/// 1.0.0 위 탭 줄 표 (C1, #55 R2) — 탭 이름·뷰 rawValue 대응을 한 곳에. 순수(뷰·덤프·text-check v1-tab 이 같은 표).
+/// 탭 id: 일곱 탭 이름 그대로 · '오늘' · 'more:<HubViewMode rawValue>' · 'web:<config 탭 제목>'
+enum V1TabMap {
+    /// 탭 줄 순서 — 앞 여섯은 세그먼트, 시간표는 오른쪽 아이콘
+    static let tabs = ["Main", "일정", "GRM/Blitz", "실험/장비", "Members", "연구", "시간표"]
+    static let segments = Array(tabs.prefix(6))
+    /// 뷰 모드로 그리는 탭 (§5 ② — rawValue 는 갈래 A 가 HubViewMode 에 더한다)
+    static let modeTabs: [(raw: String, tab: String)] = [("schedule", "일정"), ("grmblitz", "GRM/Blitz"), ("lab", "실험/장비"), ("timetable", "시간표")]
+    /// '더 보기' 의 예전 뷰 (설계 §5 — 모두 유지)
+    static let moreModes = ["hub", "tower", "process", "board", "today", "grm", "me", "ambient"]
+    static let moreTitle = "더 보기"
+    /// 단추 최소 높이 (R9 — 44pt)
+    static let minButton: CGFloat = 44
+    static let defaultsKey = "DeskHub.v1Tab"
+
+    /// 좁을 때 짧은 글 (choices v1-tabrow 아이콘)
+    static func short(_ tab: String) -> String {
+        switch tab {
+        case "GRM/Blitz": return "GRM"
+        case "실험/장비": return "실험"
+        case "Members": return "멤버"
+        default: return tab
+        }
+    }
+    static func symbol(_ tab: String) -> String {
+        switch tab {
+        case "Main": return "house"
+        case "일정": return "calendar.badge.clock"
+        case "GRM/Blitz": return "person.3.sequence"
+        case "실험/장비": return "flask"
+        case "Members": return "person.3"
+        case "연구": return "books.vertical"
+        case "시간표": return "calendar"
+        default: return "ellipsis.circle"
+        }
+    }
+    /// 탭 id → 그 탭이 쓰는 뷰 rawValue (Main·Members·연구·오늘·웹은 nil)
+    static func modeRaw(forTab id: String) -> String? {
+        if id.hasPrefix("more:") { return String(id.dropFirst(5)) }
+        return modeTabs.first { $0.tab == id }?.raw
+    }
+    /// 뷰 rawValue → 탭 id (숫자 키·팝오버·--view·관제탑 돌아가기로 뷰가 바뀌었을 때)
+    static func tabID(forModeRaw raw: String) -> String {
+        if raw == "main" { return "Main" }
+        if let t = modeTabs.first(where: { $0.raw == raw }) { return t.tab }
+        return "more:" + raw
+    }
+    /// 뷰 rawValue → 탭 줄 표시 이름 — text-check v1-tab: tower → '더 보기 · Tower', schedule → '일정', hub → '더 보기 · Dashboard'
+    static func tab(forModeRaw raw: String) -> String { name(tabID(forModeRaw: raw), webLabel: { $0 }) }
+    /// 탭 id → 표시 이름 (choices 'tab <이름>'·버튼 글)
+    static func name(_ id: String, webLabel: (String) -> String) -> String {
+        if tabs.contains(id) { return id }
+        if id == "오늘" { return moreTitle + " · 오늘" }
+        if id.hasPrefix("more:") {
+            let raw = String(id.dropFirst(5))
+            return moreTitle + " · " + (HubViewMode(rawValue: raw)?.title ?? raw)
+        }
+        if id.hasPrefix("web:") { return moreTitle + " · " + webLabel(String(id.dropFirst(4))) }
+        return id
+    }
+    static func isMore(_ id: String) -> Bool { !tabs.contains(id) }
+}
+
+/// 탭 줄 단추 높이 측정 (C1 R9) — 단추마다 실제 높이를 받아 최솟값을 choices 'v1-btn-min' 으로
+@MainActor
+enum V1HeightProbe {
+    private static var heights: [String: [String: CGFloat]] = [:]
+    static func report(group: String, id: String, _ h: CGFloat) {
+        guard h > 0 else { return }
+        heights[group, default: [:]][id] = h
+        LayoutChoice.record(group, "\(Int(min(group: group).rounded(.down)))")
+    }
+    static func min(group: String) -> CGFloat { heights[group]?.values.min() ?? 0 }
+}
+
+extension View {
+    /// 단추 높이를 V1HeightProbe 에 (그려질 때·크기가 바뀔 때)
+    func v1HeightProbe(_ group: String, _ id: String) -> some View {
+        background(GeometryReader { g in
+            Color.clear
+                .onAppear { MainActor.assumeIsolated { V1HeightProbe.report(group: group, id: id, g.size.height) } }
+                .onChange(of: g.size.height) { _, h in MainActor.assumeIsolated { V1HeightProbe.report(group: group, id: id, h) } }
+        })
+    }
+}
+
+/// 탭 줄 단추 모양 — 선택 = Hub.ink 채움 + Hub.onAccent, 나머지 Hub.fillNeutral + Hub.text, 누르는 동안 Hub.text 14% (hover 없이 보임)
+struct V1TabButtonStyle: ButtonStyle {
+    var selected = false
+    var probeID: String
+    /// 높이 기록 묶음 — 탭 줄 'v1-btn-min', Main 단추 'main-btn-min'(C2)
+    var probeGroup = "v1-btn-min"
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.hub(15, weight: selected ? .bold : .semibold))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 14)
+            .frame(minHeight: V1TabMap.minButton)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(selected ? Hub.ink : Hub.fillNeutral))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(configuration.isPressed ? Hub.text.opacity(0.14) : Color.clear))
+            .foregroundStyle(selected ? Hub.onAccent : Hub.text)
+            .contentShape(Rectangle())
+            .v1HeightProbe(probeGroup, probeID)
+    }
+}
+
 struct NotionHubWidget: View {
     @ObservedObject var model: NotionHubModel
     let title: String
     let tabs: [HubTab]
     let tabControllers: [WebController]
-    @State private var tab: Int = 0      // 0 = 고른 뷰(HubViewSwitch), 1... = 탭, todayTab = 오늘 시간표
+    /// 고른 탭 id (V1TabMap) — 이 맥 UserDefaults DeskHub.v1Tab, 없으면 Main (1.0.0 C1)
+    @State private var tab: String = UserDefaults.standard.string(forKey: V1TabMap.defaultsKey) ?? "Main"
+    @State private var moreOpen = false
     @ObservedObject private var views = ViewModeStore.shared
-    /// --key tab:<제목>|tab:<번호> (0.37.0 C7, 스냅샷용) — KeyBus 로 받아 탭을 고른다
+    /// --key tab:<이름> (0.37.0 C7, 스냅샷용) — KeyBus 로 받아 탭을 고른다
     @ObservedObject private var bus = KeyBus.shared
     /// 글자 배율·색 프리셋 (0.37.0 C3) — 바뀌면 탭 줄+본문만 .id 로 다시 만든다(머리·'글자' 판·고른 탭은 그대로)
     @ObservedObject private var display = HubDisplay.shared
+    /// 창 방식 (§5 ① — 갈래 A 가 메뉴·--key panelmode: 로 쓴다). false = 일반 창(머리 없음, 탭 줄이 맨 위)
+    @AppStorage("DeskHub.panelMode") private var panelMode = false
     static let todayTab = 900
-    /// '연구' 탭 (0.39.0 C1, RT-TAB) — config 밖 가상 탭: 분야 최근 이슈 + 논문 추천 전체 (ResearchTab.swift). 탭 줄에 늘 보인다
+    /// '연구' 탭 (0.39.0 C1, RT-TAB) — config 밖 가상 탭: 분야 최근 이슈 + 논문 추천 전체 (ResearchTab.swift)
     static let researchTab = 901
-    /// 'CSNL GRM' 탭은 웹뷰 대신 발표 순번 화면 (랩장 2026-10-14, #18 — 순번을 알기 위한 탭)
-    /// 'Members' 탭은 웹뷰 대신 연구원 현황판 (0.37.0 C7 — 탭 이름·설정 그대로, 탭 대체 아님)
+    /// 'CSNL GRM'·'Members' config 탭은 웹뷰 대신 앱 화면 — 1.0.0 부터 GRM/Blitz·Members 탭이 맡는다(탭 이름·설정 그대로)
     static func isNative(_ t: HubTab) -> Bool { t.title == "CSNL GRM" || t.title == "Members" }
     static func tabSymbol(_ t: HubTab) -> String { t.title == "Members" ? "person.3" : (t.title == "CSNL GRM" ? "list.number" : "doc.text") }
-    /// 탭 줄 표시 이름 (SMJ #28, 0.35.0) — 'CSNL' 만으로는 Notion 웹뷰인지 알 수 없어 'CSNL Notion' 으로 보인다.
-    /// 표시만 바꾼다: 설정 기본값·사용자 config.json·isNative 판정·창 머리 제목은 그대로. 사용자가 제목을 바꿔 뒀으면 그 값을 쓴다
+    /// 탭 줄 표시 이름 (SMJ #28, 0.35.0) — 'CSNL' 만으로는 Notion 웹뷰인지 알 수 없어 'CSNL Notion' 으로 보인다
     static func tabLabel(_ t: HubTab) -> String { t.title == "CSNL" ? "CSNL Notion" : t.title }
+    /// 뷰를 밖에서 같은 값으로 다시 골라도(onChange 없음) 탭을 맞추게 — --view 의 분산 알림
+    private static let viewNote = DistributedNotificationCenter.default()
+        .publisher(for: Notification.Name(AppDelegate.bundleID + ".view")).receive(on: DispatchQueue.main)
+
+    private static let dumpNote = DistributedNotificationCenter.default()
+        .publisher(for: Notification.Name(AppDelegate.bundleID + ".dumptext")).receive(on: DispatchQueue.main)
+
+    private func writeMainDump(dir: String) {
+        let url = URL(fileURLWithPath: dir, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let modeTitles: [String] = V1TabMap.moreModes.map { HubViewMode(rawValue: $0)?.title ?? $0 }
+        let webTitles: [String] = webTabs.map { Self.tabLabel($0.t) }
+        let more: [String] = modeTitles + ["오늘"] + webTitles
+        var head = "[탭] 고른 " + tabName(tab)
+        head += " · 탭 " + V1TabMap.tabs.joined(separator: "|")
+        head += " · 더 보기 " + more.joined(separator: "|")
+        head += " · 창 " + (panelMode ? "panel" : "normal")
+        let lines: [String] = [head, ""] + model.mainDumpLines()
+        let text = lines.joined(separator: "\n") + "\n"
+        try? text.write(to: url.appendingPathComponent("main.txt"), atomically: true, encoding: .utf8)
+    }
+
+    private var webTabs: [(i: Int, t: HubTab)] { tabs.enumerated().filter { !Self.isNative($0.element) }.map { ($0.offset, $0.element) } }
+    private func webIndex(_ id: String) -> Int? {
+        guard id.hasPrefix("web:") else { return nil }
+        let t = String(id.dropFirst(4))
+        return tabs.firstIndex { $0.title == t && !Self.isNative($0) }
+    }
+    private func tabName(_ id: String) -> String {
+        V1TabMap.name(id) { t in tabs.first { $0.title == t }.map(Self.tabLabel) ?? t }
+    }
 
     var body: some View {
-        WidgetChrome(style: WidgetStyle(kind: .notionhub, title: title),
-                     subtitle: model.lastUpdated.map { "Notion · 갱신 " + Hub.time($0) } ?? "Notion") {
-            IconButton(symbol: "textformat.size", help: "Display — 글자 크기·색 (이 맥에만 저장)", label: "Display") {
-                withAnimation(.easeOut(duration: 0.12)) { display.panelOpen.toggle() }
+        Group {
+            if panelMode {
+                WidgetChrome(style: WidgetStyle(kind: .notionhub, title: title),
+                             subtitle: model.lastUpdated.map { "Notion · 갱신 " + Hub.time($0) } ?? "Notion") {
+                    IconButton(symbol: "textformat.size", help: "Display — 글자 크기·색 (이 맥에만 저장)", label: "Display") { toggleDisplay() }
+                    IconButton(symbol: "arrow.clockwise", help: "지금 새로고침") { Task { await model.refresh() } }
+                    IconButton(symbol: "arrow.up.forward.app", help: "Notion 앱에서 CSNL 열기") { model.openInApp(id: model.cfg.csnlPageID) }
+                } content: { inner }
+            } else {
+                // 일반 창 (1.0.0 C1, R2) — 46pt 머리 없이 시스템 제목 막대 바로 아래 탭 줄. 머리 단추는 탭 줄 오른쪽 끝
+                inner.background(Hub.card)
             }
-            IconButton(symbol: "arrow.clockwise", help: "지금 새로고침") { Task { await model.refresh() } }
-            IconButton(symbol: "arrow.up.forward.app", help: "Notion 앱에서 CSNL 열기") { model.openInApp(id: model.cfg.csnlPageID) }
-        } content: {
+        }
+        .onReceive(bus.$event.dropFirst().compactMap { $0 }) { e in selectTab(e.key) }   // 구독 때 받는 지난 값은 건너뜀
+        // main.txt (1.0.0 C2) — --dump-text 와 같은 분산 알림. [탭] 고른 탭·목록·창 방식 + [Main] 네 칸(뷰와 같은 함수)
+        .onReceive(Self.dumpNote) { note in writeMainDump(dir: (note.object as? String) ?? NSTemporaryDirectory()) }
+        .onReceive(Self.viewNote) { note in
+            guard let raw = note.object as? String else { return }
+            if raw == "main" || HubViewMode(rawValue: raw) != nil || V1TabMap.modeTabs.contains(where: { $0.raw == raw }) { choose(V1TabMap.tabID(forModeRaw: raw)) }
+        }
+        // 숫자 키·팝오버·deskhub://view·관제탑 돌아가기로 뷰를 고르면 탭을 맞춘다. 같은 뷰를 다시 골라도(값 그대로) 받도록 onChange 대신
+        // $mode 구독 — Main 탭에 있을 때 지금 뷰를 다시 고르면 탭이 Main 에 머물던 것 (검증 1 리뷰). choose() 는 다를 때만 mode 를 써서 되먹임 없음
+        .onReceive(views.$mode.dropFirst()) { m in
+            let id = V1TabMap.tabID(forModeRaw: m.rawValue)
+            if id != tab { setTab(id) }
+        }
+        // 고른 탭 이름을 windows.txt choices 'tab <이름>' 으로 (0.39.0 C1 — 스냅샷이 어느 탭인지 글로 확인)
+        .onChange(of: tab, initial: true) { _, t in LayoutChoice.record("tab", tabName(t)) }
+        .onAppear {
+            LayoutChoice.record("v1-tabs", V1TabMap.tabs.joined(separator: "|"))
+            // 저장된 탭이 뷰 모드 탭이면 그 뷰로 (재실행 뒤 마지막 탭 유지)
+            if let raw = V1TabMap.modeRaw(forTab: tab), let m = HubViewMode(rawValue: raw), views.mode != m { views.mode = m }
+            if webIndex(tab) == nil && tab.hasPrefix("web:") { setTab("Main") }
+        }
+    }
+
+    private var inner: some View {
+        VStack(spacing: 0) {
+            tabBar
+            if let i = webIndex(tab) { webToolbar(tabControllers[i]) }
+            Divider().opacity(0.5)
             ZStack(alignment: .topTrailing) {
-                VStack(spacing: 0) {
-                    tabBar
-                    Divider().opacity(0.5)
-                    // 가상 탭(900·901)은 tabs[tab-1] 을 읽는 분기보다 앞에 있어야 한다 (0.39.0 C1)
-                    if tab == 0 { HubViewSwitch(model: model) }
-                    else if tab == Self.todayTab, let cal = model.todayCalendar { TodayView(cal: cal) }
-                    else if tab == Self.researchTab { ResearchTabView(model: model) }
-                    // 안전 가드 — 캘린더 없는 '오늘'(900) 등 config 밖 번호는 고른 뷰로 (tabs[899] 충돌 방지)
-                    else if tab > tabs.count { HubViewSwitch(model: model) }
-                    else if tabs[tab - 1].title == "Members" { MembersBoardView(model: model, notionURL: URL(string: tabs[tab - 1].url)) }
-                    else if Self.isNative(tabs[tab - 1]) { GRMOrderView(model: model, notionURL: URL(string: tabs[tab - 1].url), mapDetail: false) }
-                    else {
-                        let c = tabControllers[tab - 1]
-                        WebArea(controller: c).onAppear { c.ensureLoaded() }
-                    }
-                }
-                .id(display.revision)
+                content.frame(maxWidth: .infinity, maxHeight: .infinity)
                 if display.panelOpen {
                     DisplaySettingsPanel().padding(.top, 6).padding(.trailing, 10).transition(.opacity)
                 }
             }
-            .onReceive(bus.$event.dropFirst().compactMap { $0 }) { e in selectTab(e.key) }   // 구독 때 받는 지난 값은 건너뜀
-            // 고른 탭 이름을 windows.txt choices 'tab <이름>' 으로 (0.39.0 C1 — 스냅샷이 어느 탭인지 글로 확인)
-            .onChange(of: tab, initial: true) { _, t in LayoutChoice.record("tab", tabName(t)) }
+        }
+        .id(display.revision)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch tab {
+        case "Main": MainV1View(model: model)
+        case "Members": MembersBoardView(model: model, notionURL: URL(string: tabs.first { $0.title == "Members" }?.url ?? ""))
+        case "연구": ResearchTabView(model: model)
+        case "오늘":
+            if let cal = model.todayCalendar { TodayView(cal: cal) }
+            else { notice("캘린더가 연결되지 않았습니다") }
+        default:
+            if let i = webIndex(tab) {
+                let c = tabControllers[i]
+                WebArea(controller: c).onAppear { c.ensureLoaded() }
+            } else if let raw = V1TabMap.modeRaw(forTab: tab) {
+                // §5 ② — 일정·GRM/Blitz·실험/장비 뷰는 갈래 A 가 HubViewMode 에 더한다. 없으면 한 줄
+                if HubViewMode(rawValue: raw) != nil { HubViewSwitch(model: model) }
+                else { notice("이 화면은 1.0.0 합본에서 보입니다") }
+            } else { MainV1View(model: model) }
         }
     }
 
-    /// 탭 번호 → 탭 줄 표시 이름 (choices 기록용)
-    private func tabName(_ t: Int) -> String {
-        if t == 0 { return views.mode.title }
-        if t == Self.todayTab { return "오늘" }
-        if t == Self.researchTab { return "연구" }
-        return t >= 1 && t <= tabs.count ? Self.tabLabel(tabs[t - 1]) : "\(t)"
+    private func notice(_ s: String) -> some View {
+        Text(s).font(.hub(15)).foregroundStyle(Hub.text2).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// 'tab:Members' · 'tab:0'(고른 뷰) · 'tab:2' · 'tab:연구'|'tab:901' — 제목(표시 이름 포함)이나 번호
+    private func toggleDisplay() { withAnimation(.easeOut(duration: 0.12)) { display.panelOpen.toggle() } }
+
+    private func setTab(_ id: String) {
+        tab = id
+        UserDefaults.standard.set(id, forKey: V1TabMap.defaultsKey)
+    }
+    /// 탭 고르기 — 뷰 모드 탭이면 ViewModeStore 도 그 뷰로(§5 ②)
+    private func choose(_ id: String) {
+        setTab(id)
+        if let raw = V1TabMap.modeRaw(forTab: id), let m = HubViewMode(rawValue: raw), views.mode != m { views.mode = m }
+    }
+
+    /// --key tab:<Main|일정|GRM/Blitz|실험/장비|Members|연구|시간표|오늘|CSNL Notion|more:<rawValue>>
+    /// + 예전 이름 호환: tab:CSNL GRM → GRM/Blitz, tab:0 → Main, tab:900 → 오늘, tab:901 → 연구, 숫자 = config 탭, 뷰 이름(Tower 등) → 더 보기
     private func selectTab(_ key: String) {
         guard key.hasPrefix("tab:") else { return }
         let q = String(key.dropFirst(4))
-        if q == "연구" || Int(q) == Self.researchTab { tab = Self.researchTab; return }
-        if let n = Int(q) { if n == 0 || (1...tabs.count).contains(n) { tab = n }; return }
-        if q == "오늘", model.todayCalendar != nil { tab = Self.todayTab; return }
-        if let i = tabs.firstIndex(where: { $0.title == q || Self.tabLabel($0) == q }) { tab = i + 1 }
+        if V1TabMap.tabs.contains(q) || q == "오늘" { choose(q); return }
+        if q.hasPrefix("more:") {
+            let raw = String(q.dropFirst(5))
+            if HubViewMode(rawValue: raw) != nil || V1TabMap.modeTabs.contains(where: { $0.raw == raw }) { choose(V1TabMap.tabID(forModeRaw: raw)) }
+            else { NSSound.beep() }
+            return
+        }
+        if let n = Int(q) {
+            if n == 0 { choose("Main") }
+            else if n == Self.todayTab { choose("오늘") }
+            else if n == Self.researchTab { choose("연구") }
+            else if n >= 1 && n <= tabs.count { choose(configTabID(tabs[n - 1])) }
+            return
+        }
+        if let t = tabs.first(where: { $0.title == q || Self.tabLabel($0) == q }) { choose(configTabID(t)); return }
+        if let m = HubViewMode.allCases.first(where: { $0.title == q || $0.rawValue == q }) { choose(V1TabMap.tabID(forModeRaw: m.rawValue)); return }
+        if q == "Main" || q == "main" { choose("Main") }
+    }
+    private func configTabID(_ t: HubTab) -> String {
+        if t.title == "Members" { return "Members" }
+        if t.title == "CSNL GRM" { return "GRM/Blitz" }
+        return "web:" + t.title
     }
 
+    // MARK: 탭 줄
+
     private var tabBar: some View {
-        HStack(spacing: 4) {
-            tabButton(0, views.mode.title, views.mode.symbol)
-            ViewModeMenu { tab = 0 }.padding(.trailing, 4)
-            if model.todayCalendar != nil { tabButton(Self.todayTab, "오늘", "calendar.day.timeline.left") }
-            tabButton(Self.researchTab, "연구", "books.vertical")
-            ForEach(Array(tabs.enumerated()), id: \.offset) { i, t in tabButton(i + 1, Self.tabLabel(t), Self.tabSymbol(t)) }
-            Spacer()
-            // 웹 도구 막대는 config 웹 탭에서만 — 가상 탭(900·901)은 tabs 범위 밖이라 먼저 거른다 (0.39.0 C1, 901 이면 tabs[900] 충돌)
-            if tab > 0 && tab <= tabs.count && !Self.isNative(tabs[tab - 1]) {
-                let c = tabControllers[tab - 1]
-                HStack(spacing: 4) {
-                    IconButton(symbol: "house", help: "페이지 처음으로") { c.home() }
-                    IconButton(symbol: "chevron.left", help: "뒤로") { c.webView.goBack() }
-                    IconButton(symbol: "arrow.clockwise", help: "새로고침") { c.reload() }
-                    IconButton(symbol: "sidebar.left", help: "Notion 사이드바 보이기/숨기기") {
-                        c.webView.evaluateJavaScript("window.__deskhubToggleSidebar && window.__deskhubToggleSidebar()") { _, _ in }
-                    }
-                    IconButton(symbol: "arrow.up.forward.app", help: "이 페이지를 Notion 에서 열기") {
-                        NotionLink.open(url: c.currentURL ?? c.homeURL)
-                    }
+        HStack(spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                tabRow(short: false).layoutChoice("v1-tabrow", "글")
+                tabRow(short: true).layoutChoice("v1-tabrow", "아이콘")
+            }
+            Spacer(minLength: 8)
+            if !panelMode {
+                HStack(spacing: 6) {
+                    actionButton("textformat.size", "Display — 글자 크기·색 (이 맥에만 저장)", id: "display") { toggleDisplay() }
+                    actionButton("arrow.clockwise", "지금 새로고침", id: "refresh") { Task { await model.refresh() } }
+                    actionButton("arrow.up.forward.app", "Notion 앱에서 CSNL 열기", id: "notion") { model.openInApp(id: model.cfg.csnlPageID) }
                 }
-                .buttonStyle(HeaderButtonStyle())
+                .fixedSize()
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
     }
 
-    private func tabButton(_ i: Int, _ label: String, _ symbol: String) -> some View {
-        Button { tab = i } label: {
-            HStack(spacing: 5) { Image(systemName: symbol); Text(label) }
-                .font(.hub(12, weight: tab == i ? .bold : .medium))
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tab == i ? Hub.ink.opacity(0.12) : Color.clear))
-                .foregroundStyle(tab == i ? Hub.ink : Hub.text2)
+    private func tabRow(short: Bool) -> some View {
+        HStack(spacing: 6) {
+            ForEach(V1TabMap.segments, id: \.self) { t in
+                Button { choose(t) } label: {
+                    HStack(spacing: 6) { Image(systemName: V1TabMap.symbol(t)); Text(short ? V1TabMap.short(t) : t) }
+                }
+                .buttonStyle(V1TabButtonStyle(selected: tab == t, probeID: "seg-" + t))
+                .help(t)
+            }
+            Button { choose("시간표") } label: { Image(systemName: V1TabMap.symbol("시간표")) }
+                .buttonStyle(V1TabButtonStyle(selected: tab == "시간표", probeID: "timetable"))
+                .help("시간표")
+            moreButton(short: short)
+        }
+        .fixedSize()
+    }
+
+    /// '더 보기' — 예전 뷰(모두 유지) · 오늘 · config 웹 탭. 고르면 버튼 글이 '더 보기 · <제목>'
+    private func moreButton(short: Bool) -> some View {
+        let picked = V1TabMap.isMore(tab)
+        return Button { moreOpen.toggle() } label: {
+            HStack(spacing: 6) {
+                Text(picked && !short ? tabName(tab) : V1TabMap.moreTitle)
+                Image(systemName: "chevron.down").font(.hub(11, weight: .bold))
+            }
+        }
+        .buttonStyle(V1TabButtonStyle(selected: picked, probeID: "more"))
+        .help("예전 화면 — Dashboard · Tower · Pipeline · Board · Today · GRM Weekly · Me · Ambient · 오늘 · CSNL Notion")
+        .popover(isPresented: $moreOpen, arrowEdge: .bottom) { moreList }
+    }
+
+    private var moreList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(V1TabMap.moreModes, id: \.self) { raw in
+                if let m = HubViewMode(rawValue: raw) {
+                    moreRow(id: "more:" + raw, title: m.title, blurb: m.blurb, symbol: m.symbol)
+                }
+            }
+            Divider().padding(.vertical, 4)
+            moreRow(id: "오늘", title: "오늘", blurb: "캘린더 오늘 하루를 크게", symbol: "calendar.day.timeline.left")
+            ForEach(webTabs, id: \.i) { w in
+                moreRow(id: "web:" + w.t.title, title: Self.tabLabel(w.t), blurb: "Notion 페이지", symbol: Self.tabSymbol(w.t))
+            }
+        }
+        .padding(8)
+        .frame(minWidth: Hub.s(320))
+    }
+
+    private func moreRow(id: String, title: String, blurb: String, symbol: String) -> some View {
+        Button { moreOpen = false; choose(id) } label: {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).frame(width: Hub.s(20))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.hub(15, weight: tab == id ? .bold : .semibold))
+                    Text(blurb).font(.hub(12)).foregroundStyle(Hub.text2).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(minHeight: V1TabMap.minButton)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tab == id ? Hub.ink.opacity(0.12) : Color.clear))
+            .foregroundStyle(tab == id ? Hub.ink : Hub.text)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
+
+    private func actionButton(_ symbol: String, _ help: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: symbol).frame(minWidth: V1TabMap.minButton - 28) }
+            .buttonStyle(V1TabButtonStyle(selected: false, probeID: "act-" + id))
+            .help(help)
+    }
+
+    /// 웹 탭(CSNL Notion 등)의 도구 막대 — 탭 줄 아래 한 줄
+    private func webToolbar(_ c: WebController) -> some View {
+        HStack(spacing: 4) {
+            Text(tabName(tab)).font(.hub(13, weight: .semibold)).foregroundStyle(Hub.text2)
+            Spacer()
+            HStack(spacing: 4) {
+                IconButton(symbol: "house", help: "페이지 처음으로") { c.home() }
+                IconButton(symbol: "chevron.left", help: "뒤로") { c.webView.goBack() }
+                IconButton(symbol: "arrow.clockwise", help: "새로고침") { c.reload() }
+                IconButton(symbol: "sidebar.left", help: "Notion 사이드바 보이기/숨기기") {
+                    c.webView.evaluateJavaScript("window.__deskhubToggleSidebar && window.__deskhubToggleSidebar()") { _, _ in }
+                }
+                IconButton(symbol: "arrow.up.forward.app", help: "이 페이지를 Notion 에서 열기") {
+                    NotionLink.open(url: c.currentURL ?? c.homeURL)
+                }
+            }
+            .buttonStyle(HeaderButtonStyle())
+        }
+        .padding(.horizontal, 12).padding(.bottom, 6)
+    }
 }
+
 
 // MARK: - Paper Blitz pptx 읽기 (NAS)
 

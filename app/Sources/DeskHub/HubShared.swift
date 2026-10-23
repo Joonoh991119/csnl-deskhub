@@ -771,14 +771,15 @@ struct CardFooter: View {
             let open = store.isOpen(key)
             VStack(spacing: 0) {
                 if divider { RowDivider() }
+                // 줄 전체가 44pt 누름 칸 + 누르는 동안 채움 (1.0.0 B1, 결정 D-13)
                 Button { store.toggle(key) } label: {
                     Text(open ? "▾ 접기" : "▸ 더 보기 · \(more)개")
                         .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
-                        .frame(maxWidth: .infinity, alignment: .trailing).contentShape(Rectangle())
+                        .padding(.horizontal, cs.rowH)
+                        .frame(maxWidth: .infinity, minHeight: TapTarget.min, alignment: .trailing).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressFillStyle(cornerRadius: 6))
                 .help(caption)   // 출처 · 기준 · n · 정의 id — 마우스를 올리면 (펼침·접힘은 이 맥에 저장)
-                .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
             }
         }
     }
@@ -815,6 +816,35 @@ struct MoreToggle: View {
 // 방식 (b) 중앙 글자 헬퍼: 모든 글자를 Font.hub 로 그려 배율을 곱한다. 루트 확대(scale 변환)는 쓰지 않는다 —
 // 창 안 NSViewRepresentable(창 끌기·손잡이·Notion 웹뷰)이 SwiftUI 변환을 따르지 않아 클릭 좌표가 어긋나고 글자가 흐려지므로
 
+/// 누름 칸 최소 높이 — 새 화면·Display 판·SmallAction·'▸ 더 보기' 줄이 같은 값을 쓴다 (1.0.0 B1, R9). 배율과 무관한 pt
+enum TapTarget {
+    static let min: CGFloat = 44
+}
+
+/// 누르는 동안 바탕이 Hub.text 0.14 로 채워지는 단추 모양 — hover 없이도(터치·원격 클릭) 눌림이 보인다 (1.0.0 B1)
+struct PressFillStyle: ButtonStyle {
+    var cornerRadius: CGFloat = 8
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .overlay(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Hub.text.opacity(configuration.isPressed ? 0.14 : 0)).allowsHitTesting(false))
+            .contentShape(Rectangle())
+    }
+}
+
+/// 단추 높이 최솟값을 모으는 선호 키 — `.tapProbe()` 가 올리고 판·창이 onPreferenceChange 로 받아 기록한다
+struct TapHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = Swift.min(value, nextValue()) }
+}
+
+extension View {
+    /// 이 단추의 높이를 TapHeightKey 로 올린다 (최솟값으로 합쳐짐)
+    func tapProbe() -> some View {
+        background(GeometryReader { g in Color.clear.preference(key: TapHeightKey.self, value: g.size.height) })
+    }
+}
+
 extension Font {
     /// 시스템 글꼴 × 글자 배율(HubDisplay.scale). 앱 안 글자 크기는 모두 이것으로 그린다 (0.37.0 기계 치환).
     /// 0.42.0 C7: Display 판에서 번들 글꼴을 고르면(기본 system) 그 PostScript 이름으로 — design(.rounded 등)은 빠지고(숫자 정렬은 monospacedDigit 이 맡음),
@@ -831,13 +861,15 @@ extension Hub {
     static func s(_ w: CGFloat) -> CGFloat { (w * HubDisplay.scale).rounded() }
 }
 
-/// 이 맥의 글자 배율·색 프리셋 — UserDefaults DeskHub.textScale(0.9…1.6, 0.1 단위)·DeskHub.colorPreset(default|contrast|dark).
+/// 이 맥의 글자 배율·색 프리셋 — UserDefaults DeskHub.textScale(0.9…2.0, 0.1 단위, 저장값이 없으면 defaultScale 1.5 — 1.0.0 B1)·DeskHub.colorPreset(default|contrast|dark).
 /// config.json 에는 쓰지 않는다. 값이 바뀌면 revision 이 올라 창 본문을 다시 만든다(Notion 재조회·창 재생성 없음).
 /// 시작 값 훅(스냅샷용): DESKHUB_TEXT_SCALE=1.3 · DESKHUB_COLOR_PRESET=contrast
 @MainActor
 final class HubDisplay: ObservableObject {
     static let shared = HubDisplay()
-    static let range: ClosedRange<Double> = 0.9...1.6
+    static let range: ClosedRange<Double> = 0.9...2.0
+    /// 저장값이 없는 맥의 배율 — init 과 Display 판 '기본' 단추가 같이 읽는다 (1.0.0 B1, 결정 D-12: 이미 고른 값은 그대로)
+    static let defaultScale: Double = 1.5
     static let presets = ["default", "contrast", "dark"]
     static let presetNames = ["default": "Default", "contrast": "High Contrast", "dark": "Dark"]
     /// Font.hub 가 읽는 배율 (뷰 밖에서도 읽도록 정적)
@@ -901,7 +933,7 @@ final class HubDisplay: ObservableObject {
 
     private init() {
         let env = ProcessInfo.processInfo.environment, d = UserDefaults.standard
-        var s = d.object(forKey: "DeskHub.textScale") as? Double ?? 1.0
+        var s = d.object(forKey: "DeskHub.textScale") as? Double ?? Self.defaultScale
         if let v = env["DESKHUB_TEXT_SCALE"].flatMap(Double.init) { s = v }
         textScale = Self.clamp(s)
         var p = d.string(forKey: "DeskHub.colorPreset") ?? "default"
@@ -970,20 +1002,24 @@ struct DisplaySettingsPanel: View {
                 Text("이 맥에만 저장").font(.hub(11)).foregroundStyle(Hub.text3)
                 Spacer(minLength: 4)
                 Button { display.panelOpen = false } label: {
-                    Image(systemName: "xmark").font(.hub(11, weight: .bold)).frame(width: 24, height: 24).contentShape(Rectangle())
+                    HStack(spacing: 4) { Text("닫기").font(.hub(12, weight: .medium)); Image(systemName: "xmark").font(.hub(11, weight: .bold)) }
+                        .padding(.horizontal, 8).frame(minWidth: TapTarget.min, minHeight: TapTarget.min).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain).foregroundStyle(Hub.text2).help("닫기 (Esc)")
+                .buttonStyle(PressFillStyle()).foregroundStyle(Hub.text2).help("닫기 (Esc)").tapProbe()
             }
             Text("Text size").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
             HStack(spacing: 8) {
                 stepButton("가−", by: -0.1).help("작게 (0.1배)")
                 Slider(value: $draft, in: HubDisplay.range, step: 0.1) { editing in if !editing { display.setScale(draft) } }
-                    .frame(minWidth: Hub.s(120))
+                    .frame(minWidth: Hub.s(90))
                 stepButton("가+", by: 0.1).help("크게 (0.1배)")
                 Text(String(format: "%.1f배", draft)).font(.hub(13, weight: .semibold, design: .rounded)).monospacedDigit()
                     .frame(width: Hub.s(44), alignment: .trailing)
-                Button("기본") { draft = 1.0; display.setScale(1.0) }
-                    .buttonStyle(.plain).font(.hub(12, weight: .medium)).foregroundStyle(Hub.ink).help("1.0배로")
+                Button { draft = HubDisplay.defaultScale; display.setScale(HubDisplay.defaultScale) } label: {
+                    Text("기본").font(.hub(12, weight: .medium)).padding(.horizontal, 8)
+                        .frame(minWidth: TapTarget.min, minHeight: TapTarget.min).contentShape(Rectangle())
+                }
+                .buttonStyle(PressFillStyle()).foregroundStyle(Hub.ink).help(String(format: "%.1f배로", HubDisplay.defaultScale)).tapProbe()
             }
             Text("Font").font(.hub(12, weight: .semibold)).foregroundStyle(Hub.text2)
             FlowLayout(spacing: 6, lineSpacing: 6) {
@@ -992,12 +1028,12 @@ struct DisplaySettingsPanel: View {
                     let ok = f == "system" || HubDisplay.registered(f)
                     Button { display.setFont(f) } label: {
                         Text((HubDisplay.fontNames[f] ?? f) + (ok ? "" : " (없음)")).font(.hub(12.5, weight: .semibold))
-                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .padding(.horizontal, 10).frame(minHeight: TapTarget.min)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Hub.ink : Hub.fillNeutral))
                             .foregroundStyle(on ? Hub.onAccent : (ok ? Hub.text : Hub.text3))
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressFillStyle()).tapProbe()
                     .help(f == "system" ? "시스템 글꼴 — default" : (ok ? "번들 글꼴 · SIL OFL 1.1" : "이 앱에 글꼴 파일이 없어 시스템 글꼴로 대체됩니다"))
                 }
             }
@@ -1007,12 +1043,12 @@ struct DisplaySettingsPanel: View {
                     let on = display.colorPreset == p
                     Button { display.setPreset(p) } label: {
                         Text(HubDisplay.presetNames[p] ?? p).font(.hub(12.5, weight: .semibold))
-                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .padding(.horizontal, 12).frame(minHeight: TapTarget.min)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Hub.ink : Hub.fillNeutral))
                             .foregroundStyle(on ? Hub.onAccent : Hub.text)
                             .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressFillStyle()).tapProbe()
                     .help(p == "default" ? "설정 파일의 테마·외형 그대로" : (p == "contrast" ? "글자를 더 진하게 — 밝은 곳·먼 거리" : "어두운 바탕"))
                 }
             }
@@ -1023,15 +1059,21 @@ struct DisplaySettingsPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Hub.divider))
         .foregroundStyle(Hub.text)
         .onChange(of: display.textScale) { _, v in draft = v }
+        // 판 단추 높이 최솟값 → windows.txt choices 'display-btn-min <pt>' (1.0.0 B1)
+        .onPreferenceChange(TapHeightKey.self) { h in
+            guard h.isFinite else { return }
+            MainActor.assumeIsolated { LayoutChoice.record("display-btn-min", "\(Int(h.rounded(.down)))") }
+        }
     }
 
     private func stepButton(_ label: String, by d: Double) -> some View {
         Button { let v = HubDisplay.clamp(display.textScale + d); draft = v; display.setScale(v) } label: {
-            Text(label).font(.hub(12, weight: .semibold)).padding(.horizontal, 7).padding(.vertical, 3)
+            Text(label).font(.hub(12, weight: .semibold)).padding(.horizontal, 9)
+                .frame(minWidth: TapTarget.min, minHeight: TapTarget.min)
                 .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Hub.fillNeutral))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressFillStyle(cornerRadius: 6)).tapProbe()
     }
 }
 

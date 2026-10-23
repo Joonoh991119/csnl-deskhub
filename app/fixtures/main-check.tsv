@@ -1,0 +1,83 @@
+# 1.0.0 Main 탭 (C2, #55 R3 R4 R5) — DeskHub --text-check 로 돈다. 줄 형식: 종류<TAB>입력<TAB>기대값. 화면·main.txt 와 같은 함수(MainV1.swift)
+# main-today — 'now=yyyy-MM-ddTHH:mm;cal=HH:mm-HH:mm/제목|…;allday=제목|…;cls=HH:mm-HH:mm/과목|…;conf=이름/yyyy-MM-dd(초록 마감)|…' → 행 ' / ' | '없음'
+# (a) 진행 중 포함 · 끝난 것 제외
+main-today	now=2026-10-23T15:00;cal=13:00-14:00/랩 미팅|14:30-16:00/세미나|17:00-18:00/면담;allday=;cls=;conf=	14:30–16:00 세미나 (CSNL) / 17:00–18:00 면담 (CSNL)
+# (b) 같은 수업은 Timetable 하나 (NowNext.pick 규칙 그대로)
+main-today	now=2026-10-23T15:00;cal=18:00-20:50/시험 과목 B 강의;allday=;cls=18:00-20:50/시험 과목 B;conf=	18:00–20:50 시험 과목 B (Timetable)
+# (c) 종일 일정은 맨 앞
+main-today	now=2026-10-23T15:00;cal=16:00-17:00/면담;allday=BCS Workshop;cls=;conf=	종일 BCS Workshop / 16:00–17:00 면담 (CSNL)
+# (d) 학회 초록 마감 D-0 · D-7 포함(뒤에, 가까운 순)
+main-today	now=2026-10-23T15:00;cal=16:00-17:00/면담;allday=;cls=;conf=SfN/2026-10-30|VSS/2026-10-23	16:00–17:00 면담 (CSNL) / 학회 VSS 초록 마감 D-0 / 학회 SfN 초록 마감 D-7
+# (e) D-8 · 지난 마감 제외
+main-today	now=2026-10-23T15:00;cal=;allday=;cls=;conf=A/2026-10-31|B/2026-10-22	없음
+# (f) 빈 입력
+main-today	now=2026-10-23T15:00;cal=;allday=;cls=;conf=	없음
+# (g) 종일 · 시각 · 수업 · 학회 순서
+main-today	now=2026-10-23T09:00;cal=10:00-11:00/랩 미팅;allday=휴가 JOP;cls=13:00-15:45/계산신경과학;conf=VSS 2027/2026-10-25	종일 휴가 JOP / 10:00–11:00 랩 미팅 (CSNL) / 13:00–15:45 계산신경과학 (Timetable) / 학회 VSS 2027 초록 마감 D-2
+# (h) '[예상]' 마감('?') 은 '초록 마감(예상)' — 적색 없음 (검증 1 리뷰)
+main-today	now=2026-10-23T15:00;cal=;allday=;cls=;conf=VSS 2027/2026-10-25?	학회 VSS 2027 초록 마감(예상) D-2
+# main-grm — 'now=;me=;slots=yyyy-MM-dd/발표자/Type|…' → 'M.d 발표자[ ★] · …' | '—'
+# (a) 6개 상한
+main-grm	now=2026-10-23T15:00;me=;slots=2026-10-27/JOP/GRM|2026-11-03/BHL/GRM|2026-11-10/BYL/GRM|2026-11-17/SMJ/GRM|2026-11-24/JYK/GRM|2026-12-01/MSY/GRM|2026-12-08/SYJ/GRM	10.27 JOP · 11.3 BHL · 11.10 BYL · 11.17 SMJ · 11.24 JYK · 12.1 MSY
+# (b) 같은 회차 합침
+main-grm	now=2026-10-23T15:00;me=;slots=2026-10-27/JOP/GRM|2026-10-27/JOP/GRM|2026-11-03/BHL/GRM	10.27 JOP · 11.3 BHL
+# (c) 오늘 GRM 은 정오 뒤 제외, 지난 회차 제외
+main-grm	now=2026-10-23T15:00;me=;slots=2026-10-20/SMJ/GRM|2026-10-23/BHL/GRM|2026-10-27/JOP/GRM	10.27 JOP
+# (d) 정오 전이면 오늘 GRM 포함
+main-grm	now=2026-10-23T10:00;me=;slots=2026-10-20/SMJ/GRM|2026-10-23/BHL/GRM|2026-10-27/JOP/GRM	10.23 BHL · 10.27 JOP
+# (e) me=SL 은 'JSL' 에 ★ 없음(토큰), me=JSL 은 ★
+main-grm	now=2026-10-23T15:00;me=SL;slots=2026-10-27/JSL/GRM|2026-11-03/SL, BHL/GRM	10.27 JSL · 11.3 SL, BHL ★
+main-grm	now=2026-10-23T15:00;me=JSL;slots=2026-10-27/JSL/GRM	10.27 JSL ★
+# (f) 발표자 미정 · 다음 회차 없음
+main-grm	now=2026-10-23T15:00;me=;slots=2026-10-27//GRM	10.27 미정
+main-grm	now=2026-10-23T15:00;me=;slots=2026-10-20/SMJ/GRM	—
+# main-dday — 'today=yyyy-MM-dd;confs=이름/개최 시작/초록 마감|-|…' → '큰 <이름> <마감|개최> D-n | 작게 <…>, …' | '—'
+# (a) 지난 마감 → 개최 기준 (Cosyne 2027 마감 10-18)
+main-dday	today=2026-10-23;confs=Cosyne 2027/2027-03-11/2026-10-18	큰 Cosyne 2027 개최 D-139 | 작게 —
+# (b) 기준일 가까운 순 (접수 중 마감 VSS D-48 이 첫째)
+main-dday	today=2026-10-23;confs=Cosyne 2027/2027-03-11/2026-10-18|SfN 2027/2027-11-10/-|VSS 2027/2027-05-15/2026-12-10	큰 VSS 2027 마감 D-48 | 작게 Cosyne 2027 개최 D-139, SfN 2027 개최 D-383
+# (c) 개최 중(시작 < 오늘) 제외
+main-dday	today=2026-10-23;confs=KSBNS 2026/2026-10-21/-|SfN 2027/2027-11-10/-	큰 SfN 2027 개최 D-383 | 작게 —
+# (d) 같은 날은 이름순
+main-dday	today=2026-10-23;confs=B 학회/2026-11-01/-|A 학회/2026-11-01/-	큰 A 학회 개최 D-9 | 작게 B 학회 개최 D-9
+# (e) 다음 3개까지만 작게
+main-dday	today=2026-10-23;confs=A/2026-11-01/-|B/2026-11-02/-|C/2026-11-03/-|D/2026-11-04/-|E/2026-11-05/-	큰 A 개최 D-9 | 작게 B 개최 D-10, C 개최 D-11, D 개최 D-12
+# (f) 학회 없음
+main-dday	today=2026-10-23;confs=	—
+main-dday	today=2026-10-23;confs=KSBNS 2026/2026-10-21/-	—
+# (g) '[예상]' 마감('?') → 라벨 '마감(예상)' (검증 1 리뷰)
+main-dday	today=2026-10-23;confs=VSS 2027/2027-05-15/2026-12-10?|CogSci 2027/2027-07-28/2027-02-02?	큰 VSS 2027 마감(예상) D-48 | 작게 CogSci 2027 마감(예상) D-102
+# (h) 같은 학회 여러 행(발표 한 건 = 한 행)은 하나만 (검증 1 리뷰)
+main-dday	today=2026-10-23;confs=SfN 2027/2027-10-23/-|SfN 2027/2027-10-23/-|VSS 2027/2027-05-21/2026-12-10	큰 VSS 2027 마감 D-48 | 작게 SfN 2027 개최 D-365
+# main-papers — 'today=;me=;stopped=0|1;papers=id/researcher/tier/Sent At|…' → '<rotate|fresh> id,…'
+# (a) 2026-10-23 = 연중 d 295 → 시작 (295×3) mod 5 = 0
+main-papers	today=2026-10-23;me=JYK;stopped=1;papers=p5/JYK/C/2026-06-01|p3/JYK/A/2026-05-31|p1/JYK/S/2026-06-01|p4/JYK/B/2026-06-01|p2/JYK/A/2026-06-01|q1/BHL/S/2026-06-01	rotate p1,p2,p3
+# (b) 다음 날 시작 3 → 감음 (위와 다름)
+main-papers	today=2026-10-24;me=JYK;stopped=1;papers=p5/JYK/C/2026-06-01|p3/JYK/A/2026-05-31|p1/JYK/S/2026-06-01|p4/JYK/B/2026-06-01|p2/JYK/A/2026-06-01|q1/BHL/S/2026-06-01	rotate p4,p5,p1
+# (c) n=2 → 2편, 시작 885 mod 2 = 1
+main-papers	today=2026-10-23;me=BHL;stopped=1;papers=q1/BHL/S/2026-06-01|q2/BHL/A/2026-06-01|p1/JYK/S/2026-06-01	rotate q2,q1
+# (d) me 0편이면 전체 (6편, 시작 885 mod 6 = 3)
+main-papers	today=2026-10-23;me=SL;stopped=1;papers=p5/JYK/C/2026-06-01|p3/JYK/A/2026-05-31|p1/JYK/S/2026-06-01|p4/JYK/B/2026-06-01|p2/JYK/A/2026-06-01|q1/BHL/S/2026-06-01	rotate p3,p4,p5
+# (e) 새 추천(stopped=0) — Sent At 최신 3 (같으면 id 순)
+main-papers	today=2026-10-23;me=JYK;stopped=0;papers=p1/JYK/S/2026-10-20|p2/JYK/A/2026-10-21|p3/JYK/A/2026-10-19|p4/JYK/B/2026-10-21|p5/JYK/C/2026-10-01	fresh p2,p4,p1
+# (f) 다른 사람(SMJ)에게만 새 추천 — 내 대상은 멈춤이라 순환 계속 (stopped 입력과 무관, 검증 1 리뷰). 10-24 시작 3
+main-papers	today=2026-10-24;me=JYK;stopped=0;papers=a/JYK/A/2026-05-01|b/JYK/A/2026-05-01|c/JYK/A/2026-05-01|d/JYK/A/2026-05-01|e/JYK/A/2026-05-01|f/SMJ/A/2026-10-20	rotate d,e,a
+# main-year — APA → 'yyyy' | '—'
+main-year	Kim, J., & Lee, B. (2023). A model of working memory. Neuron, 1(2), 3–4.	2023
+main-year	Park, J. (2024, March). Title. Journal.	2024
+main-year	Lee, B. (n.d.). Title without year.	—
+main-year		—
+# main-authors — 카드 짧은 저자 (첫 저자 성 + 여럿이면 et al.)
+main-authors	Edden, R. A. E., Muthukumaraswamy, S. D., Freeman, T. C. A., & Singh, K. D.	Edden et al.
+main-authors	Kim, J.	Kim
+main-authors	Kim, J., & Lee, B.	Kim et al.
+main-authors	Richard Edden, Krish Singh	Edden et al.
+main-authors		
+# v1-tab — 뷰 rawValue → 탭 이름 (C1 V1TabMap.tab(forModeRaw:))
+v1-tab	tower	더 보기 · Tower
+v1-tab	schedule	일정
+v1-tab	timetable	시간표
+v1-tab	hub	더 보기 · Dashboard
+v1-tab	grmblitz	GRM/Blitz
+v1-tab	lab	실험/장비
+v1-tab	main	Main

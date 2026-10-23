@@ -19,10 +19,13 @@ struct WidgetChrome<Content: View, Actions: View>: View {
         self.init(style: WidgetStyle(kind: kind), subtitle: subtitle, actions: actions, content: content)
     }
 
+    /// 제목 막대가 있는 일반 창(1.0.0 A1) — 끌기 영역·크기 손잡이·'모두 숨기기' 눈 단추는 시스템 창이 대신한다
+    private var normal: Bool { chrome?.normal == true }
+
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                WindowDragArea()
+                if !normal { WindowDragArea() }
                 HStack(spacing: 10) {
                     // 창 단추(닫기·내리기·확대) — 꺼낸 상태에서만 (결정 D-7). 무채색(결정 D-6)
                     if let c = chrome { WindowControls(state: c) }
@@ -48,9 +51,11 @@ struct WidgetChrome<Content: View, Actions: View>: View {
                     Spacer(minLength: 8)
                     HStack(spacing: 4) {
                         actions()
-                        // 모든 카드 공통: 한 번에 치우기 (단축키와 같은 동작)
-                        IconButton(symbol: "eye.slash", help: "모두 숨기기 (\(DeskHubNotice.hotkeyLabel))") {
-                            NotificationCenter.default.post(name: DeskHubNotice.hideAll, object: nil)
+                        // 모든 카드 공통: 한 번에 치우기 (단축키와 같은 동작) — 패널 모드에서만
+                        if !normal {
+                            IconButton(symbol: "eye.slash", help: "모두 숨기기 (\(DeskHubNotice.hotkeyLabel))") {
+                                NotificationCenter.default.post(name: DeskHubNotice.hideAll, object: nil)
+                            }
                         }
                     }
                     .buttonStyle(HeaderButtonStyle())
@@ -62,9 +67,11 @@ struct WidgetChrome<Content: View, Actions: View>: View {
             Divider().opacity(0.5)
             ZStack(alignment: .bottomTrailing) {
                 content()
-                ResizeGrip()
-                    .frame(width: 18, height: 18)
-                    .padding(4)
+                if !normal {
+                    ResizeGrip()
+                        .frame(width: 18, height: 18)
+                        .padding(4)
+                }
             }
         }
         .foregroundStyle(Hub.text)
@@ -123,7 +130,9 @@ final class WindowChromeState: ObservableObject {
     let slotID: String
     @Published var peeking = false
     @Published var zoomed = false
-    init(slotID: String) { self.slotID = slotID }
+    /// 제목 막대 일반 창(1.0.0 A1) — 머리가 끌기 영역·손잡이·눈 단추를 그리지 않는다
+    let normal: Bool
+    init(slotID: String, normal: Bool = false) { self.slotID = slotID; self.normal = normal }
 }
 
 private struct WindowChromeKey: EnvironmentKey { static let defaultValue: WindowChromeState? = nil }

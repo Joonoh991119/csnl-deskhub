@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     nonisolated static let bundleID = "kr.ac.snu.csnl.deskhub"
     var config = Config.load()
     var backdrop: BackdropWindow?
-    var windows: [String: WidgetWindow] = [:]          // slot id → 창
+    var windows: [String: any DeskHubSlotWindow] = [:]   // slot id → 창 (일반 창 또는 바탕화면 패널, 1.0.0 A1)
     var controllers: [String: WebController] = [:]
     var calendars: [String: CalendarModel] = [:]
     var hubs: [String: NotionHubModel] = [:]
@@ -36,14 +36,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hiddenByUser = false
 
     /// deskhub:// 링크 (D17) — 읽기·화면 동작만. 상태를 바꾸는 동작(끝남 등)은 웹 링크로 누구나 부를 수 있어서 넣지 않는다
-    ///   deskhub://view/<tower|process|board|hub|today|grm|me|ambient> · deskhub://show · hide · toggle
+    ///   deskhub://view/<tower|process|board|hub|today|grm|me|ambient|…|main> · deskhub://show · hide · toggle
+    ///   (view/main = 위 탭 줄의 Main 탭 — KeyBus 'tab:Main', 1.0.0 §5 ②)
     ///   deskhub://refresh (주간 정리 적용 직후 부름) · deskhub://open/grm.slides (다음 GRM 슬라이드 폴더)
     func application(_ application: NSApplication, open urls: [URL]) {
         for u in urls where u.scheme == "deskhub" {
             let host = u.host ?? ""
             let path = u.pathComponents.filter { $0 != "/" }
             switch host {
-            case "view": if let v = path.first.flatMap(HubViewMode.init(rawValue:)) { ViewModeStore.shared.mode = v; showAll() }
+            case "view":
+                if path.first == "main" { KeyBus.shared.send("tab:Main"); showAll() }
+                else if let v = path.first.flatMap(HubViewMode.init(rawValue:)) { ViewModeStore.shared.mode = v; showAll() }
             case "show": showAll()
             case "hide": hideAll()
             case "toggle": toggleAll()
@@ -58,7 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 첫 그림까지 시간 (M5, 0.40.0 C2) — 여기서 시작, 데이터 다 옴 뒤 기본 뷰가 그려지면 HubViewSwitch 가 끝을 잰다
         RenderClock.begin()
-        if AppDelegate.showInDock { NSApp.setActivationPolicy(.regular) }
+        // 일반 창(기본, 1.0.0 A1)은 Dock·⌘Tab 에 보이는 보통 앱. 패널 모드는 예전대로 'Dock·⌘Tab 에 보이기' 를 켰을 때만
+        if !AppDelegate.panelMode || AppDelegate.showInDock { NSApp.setActivationPolicy(.regular) }
         // 검증용: DESKHUB_APPEARANCE=dark|light 로 외형 고정, flip 은 다크로 띄웠다가 20초 뒤 라이트로 바꿔
         // 자동 외형 전환 때 카드 색이 따라오는지 스냅샷으로 확인한다. 평소(LaunchAgent)에는 시스템 설정을 따른다.
         // 글자·색 프리셋 (0.37.0 C3) — 색이 바뀌면 테마·외형 다시 적용 + 바닥판·카드 바탕 다시 칠하기. config.json 은 쓰지 않는다
@@ -105,10 +109,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // 메뉴막대 없이도 ⌘C/⌘V/⌘A 등이 웹뷰·텍스트필드에서 동작하도록 숨은 Edit 메뉴를 둔다.
+    // 일반 창(1.0.0 A1)이면 앱 메뉴 '가리기 ⌘H' 와 '윈도우' 메뉴(최소화 ⌘M · 확대/축소 · 전체 화면 ⌃⌘F · 창 닫기 ⌘W)도
     private func installMainMenu() {
+        let normal = !AppDelegate.panelMode
         let main = NSMenu()
         let appItem = NSMenuItem(); main.addItem(appItem)
         let appMenu = NSMenu()
+        if normal {
+            appMenu.addItem(withTitle: "DeskHub 가리기", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+            appMenu.addItem(.separator())
+        }
         appMenu.addItem(withTitle: "DeskHub 종료", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         let editItem = NSMenuItem(); main.addItem(editItem)
@@ -121,8 +131,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edit.addItem(withTitle: "붙여넣기", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         edit.addItem(withTitle: "전체 선택", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editItem.submenu = edit
-        NSApp.mainMenu = main
+        if normal {
+            let winItem = NSMenuItem(); main.addItem(winItem)
+            let win = NSMenu(title: "윈도우")
+            win.addItem(withTitle: "최소화", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+            win.addItem(withTitle: "확대/축소", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+            let fs = NSMenuItem(title: "전체 화면", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+            fs.keyEquivalentModifierMask = [.control, .command]
+            win.addItem(fs)
+            win.addItem(.separator())
+            win.addItem(withTitle: "창 닫기", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+            win.addItem(.separator())
+            win.addItem(withTitle: "모두 앞으로 가져오기", action: #selector(NSApplication.arrangeInFront(_:)), keyEquivalent: "")
+            winItem.submenu = win
+            NSApp.mainMenu = main
+            NSApp.windowsMenu = win
+        } else {
+            NSApp.mainMenu = main
+        }
     }
+
+    // MARK: 창 모드 (1.0.0 A1, #55)
+
+    /// 바탕화면 패널 모드(예전 방식) — UserDefaults DeskHub.panelMode, 없으면 false = 일반 창. 다른 갈래와의 약속(§5 ①)
+    static var panelMode: Bool { UserDefaults.standard.bool(forKey: "DeskHub.panelMode") }
+
+    /// 메뉴 '바탕화면 패널 모드' 와 --key panelmode:on|off 가 같은 경로 — 저장 · 정책 · 주 메뉴 · 창 다시 만들기
+    private func setPanelMode(_ on: Bool) {
+        UserDefaults.standard.set(on, forKey: "DeskHub.panelMode")
+        hiddenByUser = false
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        NSApp.setActivationPolicy(on && !AppDelegate.showInDock ? .accessory : .regular)
+        installMainMenu()
+        reloadConfig()
+    }
+    @objc private func togglePanelMode() { setPanelMode(!AppDelegate.panelMode) }
+
+    /// Dock 아이콘 클릭·open -a (1.0.0 A1) — 일반 창인데 허브 창이 안 보이면(닫음·최소화) 보이는 슬롯을 앞으로.
+    /// 판정은 허브 창 기준 — 캘린더 창만 떠 있을 때 허브를 닫으면 Dock 을 눌러도 안 열리던 것 (검증 1 리뷰)
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard !AppDelegate.panelMode, !hubShown else { return true }
+        bringForward()
+        return false
+    }
+
+    /// 허브 창이 보이고 최소화되지 않았나 (허브 슬롯이 없으면 아무 슬롯 창)
+    private var hubShown: Bool {
+        if let h = windows[hubSlotID] { return h.isVisible && !h.isMiniaturized }
+        return windows.values.contains { $0.isVisible && !$0.isMiniaturized }
+    }
+
+    /// 일반 창 '앞으로' — 가리기 풀기 · 최소화 풀기 · 보이는 슬롯 앞으로 · 활성. 대시보드 앞으로·다시 모두 보이기·⌃⌥D(뒤에 있을 때)·--show 가 같은 경로
+    private func bringForward() {
+        hiddenByUser = false
+        if NSApp.isHidden { NSApp.unhide(nil) }
+        for slot in config.layout.slots where slot.visible {
+            guard let w = windows[slot.id] else { continue }
+            if w.isMiniaturized { w.deminiaturize(nil) }
+            w.orderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        if let h = windows[hubSlotID], h.isVisible { h.makeKeyAndOrderFront(nil) }
+    }
+
+    /// 챗봇 창 열기 — B 갈래의 NSApplication 액션(§5 ③). 받는 쪽이 없으면 삐
+    private func sendDeskHubAction(_ name: String, _ arg: String?) {
+        if !NSApp.sendAction(Selector((name)), to: nil, from: arg.map { $0 as NSString }) { NSSound.beep() }
+    }
+    @objc private func openChatFromMenu() { sendDeskHubAction("openDeskHubChat:", nil) }
 
     // MARK: 구성
 
@@ -154,10 +230,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 보조 모니터 설정인데 보조 모니터가 없으면(hide) 숨긴 채 시작한다
-    private var startHidden: Bool { !config.onIntendedScreen && config.layout.whenNoSecondary == "hide" }
+    private var startHidden: Bool { AppDelegate.panelMode && !config.onIntendedScreen && config.layout.whenNoSecondary == "hide" }
 
     private func buildAll() {
-        if config.layout.mode == "desktop" || config.layout.backdrop, let screen = config.targetScreen() {
+        // 바닥판은 패널 모드에서만 (1.0.0 A1)
+        if AppDelegate.panelMode, config.layout.mode == "desktop" || config.layout.backdrop, let screen = config.targetScreen() {
             let b = BackdropWindow(frame: screen.visibleFrame)
             if !startHidden && !hiddenByUser { b.orderFront(nil) }
             backdrop = b
@@ -166,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func tearDownAll() {
-        for w in windows.values { w.orderOut(nil); w.close() }
+        for w in windows.values { (w as? DeskHubAppWindow)?.releaseAutosaveName(); w.orderOut(nil); w.close() }
         windows.removeAll(); controllers.removeAll(); calendars.removeAll(); hubs.removeAll(); hubTabControllers.removeAll(); explorer = nil
         backdrop?.orderOut(nil); backdrop?.close(); backdrop = nil
     }
@@ -175,11 +252,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard windows[slot.id] == nil, let kind = slot.kind else { return }
         let ua = config.web.userAgent
         let frame = config.windowFrame(for: slot)
-        let win = WidgetWindow(slotID: slot.id, kind: kind, frame: frame,
-                               cornerRadius: CGFloat(config.layout.cornerRadius), opaque: config.layout.opaqueCards,
-                               shadow: config.layout.mode == "widget")
-        win.onFrameChange = { [weak self] f in self?.frameChanged(slot.id, f) }
         let title = slot.title ?? kind.defaultTitle
+        // 창 종류 (1.0.0 A1) — 패널 모드면 예전 WidgetWindow(비율 저장), 아니면 일반 창(시스템 프레임 자동 저장, config.json 안 씀)
+        let win: any DeskHubSlotWindow
+        if AppDelegate.panelMode {
+            let w = WidgetWindow(slotID: slot.id, kind: kind, frame: frame,
+                                 cornerRadius: CGFloat(config.layout.cornerRadius), opaque: config.layout.opaqueCards,
+                                 shadow: config.layout.mode == "widget")
+            w.onFrameChange = { [weak self] f in self?.frameChanged(slot.id, f) }
+            win = w
+        } else {
+            win = DeskHubAppWindow(slotID: slot.id, kind: kind, frame: frame, title: kind == .notionhub ? "DeskHub" : title)
+        }
 
         switch kind {
         case .calendar:
@@ -196,12 +280,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.config.calendar.mode = newMode
                 self?.config.save()
             }
-            win.setContent(host)
+            win.setContent(host, refresh: true)
         case .notionhub:
             let model = NotionHubModel(cfg: config.notionHub, prolific: config.prolific, nasRoot: config.nas.root)
             // 허브의 "지금 · 다음 일정" 줄 — 캘린더 카드와 따로 오늘만 본다 (BHL 의견 '오늘 일정' 중복 ①안 준비)
             model.todayCalendar = CalendarModel(cfg: config.calendar)
             hubs[slot.id] = model
+            (win as? DeskHubAppWindow)?.followUpdates(model.$lastUpdated)
             let tabs = config.notionHub.tabs.map { t in
                 WebController(kind: .notion, homeURL: URL(string: t.url) ?? URL(string: "https://www.notion.so/")!,
                               userAgent: ua, userScript: NotionWidget.tidyScript, lazy: true)
@@ -213,16 +298,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let url = URL(string: slot.url ?? "https://www.notion.so/") ?? URL(string: "https://www.notion.so/")!
             let c = WebController(kind: .notion, homeURL: url, userAgent: ua, userScript: NotionWidget.tidyScript)
             controllers[slot.id] = c
-            win.setContent(NotionWidget(controller: c, title: title, accountHint: config.notion.accountHint))
+            win.setContent(NotionWidget(controller: c, title: title, accountHint: config.notion.accountHint), refresh: true)
         case .web:
             let url = URL(string: slot.url ?? "about:blank") ?? URL(string: "about:blank")!
             let c = WebController(kind: .web, homeURL: url, userAgent: ua)
             controllers[slot.id] = c
-            win.setContent(GenericWebWidget(controller: c, title: title))
+            win.setContent(GenericWebWidget(controller: c, title: title), refresh: true)
         case .plaud:
             let c = WebController(kind: .plaud, homeURL: URL(string: config.plaud.url)!, userAgent: ua)
             controllers[slot.id] = c
-            win.setContent(PlaudWidget(controller: c, bundleID: config.plaud.bundleID))
+            win.setContent(PlaudWidget(controller: c, bundleID: config.plaud.bundleID), refresh: true)
         case .claude:
             let c = WebController(kind: .claude, homeURL: URL(string: config.claude.url)!, userAgent: ua)
             controllers[slot.id] = c
@@ -232,7 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let m = ExplorerModel(root: config.nas.root, smb: config.nas.smb,
                                   fileStation: config.nas.fileStationURL, favorites: config.nas.favorites)
             explorer = m
-            win.setContent(NASWidget(model: m))
+            win.setContent(NASWidget(model: m), refresh: true)
         }
         windows[slot.id] = win
         if slot.visible && !startHidden && !hiddenByUser { win.orderFront(nil) }
@@ -255,6 +340,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 비율로부터 모든 창 프레임을 다시 계산 (화면 바뀜·기본 배치 복원)
     private func relayout() {
+        // 일반 창은 시스템이 크기·위치를 지킨다 — 비율 배치는 패널 모드만 (1.0.0 A1)
+        guard AppDelegate.panelMode else { return }
         // 확대는 먼저 푼다(저장 없이) — 화면이 바뀌면 늘 비율대로 (0.43.0 C7)
         for w in windows.values { w.zoomRestore = nil }
         relayouting = true
@@ -267,6 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 모니터를 꽂거나 뺐을 때: 비율대로 다시 배치하고, 보조 모니터가 생기면 보이고 없어지면 숨긴다(사용자가 숨긴 상태는 유지)
     @objc private func screenChanged() {
+        guard AppDelegate.panelMode else { return }   // 일반 창은 숨기지도 옮기지도 않는다 (1.0.0 A1)
         relayout()
         guard !hiddenByUser, !windows.values.contains(where: { $0.peeking }) else { return }
         if startHidden { for w in windows.values { w.orderOut(nil) }; backdrop?.orderOut(nil) }
@@ -343,13 +431,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 태그 Filter (0.43.0 C4, #49) — 칩 클릭과 같은 경로(FeedPrefs.setTags, 이 맥 UserDefaults DeskHub.feedTags). 빈 값 = 지움.
         // feedfilter(칩 줄 열기·닫기)는 아래 KeyBus 로
         // 창 (0.43.0 C7, #51) — window:zoom|lower|close|dblclick[:<슬롯>](슬롯 없으면 허브) · hotkey(⌃⌥D 와 같은 toggleAll) · peek(대시보드 앞으로)
+        // 1.0.0 A1: window:minimize|fullscreen(일반 창), zoom = 시스템 확대/축소, close = 그 창 닫기(일반 창) · 패널은 예전대로
         else if k.hasPrefix("window:") {
             let p = k.dropFirst("window:".count).split(separator: ":", maxSplits: 1).map(String.init)
             let slot = p.count > 1 && !p[1].isEmpty ? p[1] : hubSlotID
             switch p.first ?? "" {
             case "zoom": toggleZoom(slot)
             case "lower": settleAll()
-            case "close": hideAll()
+            case "close":
+                if let w = windows[slot], w.isNormalWindow { w.performClose(nil) } else { hideAll() }
+            case "minimize":
+                if let w = windows[slot], w.isNormalWindow { w.miniaturize(nil) } else { NSSound.beep() }
+            case "fullscreen":
+                if let w = windows[slot], w.isNormalWindow {
+                    if NSApp.isHidden { NSApp.unhide(nil) }
+                    if w.isMiniaturized { w.deminiaturize(nil) }
+                    NSApp.activate(ignoringOtherApps: true)
+                    w.makeKeyAndOrderFront(nil)
+                    w.toggleFullScreen(nil)
+                } else { NSSound.beep() }
             case "dblclick": handleDoubleClick(slot)
             // 시험 전용(0.43.2 C4, #54) — window:size=<w>x<h>[:<슬롯>] 저장 안 하는 임시 크기, window:zoom 으로 원래 크기
             case let c where c.hasPrefix("size="): sizeWindow(slot, String(c.dropFirst("size=".count)))
@@ -358,6 +458,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         else if k == "hotkey" { toggleAll() }
         else if k == "peek" { bringFront() }
+        // 창 모드 (1.0.0 A1) — 메뉴 '바탕화면 패널 모드' 와 같은 경로
+        else if k == "panelmode:on" || k == "panelmode:off" { setPanelMode(k == "panelmode:on") }
+        // 커뮤니티·챗봇 창 (1.0.0 §5 ③) — B 갈래의 NSApplication 액션으로 전달. community:<제목 일부> = 허브 첫 모델 논문 중
+        // ① Main 에 보이는 3편 → 나머지 순으로 제목 앞부분(hasPrefix) ② 없으면 같은 순서로 제목에 들어 있는 첫 것 (검증 1: 'Orientation ' 이
+        // 앞 순번 'BOLD orientation tuning…' 에 걸려 다른 논문이 열리던 것)
+        else if k.hasPrefix("community:") {
+            let q = String(k.dropFirst("community:".count)).lowercased()
+            guard !q.isEmpty, let m = hubs.values.first else { NSSound.beep(); return }
+            let shown = m.mainPapers.items
+            let order = shown + m.papers.filter { p in !shown.contains { $0.id == p.id } }
+            let hit = order.first { $0.title.lowercased().hasPrefix(q) } ?? order.first { $0.title.lowercased().contains(q) }
+            if let p = hit { sendDeskHubAction("openDeskHubCommunity:", p.id) } else { NSSound.beep() }
+        }
+        else if k == "chat" { sendDeskHubAction("openDeskHubChat:", nil) }
+        else if k.hasPrefix("chat:") { sendDeskHubAction("openDeskHubChat:", String(k.dropFirst("chat:".count))) }
         else if k.hasPrefix("feedtags:") { FeedPrefs.shared.setTags(k.dropFirst("feedtags:".count).split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }) }
         // 논문 소통 '같이 읽자' (0.39.0 C5) — 제목 일부가 맞는 첫 논문([논문 추천] 덤프 순서)에 단추와 같은 경로 · talk-undo = 마지막 대기 취소.
         // talk: 는 시험용 키라 드라이런 훅(DESKHUB_NOTION_WRITE=dry:)이 없으면 아무것도 쓰지 않고 삐 — Notion 댓글은 API 로 지울 수 없다 (검증 1).
@@ -431,6 +546,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             out += ["[배지]"] + SeenCards.shared.dumpLines(m) + [""]
             // [장비] — 장비 6줄 '장비 · 지금 · 다음'(내 것) + 닫기 누락 (0.40.0 C5, A5 — EquipmentCard 와 같은 EquipmentBoard 함수)
             out += ["[장비]"] + m.equipmentDumpLines() + [""]
+            // [일정 탭]·[Grant 일정] (1.0.0 A2, #55 — ScheduleTabView·GrantScheduleColumn 과 같은 GrantSchedule 함수)
+            out += [ScheduleTabView.dumpLine(m), ""]
+            out += GrantSchedule.dumpLines(m) + [""]
             // [멤버 상태]·[Members 카드] (0.42.0 C5, R2·R9-c — MemberStatus.resolve 를 모델이 한 번 계산한 값 · MembersCard 와 같은 함수)
             out += ["[멤버 상태]"] + m.memberStatusDumpLines() + [""]
             out += ["[Members 카드]", MembersCard.dumpLine(m), ""]
@@ -509,6 +627,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// `DeskHub --view <hub|today|grm|me|ambient>` — 첫 탭의 뷰를 바꾼다
     @objc private func viewRequested(_ note: Notification) {
+        // --view main = 위 탭 줄의 Main 탭 (1.0.0 §5 ②)
+        if (note.object as? String) == "main" { KeyBus.shared.send("tab:Main"); return }
         if let m = (note.object as? String).flatMap(HubViewMode.init(rawValue:)) { ViewModeStore.shared.mode = m }
     }
 
@@ -521,12 +641,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.snapshot(to: dir.appendingPathComponent("\(id).png"))
             info.append("\(id): visible=\(w.isVisible) level=\(w.level.rawValue) frame=\(w.frame) key=\(w.isKeyWindow) active=\(NSApp.isActive)")
         }
-        // 창 상태 (0.43.0 C7) — 'window: <슬롯> zoomed=yes|no peeking=yes|no controls=yes|no dblclick=<zoom|lower|none> usable=<rect>'
+        // 창 모드 (1.0.0 A1) — 'mode: normal|panel · policy regular|accessory · hidden yes|no'
+        let yn: (Bool) -> String = { $0 ? "yes" : "no" }
+        let policy: String
+        switch NSApp.activationPolicy() {
+        case .regular: policy = "regular"
+        case .accessory: policy = "accessory"
+        default: policy = "prohibited"
+        }
+        info.append("mode: \(AppDelegate.panelMode ? "panel" : "normal") · policy \(policy) · hidden \(yn(NSApp.isHidden))")
+        // 창 상태 (0.43.0 C7, 1.0.0 A1) — 'window: <슬롯> style=titled|borderless fullscreen=yes|no miniaturized=yes|no zoomed=yes|no peeking=yes|no controls=yes|no dblclick=<zoom|lower|none> usable=<rect>'
         for id in windows.keys.sorted() {
             guard let w = windows[id] else { continue }
-            let yn: (Bool) -> String = { $0 ? "yes" : "no" }
-            let sized = w.zoomRestore != nil ? sizedTo[id].map { "\(Int($0.width))x\(Int($0.height))" } ?? "no" : "no"
-            info.append("window: \(id) zoomed=\(yn(w.zoomRestore != nil)) peeking=\(yn(w.peeking)) controls=\(yn(w.peeking && w.isVisible))"
+            let normal = w.isNormalWindow
+            let sized = (normal || w.zoomRestore != nil) ? sizedTo[id].map { "\(Int($0.width))x\(Int($0.height))" } ?? "no" : "no"
+            let zoomed = normal ? w.isZoomed : w.zoomRestore != nil
+            info.append("window: \(id) style=\(normal ? "titled" : "borderless") fullscreen=\(yn(w.styleMask.contains(.fullScreen))) miniaturized=\(yn(w.isMiniaturized))"
+                        + " zoomed=\(yn(zoomed)) peeking=\(yn(w.peeking)) controls=\(yn(w.peeking && w.isVisible))"
                         + " dblclick=\(WindowChrome.current.rawValue) usable=\(config.usableRect(on: w.screen)) sized=\(sized)")
         }
         if let b = backdrop { info.append("backdrop: visible=\(b.isVisible) level=\(b.level.rawValue) frame=\(b.frame)") }
@@ -720,7 +851,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildMenu(_ menu: NSMenu) {
         menu.removeAllItems()
-        let header = NSMenuItem(title: "DeskHub — 바탕화면 위젯", action: nil, keyEquivalent: "")
+        let panel = AppDelegate.panelMode
+        let header = NSMenuItem(title: panel ? "DeskHub — 바탕화면 위젯" : "DeskHub", action: nil, keyEquivalent: "")
         header.isEnabled = false
         menu.addItem(header)
         // 메뉴 막대 한 줄 폭 (D11)
@@ -743,13 +875,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let front = NSMenuItem(title: "대시보드 앞으로 (\(DeskHubNotice.hotkeyLabel))", action: #selector(bringFront), keyEquivalent: "")
         front.target = self
         menu.addItem(front)
-        // 허브 창 확대 (0.43.0 C7, #51) — 바탕화면 층에서도 (창 단추는 꺼낸 상태에서만)
-        let zoom = NSMenuItem(title: "허브 창 확대 / 원래 크기", action: #selector(zoomHubFromMenu), keyEquivalent: "")
-        zoom.target = self; zoom.state = windows[hubSlotID]?.zoomRestore != nil ? .on : .off
+        // 챗봇 열기 (1.0.0 A1, 결정 D-11) — B 갈래 창(§5 ③)
+        let chat = NSMenuItem(title: "챗봇 열기", action: #selector(openChatFromMenu), keyEquivalent: "")
+        chat.target = self
+        menu.addItem(chat)
+        // 허브 창 확대 (0.43.0 C7, #51) — 바탕화면 층에서도 (창 단추는 꺼낸 상태에서만). 일반 창이면 시스템 확대/축소 (1.0.0 A1)
+        let zoom = NSMenuItem(title: panel ? "허브 창 확대 / 원래 크기" : "허브 창 확대 / 축소", action: #selector(zoomHubFromMenu), keyEquivalent: "")
+        let hubWin = windows[hubSlotID]
+        zoom.target = self; zoom.state = (panel ? hubWin?.zoomRestore != nil : hubWin?.isZoomed == true) ? .on : .off
         menu.addItem(zoom)
-        let dock = NSMenuItem(title: "Dock·⌘Tab 에 보이기", action: #selector(toggleDock), keyEquivalent: "")
-        dock.target = self; dock.state = AppDelegate.showInDock ? .on : .off
-        menu.addItem(dock)
+        // 바탕화면 패널 모드 (1.0.0 A1, 결정 D-1) — 켜면 예전처럼 바탕화면 층 카드, 끄면 보통 앱 창
+        let pm = NSMenuItem(title: "바탕화면 패널 모드 (예전 방식)", action: #selector(togglePanelMode), keyEquivalent: "")
+        pm.target = self; pm.state = panel ? .on : .off
+        menu.addItem(pm)
+        if panel {
+            let dock = NSMenuItem(title: "Dock·⌘Tab 에 보이기", action: #selector(toggleDock), keyEquivalent: "")
+            dock.target = self; dock.state = AppDelegate.showInDock ? .on : .off
+            menu.addItem(dock)
+        }
         // 사용 기록 (D13, 기본 꺼짐 — 결정 19)
         let usage = NSMenuItem(title: "사용 기록 (이 맥에만, 기본 꺼짐)", action: #selector(toggleUsage), keyEquivalent: "")
         usage.target = self; usage.state = UsageLog.enabled ? .on : .off
@@ -763,11 +906,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(item)
         }
         menu.addItem(.separator())
-        let anyVisible = windows.values.contains { $0.isVisible }
+        let anyVisible = (panel || !NSApp.isHidden) && windows.values.contains { $0.isVisible }
         let hk = hotKey.map { " (\($0.label))" } ?? ""
         menu.addItem(withTitle: (anyVisible ? "모두 숨기기" : "다시 모두 보이기") + hk,
                      action: anyVisible ? #selector(hideAll) : #selector(showAll), keyEquivalent: "")
-        if windows.values.contains(where: { $0.peeking && $0.isVisible }) {
+        if panel, windows.values.contains(where: { $0.peeking && $0.isVisible }) {
             menu.addItem(withTitle: "바탕화면 층으로 내리기", action: #selector(settleAll), keyEquivalent: "")
         }
         func submenu(_ title: String, _ items: [(String, String, Bool)], _ action: Selector) {
@@ -793,8 +936,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cur = config.notionHub.openLinksIn
         submenu("Notion 링크 열기", [("자동 — 지금은 \(autoTo)", "auto", cur == "auto"), ("Notion 앱", "app", cur == "app"), ("웹 브라우저", "web", cur == "web")],
                 #selector(chooseNotionLinks(_:)))
-        submenu("배치 방식", [("위젯 (카드만)", "widget", config.layout.mode == "widget"), ("바탕화면 전체 덮기", "desktop", config.layout.mode == "desktop")],
-                #selector(chooseMode(_:)))
+        if panel {
+            submenu("배치 방식", [("위젯 (카드만)", "widget", config.layout.mode == "widget"), ("바탕화면 전체 덮기", "desktop", config.layout.mode == "desktop")],
+                    #selector(chooseMode(_:)))
+        }
         menu.addItem(withTitle: "기본 배치로 되돌리기", action: #selector(resetLayout), keyEquivalent: "")
         menu.addItem(withTitle: "웹 위젯 모두 새로고침", action: #selector(reloadAll), keyEquivalent: "r")
         let calMode = NSMenuItem(title: config.calendar.mode == "web" ? "캘린더: 네이티브로 전환" : "캘린더: 웹(Google) 으로 전환",
@@ -840,11 +985,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     /// 메뉴 "다시 모두 보이기" — 바탕화면 층(제자리)에
     @objc func showAll() {
+        if !AppDelegate.panelMode { bringForward(); return }
         hiddenByUser = false
         // 카드별로 꺼 둔 것(예: 오늘 일정 카드, v13 기본 숨김)은 그대로 둔다 — 메뉴의 카드 항목으로 켠다
         placeAll(peek: false)
     }
     @objc private func hideAll() {
+        // 일반 창(1.0.0 A1)은 앱 가리기(⌘H 와 같음) — 다시 '앞으로' 하면 그대로 돌아온다
+        if !AppDelegate.panelMode { NSApp.hide(nil); return }
         // 확대한 창은 원래 크기로 돌린 뒤 숨긴다 — 다시 꺼내면 늘 원래 비율 (0.43.0 C7)
         for id in windows.keys where windows[id]?.zoomRestore != nil { toggleZoom(id) }
         hiddenByUser = true
@@ -852,7 +1000,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         backdrop?.orderOut(nil)
     }
     /// 대시보드를 다른 창 위로 (팝오버 버튼·메뉴 — 단축키와 같은 '꺼내기', R2: SMJ '항상 다른 창 아래에 깔림')
-    @objc func bringFront() { hiddenByUser = false; placeAll(peek: true) }
+    @objc func bringFront() {
+        if !AppDelegate.panelMode { bringForward(); return }
+        hiddenByUser = false; placeAll(peek: true)
+    }
 
     /// Dock·⌘Tab 에 보이기 (R2, SMJ UX 로그: '일반 앱처럼 전환') — 기본은 메뉴 막대 앱
     static var showInDock: Bool {
@@ -865,7 +1016,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 단축키: 보이면 숨기고, 숨어 있으면 다른 창 위로 꺼낸다
+    /// 일반 창(1.0.0 A1, 결정 D-3): 앱이 앞에 있고 창이 보이면 가리기(⌘H 와 같음), 아니면 가리기·최소화 풀고 앞으로·활성
     @objc private func toggleAll() {
+        if !AppDelegate.panelMode {
+            let front = NSApp.isActive && !NSApp.isHidden && hubShown   // 허브 창 기준 (Dock 다시 열기와 같은 판정)
+            if front { NSApp.hide(nil) } else { bringForward() }
+            return
+        }
         if windows.values.contains(where: { $0.isVisible }) { hideAll() }
         else { hiddenByUser = false; placeAll(peek: true) }
     }
@@ -876,6 +1033,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 확대 ↔ 원래 크기. 확대 = 그 창 화면의 usableRect(읽기만), 원래 = zoomRestore. 어느 쪽도 config 에 저장하지 않는다
     func toggleZoom(_ slotID: String) {
         guard let w = windows[slotID] else { NSSound.beep(); return }
+        // 일반 창(1.0.0 A1)은 시스템 확대/축소 — 시스템이 원래 크기를 기억한다
+        if w.isNormalWindow { sizedTo[slotID] = nil; w.zoom(nil); return }
         zoomChanging = true
         sizedTo[slotID] = nil
         if let r = w.zoomRestore {
@@ -895,6 +1054,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let w = windows[slotID], parts.count == 2,
               let width = Double(parts[0]), let height = Double(parts[1]),
               width >= 200, height >= 200, width <= 10000, height <= 10000 else { NSSound.beep(); return }
+        // 일반 창(1.0.0 A1)은 그냥 크기만 — 시스템 프레임 자동 저장에 남고(이 맥 UserDefaults) config.json 은 그대로
+        if w.isNormalWindow {
+            let top = w.frame.maxY
+            w.setFrame(NSRect(x: w.frame.minX, y: top - height, width: width, height: height), display: true)
+            sizedTo[slotID] = NSSize(width: width, height: height)
+            return
+        }
         zoomChanging = true
         if w.zoomRestore == nil { w.zoomRestore = w.frame }
         let top = w.frame.maxY
@@ -912,7 +1078,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleDoubleClick(_ slotID: String) {
         switch WindowChrome.current {
         case .zoom: toggleZoom(slotID)
-        case .lower: if windows.values.contains(where: { $0.peeking }) { settleAll() }
+        case .lower:
+            if let w = windows[slotID], w.isNormalWindow { w.miniaturize(nil) }
+            else if windows.values.contains(where: { $0.peeking }) { settleAll() }
         case .none: break
         }
     }
@@ -943,6 +1111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc private func resetLayout() {
         let defaults = Config.defaultSlots()
+        // 일반 창(1.0.0 A1)은 기본 비율 frame 으로 옮기기만 — 시스템 자동 저장이 새 값을 갖고 config.json 은 그대로
+        if !AppDelegate.panelMode {
+            for slot in defaults { if let w = windows[slot.id], w.isNormalWindow { w.setFrame(config.windowFrame(for: slot), display: true) } }
+            return
+        }
         for (i, s) in config.layout.slots.enumerated() {
             if let d = defaults.first(where: { $0.id == s.id }) { config.layout.slots[i].frame = d.frame }
         }

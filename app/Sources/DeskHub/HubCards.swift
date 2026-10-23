@@ -192,6 +192,8 @@ struct ConferencesCard: View {
     var quiet = false
     /// 랩 허브만 — 초록 마감 D≤14·개최 D≤30 최대 3, 나머지는 '▸ 더 보기' (0.37.0 C2)
     var nearOnly = false
+    /// 일정 탭(1.0.0 A2) — 이름·장소·제목·초록 마감 글을 '…' 로 자르지 않고 줄바꿈 (검증 1: 1.5배 '토론토 (Metro…')
+    var wrap = false
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
     /// 열 바닥이 비면 다음 학회를 더 (HubFill, 0.38.0 C3)
@@ -201,8 +203,8 @@ struct ConferencesCard: View {
     /// 학회 상태(관심·제출 예정·제출함) — 칩 꼬리·단추 글 (0.44.0 #62)
     @ObservedObject private var statusStore = ConferenceStatusStore.shared
 
-    init(model: NotionHubModel, maxRows: Int = 3, quiet: Bool = false, nearOnly: Bool = false) {
-        self.model = model; self.maxRows = maxRows; self.quiet = quiet; self.nearOnly = nearOnly
+    init(model: NotionHubModel, maxRows: Int = 3, quiet: Bool = false, nearOnly: Bool = false, wrap: Bool = false) {
+        self.model = model; self.maxRows = maxRows; self.quiet = quiet; self.nearOnly = nearOnly; self.wrap = wrap
         _commits = ObservedObject(wrappedValue: model.interestCommits)
     }
 
@@ -259,13 +261,17 @@ struct ConferencesCard: View {
     }
 
     private func confName(_ c: ConferenceRow) -> some View {
-        Text(c.conference.isEmpty ? "학회" : c.conference).font(.hub(cs.body, weight: .semibold)).foregroundStyle(Hub.text).lineLimit(1).layoutPriority(2)
+        Text(c.conference.isEmpty ? "학회" : c.conference).font(.hub(cs.body, weight: .semibold)).foregroundStyle(Hub.text)
+            .lineLimit(wrap ? nil : 1).fixedSize(horizontal: false, vertical: wrap).layoutPriority(2)
     }
     /// 형식·'국제' 는 줄바꿈 없이 고정 폭, 장소는 이상 폭 cs.col(56) — ViewThatFits 가 이름+꼬리표+장소 몇 글자로 한 줄 여부를 정하고, 장소는 남는 폭에서 잘린다.
     /// 꼬리표는 모두 한 모양 ConfTag — 남색 TypePill·굵은 '국제' 가 섞여 행마다 강약이 달라 보이던 것 (0.44.0 #66)
-    @ViewBuilder private func confTags(_ c: ConferenceRow) -> some View {
+    @ViewBuilder private func confTagPills(_ c: ConferenceRow) -> some View {
         if !c.format.isEmpty { ConfTag(text: c.format) }
         if c.international { ConfTag(text: "국제") }
+    }
+    @ViewBuilder private func confTags(_ c: ConferenceRow) -> some View {
+        confTagPills(c)
         if !c.location.isEmpty {
             Text(c.location).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
                 .frame(minWidth: 0, idealWidth: cs.col(56), maxWidth: .infinity, alignment: .leading).layoutPriority(-1)   // 이상 폭 0 이면 한 줄로 판정돼 장소가 '…' 만 남던 것 (리뷰 2)
@@ -293,19 +299,52 @@ struct ConferencesCard: View {
                             // 아니면 꼬리표('형식'·'국제'·장소)를 둘째 줄로 내려 이름이 잘리지 않게 (검증 1: 'Cosyne...'·1.3배 'C...'·1.6배 'A I · M L')
                             // 고른 갈래는 windows.txt 'choices: conf-row <학회> 한 줄|두 줄' (허브만, 0.38.0 C5)
                             let choice: String? = nearOnly ? "conf-row " + InterestFile.displayName(c) : nil
-                            ViewThatFits(in: .horizontal) {
-                                HStack(spacing: 6) { confName(c); confTags(c) }
-                                    .layoutChoice(choice, "한 줄")
-                                VStack(alignment: .leading, spacing: 1) {
-                                    confName(c)
-                                    if !c.format.isEmpty || c.international || !c.location.isEmpty { HStack(spacing: 6) { confTags(c) } }
+                            if wrap {
+                                // 일정 탭: 늘 두 줄 — 꼬리표·장소는 둘째 줄에서 줄바꿈 (자르지 않음)
+                                confName(c)
+                                if !c.format.isEmpty || c.international || !c.location.isEmpty {
+                                    // 장소가 꼬리표 옆에 한 줄로 안 들어가면 아랫줄로 — 좁은 열에서 한 글자씩 꺾이던 것 (1.0.0 검증 2)
+                                    ViewThatFits(in: .horizontal) {
+                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                            confTagPills(c)
+                                            if !c.location.isEmpty { Text(c.location).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize() }
+                                        }
+                                        // 꼬리표 옆에서 줄바꿈 — 장소 칸이 cs.col(120) 이상일 때만 (1.0배 화면은 그대로, 좁으면 아래 갈래)
+                                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                            confTagPills(c)
+                                            if !c.location.isEmpty {
+                                                Text(c.location).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                                                    .frame(minWidth: cs.col(120), idealWidth: cs.col(120), maxWidth: .infinity, alignment: .leading)
+                                            }
+                                        }
+                                        VStack(alignment: .leading, spacing: 1) {
+                                            if !c.format.isEmpty || c.international { HStack(alignment: .firstTextBaseline, spacing: 6) { confTagPills(c) } }
+                                            if !c.location.isEmpty {
+                                                Text(c.location).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(nil).fixedSize(horizontal: false, vertical: true)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                            }
+                                        }
+                                    }
                                 }
-                                .layoutChoice(choice, "두 줄")
+                            } else {
+                                ViewThatFits(in: .horizontal) {
+                                    HStack(spacing: 6) { confName(c); confTags(c) }
+                                        .layoutChoice(choice, "한 줄")
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        confName(c)
+                                        if !c.format.isEmpty || c.international || !c.location.isEmpty { HStack(spacing: 6) { confTags(c) } }
+                                    }
+                                    .layoutChoice(choice, "두 줄")
+                                }
                             }
-                            if !c.title.isEmpty { Text(c.title).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1) }
+                            if !c.title.isEmpty {
+                                Text(c.title).font(.hub(cs.aux)).foregroundStyle(Hub.text2)
+                                    .lineLimit(wrap ? nil : 1).fixedSize(horizontal: false, vertical: wrap)
+                            }
                             if !c.deadlineLabel.isEmpty {
                                 Text("초록 마감 " + (c.deadline.map { Hub.day($0) + " · " } ?? "") + c.deadlineLabel)
-                                    .font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
+                                    .font(.hub(cs.aux)).foregroundStyle(Hub.text2)
+                                    .lineLimit(wrap ? nil : 1).fixedSize(horizontal: false, vertical: wrap)
                             }
                         }
                         // 이름 칸이 남는 폭을 먼저 받는다 — 장소(maxWidth .infinity) 때문에 이 칸과 아래 Spacer 가 같은 유연도가 되어 폭을 반씩 나눴고,

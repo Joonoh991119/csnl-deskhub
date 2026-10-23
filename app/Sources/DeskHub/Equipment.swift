@@ -133,6 +133,8 @@ extension NotionHubModel {
 /// 장비 예약 카드 — 허브 열2 '오늘의 실험' 아래
 struct EquipmentCard: View {
     @ObservedObject var model: NotionHubModel
+    /// 실험/장비 탭(1.0.0 A2) — 참이면 늘 펼침·접기 줄 없음. HubExpansion 저장값은 읽지도 바꾸지도 않는다
+    var forceOpen = false
     @ObservedObject private var expansion = HubExpansion.shared
     @Environment(\.cardStyle) private var cs
 
@@ -144,14 +146,14 @@ struct EquipmentCard: View {
         let me = HubPrefs.me
         let lines = EquipmentBoard.lines(machines: model.equipmentMachines, rows: model.equipment, now: model.now, me: me)
         let over = EquipmentBoard.overdue(model.equipment, today: model.today, me: me)
-        let open = expansion.isOpen(Self.key)
+        let open = forceOpen || expansion.isOpen(Self.key)
         VStack(alignment: .leading, spacing: cs.gap) {
             title
             VStack(alignment: .leading, spacing: 0) {
                 if open {
                     if lines.isEmpty { empty } else { grid(lines) }
                     if over.n > 0 { overdueChip(n: over.n, mine: over.mine, rows: over.rows) }
-                    toggleRow(open: true, lines: lines, over: over)
+                    if !forceOpen { toggleRow(open: true, lines: lines, over: over) }
                 } else {
                     toggleRow(open: false, lines: lines, over: over)
                 }

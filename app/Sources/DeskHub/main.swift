@@ -166,6 +166,15 @@ enum TextCheck {
             case "dblclick":
                 let k = kv(input)
                 got = WindowChrome.doubleClickAction(action: k["action"], legacyMiniaturize: k["legacy"] == "1").rawValue
+            // 1.0.0 Main 탭 (C2, #55) — main-today(오늘 일정 행) · main-grm(GRM 순번 6회) · main-dday(학회 D-Day) · main-papers(논문 3편 순환)
+            // · main-year(APA → 연도) · v1-tab(뷰 rawValue → 탭 이름, C1 V1TabMap). 화면·main.txt 와 같은 함수. fixtures/main-check.tsv
+            case "main-today": got = MainToday.check(input)
+            case "main-grm": got = MainGRM.check(input)
+            case "main-dday": got = MainDDay.check(input)
+            case "main-papers": got = MainPapers.check(input)
+            case "main-year": got = MainPapers.year(input)
+            case "main-authors": got = MainPapers.shortAuthors(input)   // 논문 카드 짧은 저자 (검증 1)
+            case "v1-tab": got = V1TabMap.tab(forModeRaw: input)
             default: got = "(모르는 종류 \(kind))"
             }
             if got == want { ok += 1 } else { fails.append("  \(i + 1): \(kind) \"\(input)\" → \"\(got)\" (기대 \"\(want)\")") }
