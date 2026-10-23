@@ -54,6 +54,35 @@ struct AlertSet {
     var overflow: [HubAlert.Level: Int]
     var counts: [HubAlert.Level: Int] { Dictionary(grouping: alerts, by: \.level).mapValues(\.count) }
     var isClear: Bool { alerts.isEmpty }
+    /// 지금 할 것 — 어제 이전 마감(overdue)이 아닌 경보 (0.44.0 #68). 관제탑 행·머리 수·j/k 는 이것
+    var live: [HubAlert] { alerts.filter { !$0.overdue } }
+    /// 지난 마감 — advisory 아닌 overdue. 관제탑·팝오버 모두 맨 아래 '지난 마감 n건 ▸' 한 줄로 접힌다 (0.44.0 #68, 0.43.0 C1 팝오버와 같은 말)
+    var lapsed: [HubAlert] { alerts.filter { $0.overdue && $0.level != .advisory } }
+    var liveCounts: [HubAlert.Level: Int] { Dictionary(grouping: live, by: \.level).mapValues(\.count) }
+    /// 관제탑 머리·alerts.txt 첫 줄 한 말 (0.44.0 #67, 결정 D-4) — '급함 n · 할 일 n · 참고 n'(지난 마감은 세지 않음 — 접힌 줄이 따로 셈). 순수.
+    /// 급함 = W(오늘·내일 마감 · 오늘 GRM · 자료 끊김) · 할 일 = C(며칠 안 마감 · 공지 · 내 차례) · 참고 = A(알아만 둘 것)
+    var headline: String { Self.headline(liveCounts) }
+    /// alerts.txt 둘째 줄 — 관제탑이 보이는 것 '관제탑: 급함 n · 할 일 n · 참고 n · 지난 마감 n건 (접힘)[: 제목, …]' (0.44.0 #68)
+    var towerLine: String {
+        "관제탑: \(headline) · " + PopoverTodo.lapsedLabel(lapsed.count) + " (접힘)" + (lapsed.isEmpty ? "" : ": " + lapsed.map(\.title).joined(separator: ", "))
+    }
+    static func headline(_ c: [HubAlert.Level: Int]) -> String {
+        HubAlert.Level.ordered.map { "\($0.word) \(c[$0] ?? 0)" }.joined(separator: " · ")
+    }
+}
+
+extension HubAlert.Level {
+    /// 등급의 말 (0.44.0 #67) — 행 앞 ■ □ · 표식은 그대로, 머리·덤프는 말로
+    var word: String { switch self { case .warning: return "급함"; case .caution: return "할 일"; case .advisory: return "참고" } }
+    /// 머리 칸 도움말
+    var wordHelp: String {
+        switch self {
+        case .warning: return "급함 — 오늘·내일 마감 · 오늘 GRM · 자료 끊김"
+        case .caution: return "할 일 — 며칠 안 마감 · 공지 · 내 차례"
+        case .advisory: return "참고 — 알아만 둘 것"
+        }
+    }
+    static let ordered: [HubAlert.Level] = [.warning, .caution, .advisory]
 }
 
 enum AlertEngine {
@@ -134,7 +163,9 @@ enum AlertEngine {
             // 제목에 시각이 있으면 그 시각을 마감으로 (BK21 '(18:00)') — 자정으로 두면 당일 오전부터 '지남'이 됨
             let hasClock = r.title.range(of: "\\d{1,2}:\\d{2}", options: .regularExpression) != nil
             // detail: 제목에 kind 가 이미 있으면 빼고('… 제출 (18:00) — 제출' 중복), 지난 것은 정도('n일 지남')
-            let kindText = r.kind.isEmpty || r.title.contains(r.kind) ? "" : r.kind
+            // 학회 마감 리마인더는 '제출' 대신 '마감'(카드 꼬리표와 같은 말, 0.44.0 #62 검증 1)
+            let k = RemindersFile.displayKind(r)
+            let kindText = k.isEmpty || r.title.contains(k) ? "" : k
             // 미루기: 지난 것 + actor(이 맥에서 확인한 신원) 있음 + (제목이 actor 것 || actor 가 등록). 보기 렌즈 me 로 판정하지 않는다 (검증 1)
             // by 가 없으면(nil) false — [actor, nil].contains(nil) 이 참이 되지 않게 by 를 먼저 푼다
             let byActor = !actor.isEmpty && (r.by.map { b in [actor.uppercased(), actorMember?.initials.uppercased()].contains(b.uppercased()) } ?? false)
@@ -255,7 +286,7 @@ enum AlertEngine {
     /// 텍스트 한 장 — --dump-alerts 용. isMember = 멤버 이니셜인가 — '@' 는 멤버에게만 붙인다('외부'·외부 발표자 이름은 멘션하지 않음, 0.40.0 C1 F0-1)
     @MainActor
     static func dump(_ set: AlertSet, now: Date, isMember: (String) -> Bool = { _ in true }) -> String {
-        var lines = ["경보 \(Hub.day(now)) \(Hub.time(now)) — ■\(set.counts[.warning] ?? 0) □\(set.counts[.caution] ?? 0) ·\(set.counts[.advisory] ?? 0)"]
+        var lines = ["경보 \(Hub.day(now)) \(Hub.time(now)) — \(set.headline)", set.towerLine]
         if set.isClear { lines.append("✓ 경보 없음") }
         for a in set.alerts {
             let due = (a.due.map { " [" + Hub.relative($0, now: now, hasTime: a.hasTime) + "]" } ?? "") + (a.overdue ? " (지남)" : "")

@@ -34,10 +34,29 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 </head>
 <body><main>
 <h1>DeskHub 간단 안내</h1>
-<div class="sub">연구실 바탕화면 대시보드 · 0.43.2 · 2026년 10월 21일 · 절 제목을 누르면 펼쳐집니다</div>
+<div class="sub">연구실 바탕화면 대시보드 · 0.44.0 · 2026년 10월 23일 · 절 제목을 누르면 펼쳐집니다</div>
 <p>DeskHub 는 맥 바탕화면에 늘 떠 있는 연구실 현황판입니다. 일정·마감·GRM(매주 연구실 미팅) 발표 순번·회의록·Paper Blitz(매주 논문 소개)·그랜트·학회 마감이 자동으로 갱신됩니다. 일정·회의록·논문을 눌러도 자료가 바뀌지 않습니다. 바뀌는 것은 학회 '관심' 체크, 논문 반응·댓글·'같이 읽자', 리마인더(등록·끝남·아님·미루기), 미팅 후속 체크(끝남·확정·아님·직접 적기)이며 대부분 6초 안에 되돌릴 수 있습니다. 학회 '관심'·'같이 읽자'와 리마인더 끝남·아님·미루기는 6초 되돌리기가 있고, 리마인더 등록은 누르는 즉시 연구실 공용 저장소에 남습니다. 논문 반응은 한 번 더 누르면 취소되며(Notion 에 취소 기록이 남음), 댓글은 보내는 즉시 남습니다.</p>
 
 <details open>
+<summary><span class="chev"></span>0.44.0 에서 바뀐 것</summary>
+<div class="body">
+<ul>
+<li><b>카드 정리와 접기</b> <!-- A3 #70 #56 --> — Dashboard 카드가 세 묶음(Research · This week · Deadlines)으로 나뉩니다. 자주 보지 않는 일곱 카드(Minutes · Paper Blitz · Preprints · Classes · Mail drafts · Members · Apps)는 처음에 한 줄로 접혀 있고, 그 줄을 누르면 그 자리에서 펼쳐집니다. 펼친 카드는 제목 앞 화살표나 제목을 누르면 다시 접힙니다. 어떤 카드든 접고 펼 수 있고, 이 맥이 기억합니다. 이 맥에 설치된 연구실 앱이 없으면 Apps 줄은 보이지 않습니다.</li>
+<li><b>'Mine' 카드</b> <!-- A3 #56 --> — 맨 윗줄 오른쪽에 내 것만 모았습니다: 내 GRM 차례 · 추천 논문 · 진행 프로젝트 · 미팅 후속 남은 수. 메뉴 막대 창의 '내 것' 도 같은 네 줄입니다.</li>
+<li><b>맨 위 숫자를 누르면 그 카드로</b> <!-- B2 A3 #63 --> — 맨 위 상태 줄의 숫자(학회 · 연구비 등)를 누르면 그 카드로 내려가 잠깐 테두리가 보입니다. 접혀 있던 카드는 그때만 펼쳐지고 저장되지 않습니다. '자료 멈춤' 은 관제탑을 잠깐 열어 보여 주고, 관제탑 아래 '돌아가기' 로 돌아옵니다(이 맥의 기본 화면은 바뀌지 않습니다). 8주 띠 아래에는 기호 뜻이 한 줄로 나옵니다.</li>
+<li><b>카드 제목은 크고 진하게, 출처 줄은 없앰</b> <!-- A1 #71 #65 --> — 카드 제목이 행 글자보다 먼저 읽히도록 커지고 진해졌습니다. 카드 끝마다 있던 '출처 ·' 줄은 없어졌고, 출처는 '더 보기' 에 마우스를 올리면 나옵니다. 비어 있는 카드는 '없음' 한 단어입니다.</li>
+<li><b>관제탑 맨 위 수는 말로</b> <!-- A1 #67 --> — 기호 대신 '급함 n · 할 일 n · 참고 n' 으로 보입니다. 급함이 있을 때만 빨간색입니다. 관제탑 아래 목록은 Schedule 과 Research · More 두 묶음이고, 펴고 접은 것을 이 맥이 기억합니다. 아래 '자동' 을 누르면 다시 오늘 관련 있는 것이 저절로 펼쳐집니다.</li>
+<li><b>지난 마감은 맨 아래 한 줄로</b> <!-- A2 #68 #62 --> — 관제탑 경보 목록과 Reminders 카드에서도 날짜가 지난 마감은 맨 아래 '지난 마감 n건 ▸' 한 줄로 접힙니다. 누르면 그 자리에서 펼쳐지고, 끝난 것은 '끝남' 으로 정리합니다. 학회 초록 마감 리마인더는 '제출' 대신 '마감' 으로 표시됩니다(아무도 제출하지 않았는데 제출한 것처럼 보이던 것).</li>
+<li><b>오늘 내 수업은 '지금 · 다음' 에</b> <!-- B1 #58 #56 --> — 오늘 내 수업이 '지금 · 다음' 에 'Timetable' 표시와 함께 보이고, Upcoming 목록에서는 빠집니다(같은 수업은 한 곳에만). Classes 카드 머리는 '이번 주 n개 수업(m과목)' 입니다. Timetable 의 내 수업 칸 테두리가 네 변 모두 같은 두께가 됐고, Members 표의 날짜 줄이 한 세로줄에 맞춰집니다. Upcoming 은 날짜가 바뀌는 곳의 선이 더 진합니다.</li>
+<li><b>학회 상태: 관심 · 제출 예정 · 제출함</b> <!-- C2 #62 #66 --> — 학회 단추를 누를 때마다 관심 → 제출 예정 → 제출함 → 해제 순으로 바뀌고 6초 안에 되돌릴 수 있습니다. 이름 칩에는 '예정' · '제출' 이 붙고, '제출' 은 제출함을 고른 사람에게만 붙습니다. 학회 줄은 모두 같은 모양이고, 남은 날짜가 빨간색인 것은 접수 중인 마감이 3일 안에 오는 것뿐입니다.</li>
+<li><b>미팅 후속 원본 녹취</b> <!-- C2 #59 --> — 미팅 후속 줄의 'Plaud ↗' 를 누르면 그 회의의 녹취 파일(없으면 그날 녹취 폴더)이 Finder 에서 선택됩니다. 왼쪽 열이 비면 미팅 후속이 몇 줄 더 보입니다.</li>
+<li><b>주간 정리</b> <!-- C1 #61 --> — 연구실 공용 저장소 연결이 끊겼다가 다시 이어지면 10분 안에 다시 시도합니다. 덱 이름에 밑줄이 빠진 경우(예: PB261021)나 사본 이름도 읽고, 이름 규칙이 어긋났다고 알려 줍니다.</li>
+<li><b>그 밖에</b> <!-- C2 #56 --> — Experiments 카드의 'Prolific 미연결' 은 카드 끝 작은 한 줄로 바뀌었습니다.</li>
+</ul>
+</div>
+</details>
+
+<details>
 <summary><span class="chev"></span>0.43.0 에서 바뀐 것</summary>
 <div class="body">
 <ul>
@@ -103,7 +122,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <p><b>A. 연구실 공용 저장소(CSNL_new)가 연결된 맥</b> — 터미널(응용 프로그램 → 유틸리티 → 터미널)에 한 줄을 붙여넣고 엔터.</p>
 <pre>zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/update.sh</pre>
-<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.43.2.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
+<p><b>B. 저장소 없이</b> — <a href="https://github.com/Joonoh991119/csnl-deskhub/releases/latest">GitHub Releases</a> 에서 <span class="kbd">DeskHub-0.44.0.zip</span> 과 <span class="kbd">install_professor.sh</span> 를 받아 다운로드 폴더에 둔 뒤, 터미널에 본인 이니셜을 넣어 한 줄.</p>
 <pre>zsh ~/Downloads/install_professor.sh JYK</pre>
 <p>처음 뜨는 권한 요청(캘린더·네트워크 볼륨)은 '허용'. Notion 연결 열쇠를 물으면 랩장께 받은 값을 붙여넣습니다(공용 저장소가 연결돼 있으면 자동으로 읽습니다). 이미 설치한 맥은 메뉴 막대 아이콘을 오른쪽 클릭 → '새 버전 받기'.</p>
 </div>
@@ -202,7 +221,7 @@ th{color:var(--text2);font-weight:600;font-size:14px}
 <div class="body">
 <table>
 <tr><th>증상</th><th>해결</th></tr>
-<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.43.2, 범용)으로 바뀝니다.</td></tr>
+<tr><td>설치는 됐는데 켜지지 않음, "Bad CPU type"</td><td>0.36.0 이전 판은 Intel 맥에서 안 켜집니다. 위 설치 명령을 다시 실행하면 최신 판(0.44.0, 범용)으로 바뀝니다.</td></tr>
 <tr><td>메뉴 막대에 아이콘이 없음</td><td>터미널에 <span class="kbd">open -a DeskHub</span>. 그래도 없으면 설치 명령을 다시 실행합니다.</td></tr>
 <tr><td>대시보드가 안 보임</td><td>다른 창 뒤 바탕화면 층에 있습니다. <span class="kbd">⌃ ⌥ D</span> 를 누르면 위로 올라옵니다.</td></tr>
 <tr><td>카드가 비어 있음</td><td>Notion 연결 열쇠가 없거나 공용 저장소가 안 붙은 것입니다. <span class="kbd">zsh /Volumes/CSNL_new/Grant/_ssot/deskhub/setup_env.sh 이니셜</span> 로 열쇠를 넣고, Finder → 이동 → 서버에 연결 → <span class="kbd">smb://147.47.70.15/CSNL_new</span>.</td></tr>

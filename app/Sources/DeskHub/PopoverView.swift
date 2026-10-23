@@ -39,9 +39,9 @@ enum PopoverRefresh {
 /// 팝오버 '할 것' 칸 (0.43.0 C1, #46) — 뷰·alerts.txt '팝오버 할 것'·text-check `todo` 가 같은 함수를 쓴다
 enum PopoverTodo {
     /// rows = advisory·어제 이전 마감(overdue)을 뺀 앞 limit 개, lapsed = advisory 아닌 overdue 전부(맨 아래 한 줄로 접힘)
+    /// AlertSet.live·lapsed 한 곳에서 (0.44.0 #68 — 관제탑 경보 열과 같은 나눔, 결과는 0.43.0 과 같음)
     static func split(_ set: AlertSet, limit: Int = 4) -> (rows: [HubAlert], lapsed: [HubAlert]) {
-        let todo = set.alerts.filter { $0.level != .advisory }
-        return (Array(todo.filter { !$0.overdue }.prefix(limit)), todo.filter(\.overdue))
+        (Array(set.live.filter { $0.level != .advisory }.prefix(limit)), set.lapsed)
     }
     /// 행 글 — '■ 제목 9h' (시간 칸은 MenuBarLine.compact, 마감 없으면 생략)
     static func line(_ a: HubAlert, now: Date) -> String {
@@ -177,20 +177,10 @@ struct PopoverView: View {
 
     @ViewBuilder
     private func mine(now: Date) -> some View {
-        if let m = model.member(initials: me) {
-            let turn = model.grm.first { $0.date >= model.today && ($0.presenters.contains(m.name) || $0.presenters.contains(m.initials)) }
-            let myPapers = model.papers.filter { $0.researcher == me }
-            let unreacted = myPapers.filter { p in !(model.paperComments[p.id] ?? []).contains { $0.isReaction && $0.who == me } }.count
-            // 칩 줄과 같은 소스·같은 매칭 (NAS member_links.json, R-32)
-            let projects = Self.myProjects(model, m)
+        // 허브 'Mine' 카드와 같은 네 줄 (0.44.0 #56, MineSummary) — 내 GRM 차례 · 추천 논문 · 진행 프로젝트 · 미팅 후속
+        if let rows = MineSummary.rows(model, me: me) {
             VStack(alignment: .leading, spacing: 4) {
-                if let t = turn {
-                    let n = Calendar.current.dateComponents([.day], from: model.today, to: t.date).day ?? 0
-                    row("내 GRM 차례", Hub.day(t.date) + " · " + (n == 0 ? "오늘" : "D-\(n)")).link(.notion(t.id))
-                }
-                row("추천 논문", "\(myPapers.count)편 · 반응 안 함 \(unreacted)").link(.notion(model.cfg.paperRecDB))
-                // 누르면 첫 프로젝트 폴더 — 칩 클릭과 같은 동작
-                row("진행 프로젝트", Self.projectsText(projects)).link(projects.first.map { .nas($0.path) })
+                ForEach(rows) { r in row(r.label, r.value).link(r.link) }
             }
         } else {
             Text("이 맥의 사용자 이니셜이 없음 — 대시보드 '나' 뷰에서 고르기").font(.hub(12)).foregroundStyle(Hub.text3)

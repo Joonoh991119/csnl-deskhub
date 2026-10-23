@@ -1,0 +1,12 @@
+# Paper Blitz 덱 이름 규칙 (0.44.0 C1, #61) — GRMMap.isPB·pbNameIssue·classify. 밑줄 없는 PB261021 은 덱이지만 '이름 규칙 어긋남', 슬라이드가 아님
+# kind	input	expected
+metric	A6-pb|PB261021.pptx	PB(이름 규칙 어긋남)
+metric	A6-pb|pb261021.PPTX	PB(이름 규칙 어긋남)
+metric	A6-pb|PB_261021.pptx	PB
+metric	A6-pb|PB_261021.pdf	PB
+metric	A6-pb|PB261021.pdf	PB(이름 규칙 어긋남)
+metric	A6-slide|BYL_261021.pptx	슬라이드
+metric	A6-pb|~$PB261021.pptx	—
+metric	A6-pb|PB2610.pptx	슬라이드
+metric	A6-pb|PB_2610.pptx	슬라이드
+metric	A6-pb|PB_261021_v2.pptx	PB

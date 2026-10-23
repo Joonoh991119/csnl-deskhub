@@ -1,4 +1,4 @@
-# Members 열 머리 (0.43.0 C2, #45) — 종류<TAB>입력<TAB>기대. 실측 = 머리 글꼴 14 bold × 배율 + 칩(12 bold × 배율 + 안쪽 10, 간격 4) + 여유 4 ≤ 열 폭 × 1.2 × 배율
+# Members 열 머리 (0.43.0 C2, #45) — 종류<TAB>입력<TAB>기대. 실측 = 머리 글꼴 15(cs.body, 0.44.0 B2 #73 — 0.43.0 은 14) bold × 배율 + 칩(12 bold × 배율 + 안쪽 10, 간격 4) + 여유 4 ≤ 열 폭 × 1.2 × 배율
 # 고정 폭 = Initials·Next GRM·Milestone·Reactions·Follow-ups·예시 열 하나의 폭 합(배율 1.0, colScale 전) — 0.42.0 의 604 이하
 mb-head	scale=1.0	맞음 7/7 · 고정 폭 602
 mb-head	scale=1.3	맞음 7/7 · 고정 폭 602
@@ -18,4 +18,5 @@ mb-head	scale=1.6;avail=1281	들어감 7/7
 mb-head	scale=1.0;avail=900	들어감 7/7
 mb-head	scale=1.3;avail=1100	들어감 7/7
 # 하한보다 좁으면 넘침(표만 가로 스크롤) — 판정이 그것을 잡는지
-mb-head	scale=1.6;avail=1000	넘침 277
+# 0.44.0 B2 (#73): 277 → 272 — 머리 15 bold(+)·Next GRM 날짜/D-day 두 칸(+)·Projects 하한 80→56(−)의 합. 1.6 배 1281 은 그대로 들어감
+mb-head	scale=1.6;avail=1000	넘침 272

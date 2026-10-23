@@ -71,6 +71,12 @@ enum RemindersFile {
         return (try? out.write(to: URL(fileURLWithPath: path), options: .atomic)) != nil
     }
 
+    /// 카드 꼬리표 (0.44.0 #62) — 학회 초록 마감 리마인더(id 'conf:' · 출처 conferences_upcoming.json)는 '마감'.
+    /// 제안 때 kind 가 '제출' 로 고정돼 누가 제출한 것처럼 읽혔다. 학회 상태(제출함 등)는 학회 카드에서만
+    static func displayKind(_ r: ReminderItem) -> String {
+        (r.id.hasPrefix("conf:") || r.source == "conferences_upcoming.json") ? "마감" : r.kind
+    }
+
     /// 제목으로 리마인더 후보인지 본다. 아니면 nil
     static func kind(forTitle t: String) -> String? {
         let s = t.lowercased()
@@ -130,36 +136,16 @@ struct RemindersSection: View {
                 let cut = nearOnly ? HubNear.reminders(model) : nil
                 let open = expansion.isOpen("reminders"), e = fill.extra["reminders"] ?? 0
                 let lines = cut?.shown(open: open, extra: e)
-                let rows = lines.map { $0.filter { !$0.proposal }.map(\.item) } ?? Array(model.confirmedReminders.prefix(6))
+                // 다가올 것만 행 — 지난 것은 카드 끝 '지난 마감 n건 ▸' (0.44.0 #62)
+                let rows = lines.map { $0.filter { !$0.proposal }.map(\.item) } ?? Array(HubNear.upcomingReminders(model).prefix(6))
+                let lapsed = HubNear.lapsedReminders(model)
                 if rows.isEmpty {
-                    Text(model.loading ? "불러오는 중…" : "등록된 리마인더 없음")
+                    Text(model.loading ? "불러오는 중…" : "없음")
                         .font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
                         .padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                    let done = commits.isPending(r.id)
-                    HStack(spacing: 8) {
-                        Button { done ? commits.undo(r.id) : finish(r) } label: {
-                            Image(systemName: done ? "checkmark.circle.fill" : "circle").font(.hub(14)).foregroundStyle(done ? Hub.ok : Hub.text2)
-                        }
-                        .buttonStyle(.plain).help(done ? "되돌리기" : "끝남으로 표시 — 6초 안에 되돌릴 수 있음 (NAS reminders.json)")
-                        let d = r.day
-                        let soon = d.map { $0 <= Calendar.current.date(byAdding: .day, value: 3, to: model.today)! } ?? false
-                        Text(d.map { Hub.relative($0, now: model.now, hasTime: false) } ?? "미정")
-                            .font(.hub(cs.tag + 0.5, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1)
-                            .frame(width: cs.col(44), alignment: .leading).foregroundStyle(soon && !done ? (quiet ? Hub.ink : Hub.signal) : Hub.text2)
-                        Text(r.title).font(.hub(cs.body, weight: .medium)).lineLimit(1).strikethrough(done).foregroundStyle(done ? Hub.text3 : Hub.text)
-                        Spacer()
-                        if let d, (Calendar.current.dateComponents([.day], from: model.today, to: d).day ?? 0) < 14 { Text(Hub.day(d)).font(.hub(cs.aux - 0.5)).foregroundStyle(Hub.text2).monospacedDigit() }
-                        TypePill(text: r.kind)
-                    }
-                    .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
-                    .contentShape(Rectangle())
-                    .onTapGesture { openSource(r) }
-                    .rowRail([
-                        RailButton(symbol: "arrow.up.forward", help: r.source.hasPrefix("notion:") ? "Notion 일정 열기" : "NAS 폴더 열기") { openSource(r) },
-                        RailButton(symbol: done ? "arrow.uturn.backward" : "checkmark", help: done ? "되돌리기" : "끝남 (6초 안에 되돌리기)") { done ? commits.undo(r.id) : finish(r) },
-                    ])
+                    confirmedRow(r)
                     if i < rows.count - 1 { RowDivider() }
                 }
                 let props = lines.map { $0.filter(\.proposal).map(\.item) } ?? Array(model.reminderProposals.filter { !commits.isPending($0.id) }.prefix(4))
@@ -173,7 +159,7 @@ struct RemindersSection: View {
                                 .foregroundStyle(Hub.text2).monospacedDigit().frame(width: cs.col(40), alignment: .leading)
                             Text(p.title).font(.hub(cs.aux + 0.5)).foregroundStyle(Hub.text2).lineLimit(1)
                             Spacer()
-                            TypePill(text: p.kind)
+                            TypePill(text: RemindersFile.displayKind(p))
                             Button("등록") { model.setReminder(p, status: "confirmed") }
                                 .buttonStyle(.plain).font(.hub(cs.aux - 0.5, weight: .semibold)).foregroundStyle(Hub.ink)
                                 .help("리마인더로 등록 — D-day 가 위 목록에 뜬다")
@@ -185,6 +171,22 @@ struct RemindersSection: View {
                     }
                     .padding(.bottom, 4)
                 }
+                // 지난 마감 — 접힌 한 줄, 누르면 제자리 펼침(이 맥 저장, 다른 '더 보기' 와 같은 HubExpansion), 펼치면 같은 행(끝남 체크 그대로) (0.44.0 #62)
+                if !lapsed.isEmpty {
+                    let lo = expansion.isOpen(HubNear.lapsedKey)
+                    RowDivider()
+                    HStack(spacing: 6) {
+                        Text(PopoverTodo.lapsedLabel(lapsed.count) + (lo ? " ▾" : " ▸")).font(.hub(cs.aux, weight: .medium))
+                        Spacer()
+                    }
+                    .foregroundStyle(Hub.text3).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+                    .contentShape(Rectangle())
+                    .onTapGesture { expansion.toggle(HubNear.lapsedKey) }
+                    .help(lo ? "접기 (이 맥에 저장)" : "지난 14일 안 확정 리마인더 — 펼쳐서 '끝남' 표시 (이 맥에 저장)")
+                    if lo {
+                        ForEach(lapsed) { r in RowDivider(); confirmedRow(r) }
+                    }
+                }
                 if let cut { CardFooter(caption: CardMetas.caption("reminders", model), toggleKey: "reminders", more: cut.toggleCount(open: open, extra: e)) }
                 // 되돌리기 바는 카드 끝 제 줄에 — 겹치면 '▸ 더 보기'·마지막 행과 포개진다 (검증 1). 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
@@ -192,5 +194,34 @@ struct RemindersSection: View {
             .frame(maxWidth: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
         }
+    }
+
+    /// 확정 리마인더 한 행 — 다가올 것·지난 것 같은 모양
+    @ViewBuilder
+    private func confirmedRow(_ r: ReminderItem) -> some View {
+        let done = commits.isPending(r.id)
+        HStack(spacing: 8) {
+            Button { done ? commits.undo(r.id) : finish(r) } label: {
+                Image(systemName: done ? "checkmark.circle.fill" : "circle").font(.hub(14)).foregroundStyle(done ? Hub.ok : Hub.text2)
+            }
+            .buttonStyle(.plain).help(done ? "되돌리기" : "끝남으로 표시 — 6초 안에 되돌릴 수 있음 (NAS reminders.json)")
+            let d = r.day
+            // 지난 것(접힌 줄 안)은 적색·ink 강조 없이 — 강조는 다가올 D≤3 만 (0.44.0 #62)
+            let soon = d.map { $0 >= model.today && $0 <= Calendar.current.date(byAdding: .day, value: 3, to: model.today)! } ?? false
+            Text(d.map { Hub.relative($0, now: model.now, hasTime: false) } ?? "미정")
+                .font(.hub(cs.tag + 0.5, weight: .bold, design: .rounded)).monospacedDigit().lineLimit(1)
+                .frame(width: cs.col(44), alignment: .leading).foregroundStyle(soon && !done ? (quiet ? Hub.ink : Hub.signal) : Hub.text2)
+            Text(r.title).font(.hub(cs.body, weight: .medium)).lineLimit(1).strikethrough(done).foregroundStyle(done ? Hub.text3 : Hub.text)
+            Spacer()
+            if let d, (Calendar.current.dateComponents([.day], from: model.today, to: d).day ?? 0) < 14 { Text(Hub.day(d)).font(.hub(cs.aux - 0.5)).foregroundStyle(Hub.text2).monospacedDigit() }
+            TypePill(text: RemindersFile.displayKind(r))
+        }
+        .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+        .contentShape(Rectangle())
+        .onTapGesture { openSource(r) }
+        .rowRail([
+            RailButton(symbol: "arrow.up.forward", help: r.source.hasPrefix("notion:") ? "Notion 일정 열기" : "NAS 폴더 열기") { openSource(r) },
+            RailButton(symbol: done ? "arrow.uturn.backward" : "checkmark", help: done ? "되돌리기" : "끝남 (6초 안에 되돌리기)") { done ? commits.undo(r.id) : finish(r) },
+        ])
     }
 }

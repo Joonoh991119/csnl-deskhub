@@ -244,7 +244,9 @@ struct CompactGRMBar: View {
             let soon = (Calendar.current.dateComponents([.day], from: model.today, to: g.date).day ?? 9) <= 3
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
-                    Text(HubCardTitle.title("grm")).font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize().help(HubCardTitle.hint("grm") ?? "")
+                    // 제목 — SectionTitle 과 같은 글자(cs.title bold Hub.text, 0.44.0 B2 #71). 출처는 도움말로(#65)
+                    Text(HubCardTitle.title("grm")).font(.hub(cs.title, weight: .bold)).foregroundStyle(Hub.text).tracking(0.2).lineLimit(1).fixedSize()
+                        .help((HubCardTitle.hint("grm") ?? "") + (caption ? "\n" + CardMetas.caption("grm", model) : ""))
                     Text(Hub.day(g.date)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).foregroundStyle(Hub.text2).monospacedDigit()
                     Text(Hub.dday(g.date)).font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.onAccent)
                         .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(soon ? Hub.signal : Hub.ink))
@@ -260,7 +262,6 @@ struct CompactGRMBar: View {
                         HStack(spacing: 6) { actions(g); Spacer(minLength: 0) }
                     }
                 }
-                if caption { SourceCaption(text: CardMetas.caption("grm", model)) }
             }
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
             .frame(maxHeight: .infinity, alignment: .top)
@@ -268,7 +269,7 @@ struct CompactGRMBar: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.loading ? "Notion 에서 불러오는 중…" : "예정된 GRM 이 없습니다").font(.hub(cs.body)).foregroundStyle(Hub.text2)
-                if caption { SourceCaption(text: CardMetas.caption("grm", model)) }
+                    .help(caption ? CardMetas.caption("grm", model) : "")
             }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -365,7 +366,7 @@ struct MembersProjectsStrip: View {
                 // 칩 줄 끝 한 칸 — Members 편집 시각(집계) 꼬리표 (허브만, 0.40.0 C3)
                 if caption, let f = model.cardTag("members") { FreshnessTag(f: f).padding(.vertical, 4) }
             }
-            if caption { SourceCaption(text: CardMetas.caption("members", model)).padding(.leading, 4) }
+            // 칩 아래 출처 줄은 뺐다 (0.44.0 B2, #65) — 덤프 [카드 출처] 그대로
         }
     }
 }
@@ -860,7 +861,7 @@ struct LatestManuscripts: View {
                 let open = expansion.isOpen("preprints"), e = fill.extra["preprints"] ?? 0
                 let rows = cut.map { $0.shown(open: open, extra: e) } ?? Array(model.preprints.prefix(4))
                 if rows.isEmpty {
-                    Text(model.preprintsLoading ? "OpenAlex 에서 찾는 중…" : "최근 원고 없음").font(.hub(cs.body)).foregroundStyle(Hub.text2)
+                    Text(model.preprintsLoading ? "OpenAlex 에서 찾는 중…" : "없음").font(.hub(cs.body)).foregroundStyle(Hub.text2)
                         .padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
@@ -978,6 +979,8 @@ struct BlitzCompact: View {
     /// 랩 허브만 — 최신 회차 첫 3편(내 발표 먼저), 나머지는 '▸ 더 보기' (0.37.0 C2). 열 바닥이 비면 다음 편을 더 (HubFill, 0.38.0 C3)
     var nearOnly = false
     @Environment(\.cardStyle) private var cs
+    /// 허브 카드 접기 (0.44.0 #70, 검증 1 리뷰) — SectionTitle 을 안 쓰므로 같은 화살표·제목 클릭을 여기서도
+    @Environment(\.cardFold) private var fold
     @ObservedObject private var expansion = HubExpansion.shared
     @ObservedObject private var hubFill = HubFill.shared
 
@@ -1022,9 +1025,14 @@ struct BlitzCompact: View {
 
     private var headerTitle: some View {
         HStack(spacing: 6) {
+            if let fold {
+                Image(systemName: "chevron.down").font(.hub(max(9, cs.aux - 3), weight: .bold)).foregroundStyle(Hub.text3).frame(width: 12)
+                    .contentShape(Rectangle()).onTapGesture(perform: fold).help("접기 — 한 줄로 (이 맥에 기억)")
+            }
             Text(HubCardTitle.title("blitz"))
-                .font(.hub(cs.title, weight: .semibold)).foregroundStyle(Hub.text2).tracking(0.3).lineLimit(1)
-                .help("지난 Paper Blitz" + (model.blitzDate.map { " · " + Hub.day($0) } ?? ""))
+                .font(.hub(cs.title, weight: .bold)).foregroundStyle(Hub.text).tracking(0.2).lineLimit(1)   // SectionTitle 과 같은 글자 (0.44.0 B2, #71)
+                .help("지난 Paper Blitz" + (model.blitzDate.map { " · " + Hub.day($0) } ?? "") + (fold == nil ? "" : " — 제목을 누르면 접기 (이 맥에 기억)"))
+                .modifier(FoldTap(fold: fold))
             if let f = model.blitzFreshness { FreshnessTag(f: f) }
         }
     }
@@ -1055,7 +1063,7 @@ struct BlitzCompact: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: cs.rowV) {
             if model.blitz.isEmpty {
-                Text(model.blitzLoading ? "불러오는 중…" : "지난 Paper Blitz 없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2)
+                Text(model.blitzLoading ? "불러오는 중…" : "없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2)
             }
             let papers = nearOnly ? HubNear.blitz(model, me: HubPrefs.me).shown(open: expansion.isOpen("blitz"), extra: hubFill.extra["blitz"] ?? 0) : model.blitz
             ForEach(papers) { p in
@@ -1140,7 +1148,7 @@ struct GrantsSection: View {
             }
             VStack(spacing: 0) {
                 if model.grants.isEmpty {
-                    Text(FileManager.default.fileExists(atPath: model.cfg.grantsFile) ? "다가오는 보고·지원 없음" : "NAS 의 Grant/_ssot/grants_schedule.json 을 읽지 못함")
+                    Text(FileManager.default.fileExists(atPath: model.cfg.grantsFile) ? "없음" : "NAS 의 Grant/_ssot/grants_schedule.json 을 읽지 못함")
                         .font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 let cut = nearOnly ? HubNear.grants(model) : nil
@@ -1221,32 +1229,98 @@ enum ConferencesFile {
     }
 }
 
-/// 다음 GRM 칸 아래 — 오늘 캘린더(CSNL·SLab)의 지금 · 다음 일정 한 줄씩 (오늘 일정 카드 ①안)
+/// 지금 · 다음 판정 (0.44.0 B1, #58) — 오늘 캘린더(CSNL·SLab) 일정 + 오늘 내 수업(Timetable). 같은 수업(시간 겹침 + 이름 포함, 4자 이상)은 Timetable 하나.
+/// NowNextLine(허브·팝오버·앰비언트)·text.txt [Timetable] '지금·다음 후보'·text-check nownext 가 같은 함수
+enum NowNext {
+    static let classSource = "Timetable"
+    struct Slot: Hashable {
+        let title: String, start: Date, end: Date, source: String
+        var isClass: Bool { source == NowNext.classSource }
+    }
+    /// now = 진행 중 첫 슬롯, next = 지금 뒤 시작하는 첫 슬롯, rest = 오늘 남은 전부(시작·끝 순)
+    struct Pick { var now: Slot?; var next: Slot?; var rest: [Slot] }
+
+    /// 오늘(같은 날) 시각 있는 캘린더 일정 → 슬롯. 출처는 캘린더 이름에 slab 이 있으면 SLab, 아니면 CSNL (Upcoming 과 같음)
+    static func eventSlots(_ events: [CalEvent], now: Date) -> [Slot] {
+        events.filter { !$0.isAllDay && Calendar.current.isDate($0.start, inSameDayAs: now) }.map {
+            Slot(title: Hub.canonicalNames($0.title), start: $0.start, end: $0.end,
+                 source: $0.calendarName.localizedCaseInsensitiveContains("slab") ? "SLab" : "CSNL")
+        }
+    }
+    /// 오늘 내 수업 → 슬롯 — Timetable.todayGroups(휴일·학기 밖이면 없음) 중 이 맥 이니셜(별칭 풂)이 든 덩어리, 오늘 날짜(KST) 시각으로
+    static func classSlots(_ feed: TimetableFeed?, me: String, now: Date) -> [Slot] {
+        guard let feed else { return [] }
+        let key = Timetable.meKey(me, aliases: feed.aliases)
+        guard !key.isEmpty else { return [] }
+        let day = Timetable.kst.startOfDay(for: now)
+        return Timetable.todayGroups(feed.rows, now: now).filter { $0.mine(key) }.map {
+            Slot(title: $0.course, start: at($0.start, day: day), end: at($0.end, day: day), source: classSource)
+        }
+    }
+    static func at(_ hm: String, day: Date) -> Date { day.addingTimeInterval(TimeInterval(Timetable.minutes(hm) * 60)) }
+    /// 순수 — 같은 수업이면 캘린더 쪽을 버리고, 남은 것 중 지금·다음
+    static func pick(events: [Slot], classes: [Slot], now: Date) -> Pick {
+        let kept = events.filter { e in !classes.contains { c in c.start < e.end && e.start < c.end && Timetable.sameCourse(e.title, c.title) } }
+        let rest = Array((kept + classes).enumerated().filter { $0.element.end > now }.sorted { a, b in
+            (a.element.start, a.element.end, a.offset) < (b.element.start, b.element.end, b.offset)
+        }.map(\.element))
+        return Pick(now: rest.first { $0.start <= now }, next: rest.first { $0.start > now }, rest: rest)
+    }
+    /// 'HH:mm–HH:mm 제목 (출처)'
+    static func text(_ s: Slot) -> String { "\(Timetable.hm(s.start))–\(Timetable.hm(s.end)) \(s.title) (\(s.source))" }
+    /// text-check nownext — 'now=yyyy-MM-ddTHH:mm;cal=HH:mm-HH:mm/제목|…;cls=HH:mm-HH:mm/과목|…' → '지금 <…|—> · 다음 <…|—>' (fixtures/schedule-check.tsv)
+    static func check(_ input: String) -> String {
+        var k: [String: String] = [:]
+        for part in input.components(separatedBy: ";") {
+            let p = part.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
+            if p.count == 2 { k[p[0].trimmingCharacters(in: .whitespaces)] = p[1] }
+        }
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.timeZone = Timetable.kst.timeZone; f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        guard let now = f.date(from: k["now"] ?? "") else { return "(입력 형식)" }
+        let day = Timetable.kst.startOfDay(for: now)
+        func slots(_ s: String, source: String) -> [Slot]? {
+            var out: [Slot] = []
+            for item in s.components(separatedBy: "|") where !item.isEmpty {
+                let p = item.split(separator: "/", maxSplits: 1).map(String.init)
+                let t = p.first?.components(separatedBy: "-") ?? []
+                guard p.count == 2, t.count == 2 else { return nil }
+                out.append(Slot(title: p[1], start: at(t[0], day: day), end: at(t[1], day: day), source: source))
+            }
+            return out
+        }
+        guard let ev = slots(k["cal"] ?? "", source: "CSNL"), let cl = slots(k["cls"] ?? "", source: classSource) else { return "(입력 형식)" }
+        let p = pick(events: ev, classes: cl, now: now)
+        return "지금 \(p.now.map(text) ?? "—") · 다음 \(p.next.map(text) ?? "—")"
+    }
+}
+
+/// 다음 GRM 칸 아래 — 오늘 캘린더(CSNL·SLab)의 지금 · 다음 일정 한 줄씩 (오늘 일정 카드 ①안) + 오늘 내 수업(Timetable, 0.44.0 B1 #58)
 struct NowNextLine: View {
     @ObservedObject var cal: CalendarModel
     @Environment(\.cardStyle) private var cs
     var body: some View {
         let now = cal.now
-        let today = cal.events.filter { Calendar.current.isDate($0.start, inSameDayAs: now) }.sorted { $0.start < $1.start }
-        let cur = today.first { $0.start <= now && now < $0.end }
-        let next = today.first { $0.start > now }
+        let p = NowNext.pick(events: NowNext.eventSlots(cal.events, now: now), classes: NowNext.classSlots(cal.timetable, me: HubPrefs.me, now: now), now: now)
         VStack(alignment: .leading, spacing: 3) {
-            if cur == nil && next == nil {
-                // 첫 조회 전 → 불러오는 중… / 소스 없음·거부 → 캘린더 읽지 못함 / 그 밖 → 없음 (0.37.0 C6 — 소스 없음에서 '불러오는 중'이 영원히 남던 것)
-                Text(!cal.isSettled ? "불러오는 중…" : (cal.status == .noSource || cal.status == .denied ? "캘린더 읽지 못함" : "오늘 남은 일정 없음"))
+            if p.now == nil && p.next == nil {
+                // 첫 조회 전 → 불러오는 중… / 소스 없음·거부 → 캘린더 읽지 못함 / 그 밖 → 없음 (0.37.0 C6 — 소스 없음에서 '불러오는 중'이 영원히 남던 것, 0.44.0 #71 한 단어)
+                Text(!cal.isSettled ? "불러오는 중…" : (cal.status == .noSource || cal.status == .denied ? "캘린더 읽지 못함" : "없음"))
                     .font(.hub(cs.aux)).foregroundStyle(cal.isSettled ? Hub.text3 : Hub.text2)
             }
-            if let c = cur { row("지금", c, strong: true) }
-            if let n = next { row("다음", n, strong: false) }
+            if let c = p.now { row("지금", c, strong: true) }
+            if let n = p.next { row("다음", n, strong: false) }
         }
     }
-    private func row(_ tag: String, _ e: CalEvent, strong: Bool) -> some View {
+    private func row(_ tag: String, _ e: NowNext.Slot, strong: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             // '지금' 은 남색 — 적색은 마감·오류에만 (0.37.0 C6)
             Text(tag).font(.hub(cs.tag - 0.5, weight: .bold)).foregroundStyle(strong ? Hub.ink : Hub.text3).frame(width: cs.col(26), alignment: .leading)
             Text(Hub.time(e.start) + "–" + Hub.time(e.end)).font(.hub(cs.aux - 0.5, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text2)
-            Text(Hub.canonicalNames(e.title)).font(.hub(cs.body - 1, weight: strong ? .semibold : .regular)).lineLimit(1)
+            Text(e.title).font(.hub(cs.body - 1, weight: strong ? .semibold : .regular)).lineLimit(1)
+            // 시간표 수업이면 출처 꼬리표 — 캘린더 일정과 구분 (0.44.0 B1, #58)
+            if e.isClass { Text(NowNext.classSource).font(.hub(cs.tag - 1)).foregroundStyle(Hub.text3).fixedSize() }
         }
+        .help(e.isClass ? "Timetable 의 내 수업" : "\(e.source) 캘린더 일정")
     }
 }
 

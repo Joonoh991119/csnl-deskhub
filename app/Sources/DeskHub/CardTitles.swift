@@ -25,6 +25,9 @@ enum HubCardTitle {
         Row(id: "minutes", title: "Minutes", hint: "Plaud 요약 회의록"),
         Row(id: "blitz", title: "Paper Blitz", hint: "지난 Paper Blitz — 날짜는 꼬리표"),
         Row(id: "conferences", title: "Conferences", hint: "다가오는 학회"),
+        // 관제탑 레일·허브 'Mine' 도 이 표에서 (0.44.0 #71·#56)
+        Row(id: "datastate", title: "Data status", hint: "자료 원천 상태·위생 목록"),
+        Row(id: "mine", title: "Mine", hint: "내 GRM 차례 · 추천 논문 · 진행 프로젝트 · 미팅 후속"),
     ]
     private static let byID: [String: Row] = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
     static func title(_ id: String) -> String { byID[id]?.title ?? id }

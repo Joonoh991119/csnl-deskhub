@@ -57,7 +57,31 @@ enum HubViewMode: String, CaseIterable, Identifiable {
 final class ViewModeStore: ObservableObject {
     static let shared = ViewModeStore()
     @Published var mode: HubViewMode {
-        didSet { UserDefaults.standard.set(mode.rawValue, forKey: "DeskHub.viewMode"); UsageLog.viewShown(mode.rawValue) }
+        didSet {
+            UsageLog.viewShown(mode.rawValue)
+            // 잠깐 바꾼 것(숫자 클릭 찾아가기)은 이 맥 기본 뷰로 저장하지 않는다 — 공용 맥의 다음 사람도 랩 허브 (0.44.0 검증 1 리뷰)
+            if transient { transient = false; return }
+            returnTo = nil
+            UserDefaults.standard.set(mode.rawValue, forKey: "DeskHub.viewMode")
+        }
+    }
+    /// 잠깐 바꾸기 전 뷰 — 있으면 관제탑 소스 줄에 '돌아가기'. 사람이 뷰를 고르면(저장) 지운다
+    @Published private(set) var returnTo: HubViewMode?
+    private var transient = false
+    /// 저장하지 않고 잠깐 다른 뷰로 (상태 한 줄 '자료 멈춤' → 관제탑 Data status). 재실행하면 저장된 뷰
+    func showTemporarily(_ m: HubViewMode) {
+        guard m != mode else { return }
+        let back = returnTo ?? mode
+        transient = true
+        mode = m
+        returnTo = back
+    }
+    /// '돌아가기' — 잠깐 바꾸기 전 뷰로(저장된 값과 같으므로 다시 쓰지 않는다)
+    func returnBack() {
+        guard let r = returnTo else { return }
+        transient = true
+        mode = r
+        returnTo = nil
     }
     private init() {
         mode = HubViewMode(rawValue: UserDefaults.standard.string(forKey: "DeskHub.viewMode") ?? "") ?? .hub

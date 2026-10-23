@@ -246,9 +246,9 @@ struct CardStyle: Equatable {
     /// × 글자 배율(HubDisplay.scale, 0.37.0 C3) — 슬라이더로 키워도 날짜·D-day 칸이 '…' 로 잘리지 않게
     func col(_ w: CGFloat) -> CGFloat { (w * colScale * HubDisplay.scale).rounded() }
 
-    static let standard = CardStyle(title: 12, body: 13, aux: 12, tag: 11, big: 14, cap: 10.5, rowH: 12, rowV: 8, gap: 8, empty: 12, colScale: 1)
-    /// 랩 허브 — 제목 ≥16 · 본문 ≥14 (교수님 기본 화면)
-    static let large = CardStyle(title: 16, body: 15, aux: 14, tag: 14, big: 20, cap: 12, rowH: 10, rowV: 5, gap: 4, empty: 8, colScale: 1.2)
+    static let standard = CardStyle(title: 13, body: 13, aux: 12, tag: 11, big: 14, cap: 10.5, rowH: 12, rowV: 8, gap: 8, empty: 12, colScale: 1)
+    /// 랩 허브 — 제목 18(0.44.0 #71, 결정 D-10 — 16 → 18 bold) · 본문 ≥14 (교수님 기본 화면)
+    static let large = CardStyle(title: 18, body: 15, aux: 14, tag: 14, big: 20, cap: 12, rowH: 10, rowV: 5, gap: 4, empty: 8, colScale: 1.2)
 
     private static func n(_ v: CGFloat) -> String { v == v.rounded() ? String(Int(v)) : String(format: "%.1f", Double(v)) }
     /// text.txt [허브 글자] 한 줄
@@ -342,10 +342,19 @@ enum HubNear {
 
     /// 리마인더 한 줄 — 확정(proposal=false) 또는 제안
     struct ReminderLine: Identifiable { let item: ReminderItem; let proposal: Bool; var id: String { (proposal ? "p:" : "c:") + item.id } }
-    // 리마인더 — 확정 D≤7(지난 것 포함) 최대 6 · 제안 D≤7 최대 2 · 펼침 확정 6 + 제안 4 (0.36.0 동작)
+    /// 확정 리마인더 중 오늘 이후(날짜 없음 포함) — 카드 행 (0.44.0 #62: 지난 것이 맨 위를 차지하지 않게)
+    static func upcomingReminders(_ model: NotionHubModel) -> [ReminderItem] {
+        model.confirmedReminders.filter { $0.day.map { $0 >= model.today } ?? true }
+    }
+    /// 지난 확정 리마인더(지난 14일, confirmedReminders 창 그대로) — 카드 끝 '지난 마감 n건 ▸' 로 접힘(HubExpansion 'reminders-lapsed') (0.44.0 #62)
+    static func lapsedReminders(_ model: NotionHubModel) -> [ReminderItem] {
+        model.confirmedReminders.filter { $0.day.map { $0 < model.today } ?? false }
+    }
+    static let lapsedKey = "reminders-lapsed"
+    // 리마인더 — 확정 D≤7(오늘 이후, 0.44.0) 최대 6 · 제안 D≤7 최대 2 · 펼침 확정 6 + 제안 4 (0.36.0 동작). 지난 것은 lapsedReminders
     static func reminders(_ model: NotionHubModel) -> NearCut<ReminderLine> {
         let soon = Calendar.current.date(byAdding: .day, value: 7, to: model.today)!
-        let conf = Array(model.confirmedReminders.prefix(6))
+        let conf = Array(upcomingReminders(model).prefix(6))
         let props = Array(model.reminderProposals.filter { !model.reminderCommits.isPending($0.id) }.prefix(4))
         var nearC = conf.filter { $0.day.map { $0 <= soon } ?? false }
         let nearP = Array(props.filter { $0.day.map { $0 <= soon } ?? false }.prefix(2))
@@ -441,7 +450,8 @@ enum HubNear {
         let who = PaperRecBoard.who(filter: HubPrefs.paperFilter, me: me)
         return [
             line("events", events(model, items: items)) { Hub.shortDay($0.date) },
-            line("reminders", reminders(model)) { r in (r.proposal ? "제안 " : "") + (r.item.day.map { dLabel(days(model, $0)) } ?? "미정") },
+            line("reminders", reminders(model)) { r in (r.proposal ? "제안 " : "") + (r.item.day.map { dLabel(days(model, $0)) } ?? "미정") }
+                + { let n = lapsedReminders(model).count; return n == 0 ? "" : " · 지난 \(n)(\(ex.isOpen(lapsedKey) ? "펼침" : "접힘"))" }(),
             line("grants", grants(model)) { g in g.due.map { dLabel(days(model, $0)) } ?? "미정" },
             line("conferences", conferences(model, limit: min(model.cfg.conferencesCount, 5))) { conferenceBasis(model, $0).label },
             line("experiments", experiments(model)) { x in [x.source, x.status].filter { !$0.isEmpty }.joined(separator: " ") },
@@ -473,11 +483,17 @@ final class HubFill: ObservableObject {
     static let shared = HubFill()
     static let enabled = ProcessInfo.processInfo.environment["DESKHUB_HUB_FILL"] != "0"
     /// 열 → 채움 후보(우선순위 순, 시간에 민감한 것 먼저). 실험(준비 중 초안)·회의록(최근 1)·만든 앱(머리 한 줄)은 0.37.0 '가까운 것' 예외 규칙대로 제외
-    static let candidates: [(col: String, keys: [String])] = [("1", ["preprints", "papers"]), ("2", ["events", "reminders", "grants"]), ("3", ["conferences", "blitz"])]
-    /// 열 → 그 열의 모든 카드(HubExpansion 키) — 하나라도 펼쳐져 있으면 그 열은 건드리지 않는다
-    static let columnCards: [String: [String]] = ["1": ["papers", "preprints", "apps"], "2": ["reminders", "experiments", "events", "grants"], "3": ["followups", "minutes", "blitz", "conferences"]]
+    /// 0.44.0 A3 (#70): 묶음(HubGroups) — 열1 Research 논문 · 열2 This week 일정·리마인더 · 열3 Deadlines 학회·그랜트. 원고·Blitz 는 기본 접힘이라 후보에서 뺌
+    /// 검증 1: 논문 추천이 멈춘 날 열1 이 193pt 비었다(0.43.2 79pt) — 미팅 후속(내 것 보기)도 열1 후보로
+    static let candidates: [(col: String, keys: [String])] = [("1", ["papers", "followups"]), ("2", ["events", "reminders"]), ("3", ["conferences", "grants"])]
+    /// 열 → 그 열의 모든 카드(HubExpansion 키) — 하나라도 펼쳐져 있으면 그 열은 건드리지 않는다. HubGroups 표 그대로(접힌 카드는 step 에서 뺀다)
+    static let columnCards: [String: [String]] = Dictionary(uniqueKeysWithValues: HubGroups.columns.map { ($0.n, $0.cards) })
+    /// 잠깐 열린 것의 열 — 카드가 묶음으로 옮겨도 카드가 부르는 col 값과 상관없이 그 카드가 있는 열로 (미팅 후속 입력 칸은 열1)
+    private static let holdCard: [String: String] = ["papers-ui": "papers", "conf-me": "conferences", "fu-input": "followups"]
+    /// 접힌 카드는 채움 후보·'펼친 카드' 판정에서 뺀다 (0.44.0 A3) — 접힌 줄에는 행이 없다
+    private static func open(_ keys: [String]) -> [String] { keys.filter { !HubFold.shared.isFolded($0) } }
     /// 행 높이 추정 (1.0배, CardStyle.large — 0.37.0 그림 실측). × HubDisplay.scale. qa 가 잰 값으로 이 한 곳만 고친다
-    static let rowH: [String: CGFloat] = ["events": 30, "reminders": 32, "grants": 66, "conferences": 66, "blitz": 42, "preprints": 62, "papers": 135]
+    static let rowH: [String: CGFloat] = ["events": 30, "reminders": 32, "grants": 66, "conferences": 66, "blitz": 42, "preprints": 62, "papers": 135, "followups": 52]
     /// 카드당 더하는 행 상한
     static let cap = 3
 
@@ -511,6 +527,7 @@ final class HubFill: ObservableObject {
 
     /// 잠깐 열린 것이 열을 늘리는 동안 그 열의 결정·넘침 고침을 멈춘다. 닫히면 한 번 다시 본다
     func setHold(_ id: String, col: String, _ on: Bool) {
+        let col = Self.holdCard[id].flatMap(HubGroups.column(of:)) ?? col
         var h = holds[col] ?? []
         if on { h.insert(id) } else { h.remove(id) }
         guard h != (holds[col] ?? []) else { return }
@@ -521,9 +538,11 @@ final class HubFill: ObservableObject {
     /// 열이 잠깐 늘어나 있는가 — 열2 할 일 되돌리기 토스트(끝남·아님), 열3 학회 관심 토스트, 열1 논문 댓글 칸·'나:' 고르기
     private func transient(_ col: String, _ m: NotionHubModel) -> Bool {
         if !(holds[col] ?? []).isEmpty { return true }
+        // 열1 미팅 후속 되돌리기(0.41.0 C3, 입력 칸은 hold 'fu-input') · 열2 할 일 · 열3 학회 관심 (0.44.0 A3 — 미팅 후속이 Research 열로)
         switch col {
+        case "1": return !m.followupCommits.pending.isEmpty
         case "2": return !m.reminderCommits.pending.isEmpty
-        case "3": return !m.interestCommits.pending.isEmpty || !m.followupCommits.pending.isEmpty   // 미팅 후속 되돌리기 (0.41.0 C3) · 입력 칸은 hold 'fu-input'
+        case "3": return !m.interestCommits.pending.isEmpty
         default: return false
         }
     }
@@ -540,6 +559,13 @@ final class HubFill: ObservableObject {
         let now = Date()
         for c in Self.candidates { changedAt[c.col] = now }
         poke()
+    }
+
+    /// 카드를 접거나 폈을 때 (0.44.0 A3) — 열의 카드 구성이 바뀌므로 그날 결정을 지우고 채움을 0 에서 다시 정한다(접힌 카드에 남은 채움도 지움)
+    func foldChanged() {
+        decided = [:]; added = [:]
+        for c in Self.candidates { for k in c.keys { setExtra(k, 0, col: c.col) } }
+        expansionChanged()
     }
 
     /// HubLayoutProbe.record 가 부른다 — 내용 높이가 새로 왔으면 그 열의 '바뀐 뒤 측정 대기'를 푼다
@@ -570,10 +596,11 @@ final class HubFill: ObservableObject {
         }
     }
 
-    private func step(_ col: String, _ keys: [String]) {
+    private func step(_ col: String, _ allKeys: [String]) {
         guard let m = model else { waiting[col] = "허브 안 보임"; return }
+        let keys = Self.open(allKeys)
         // 논문 추천이 멈춰 접혀 있으면(R4) 펼침 저장값은 화면에 없다 — 그 열은 접힌 열로 본다 (0.40.0 C8)
-        if (Self.columnCards[col] ?? []).contains(where: { HubExpansion.shared.isOpen($0) && !($0 == "papers" && m.papersStopped) }) {
+        if Self.open(Self.columnCards[col] ?? []).contains(where: { HubExpansion.shared.isOpen($0) && !($0 == "papers" && m.papersStopped) }) {
             waiting[col] = "펼친 카드"; seen[col] = nil; return
         }
         guard let v = HubLayoutProbe.value(col) else { waiting[col] = "측정 전"; return }
@@ -671,6 +698,8 @@ final class HubFill: ObservableObject {
             if m.papersStopped { return 0 }
             return HubNear.papers(m, visible: PaperRecBoard.visible(m, who: PaperRecBoard.who(filter: HubPrefs.paperFilter, me: HubPrefs.me))).more
         case "preprints": return HubNear.preprints(m).more
+        // 미팅 후속은 '내 것' 보기만 행 목록(NearCut)을 그린다 — 읽기(사람별)·개수만 보기는 채울 행이 없다 (검증 1)
+        case "followups": return m.followupView == .full ? HubNear.followups(m).more : 0
         default: return 0
         }
     }
@@ -686,9 +715,10 @@ final class HubFill: ObservableObject {
         let parts = Self.candidates.map { c -> String in
             guard let d = decided[c.col] else { return "\(c.col) 대기(\(waiting[c.col] ?? "측정 전"))" }
             if last.map({ d.at > $0 }) ?? true { last = d.at }
-            let s = c.keys.compactMap { k in (extra[k] ?? 0) > 0 ? "\(k) +\(extra[k] ?? 0)" : nil }
+            let keys = Self.open(c.keys)
+            let s = keys.compactMap { k in (extra[k] ?? 0) > 0 ? "\(k) +\(extra[k] ?? 0)" : nil }
             // 남은 행이 있는데 상한(min(3, 남은 수)) 아래에서 멈춘 카드 = 다음 한 행이 남는 높이에 안 들어감(계획 또는 넘침 고침)
-            let unfit = model.map { m in c.keys.filter { k in let e = extra[k] ?? 0; return e < min(Self.cap, Self.fillable(k, m)) } } ?? []
+            let unfit = model.map { m in keys.filter { k in let e = extra[k] ?? 0; return e < min(Self.cap, Self.fillable(k, m)) } } ?? []
             // 실측 행 높이가 있으면 함께 — qa 가 '빈 높이 < 행 높이 + 여백' 을 바로 대조 (예 '(안 맞음 papers 행 212pt)')
             let unfitText = unfit.map { k in measuredRowH[k].flatMap { abs($0.scale - HubDisplay.scale) < 0.01 ? "\(k) 행 \(Int($0.h.rounded()))pt" : nil } ?? k }
             return "\(c.col) " + (s.isEmpty ? "없음" : s.joined(separator: " ")) + (unfit.isEmpty ? "" : " (안 맞음 " + unfitText.joined(separator: " ") + ")")
@@ -725,36 +755,31 @@ final class HubExpansion: ObservableObject {
     }
 }
 
-/// 허브 카드 끝 한 줄 (0.40.0 C2, A1·결정 D-h) — 왼쪽 캡션('출처 · 기준 · n · 정의 id', Hub.text3·cs.cap), 오른쪽 '▸ 더 보기 · n개'(있을 때만).
-/// 허브의 MoreToggle 자리를 대신한다 — 토글이 있는 카드는 높이가 그대로(캡션 글자가 토글 글자보다 작다), 없는 카드는 캡션 한 줄만큼 늘어난다
+/// 허브 카드 끝 한 줄 (0.40.0 C2 → 0.44.0 #65) — 출처 캡션 글은 더 그리지 않는다(리뷰: '카드 끝 출처 줄은 쓸모없음').
+/// 토글이 있으면(more > 0) 구분선 + '▸ 더 보기 · n개' 줄만 — 캡션은 그 토글의 도움말(마우스를 올리면). 토글이 없으면 아무것도 그리지 않는다(카드가 한 줄 줄어듦).
+/// `caption:` 매개변수는 그대로 둔다(다른 카드 호출이 그대로 컴파일). 덤프 [카드 출처] 는 CardMetas 가 그대로 쓴다
 struct CardFooter: View {
     let caption: String
     var toggleKey: String? = nil
-    /// 펼치면 더 보이는 수 (MoreToggle 과 같은 값) — 0 이면 토글 없이 캡션만
+    /// 펼치면 더 보이는 수 (MoreToggle 과 같은 값) — 0 이면 아무것도 그리지 않음
     var more: Int = 0
     var divider: Bool = true
     @ObservedObject private var store = HubExpansion.shared
     @Environment(\.cardStyle) private var cs
     var body: some View {
-        VStack(spacing: 0) {
-            if divider { RowDivider() }
-            HStack(spacing: 8) {
-                // 캡션이 먼저 폭을 받는다 — 토글은 제 글자 폭(fixedSize)만 남기고, 남는 오른쪽 면은 토글 클릭 영역
-                SourceCaption(text: caption).layoutPriority(1)
-                if let key = toggleKey, more > 0 {
-                    let open = store.isOpen(key)
-                    Button { store.toggle(key) } label: {
-                        Text(open ? "▾ 접기" : "▸ 더 보기 · \(more)개")
-                            .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
-                            .frame(maxWidth: .infinity, alignment: .trailing).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .help(open ? "접기 — 가까운 것만 (이 맥에 저장)" : "이 카드의 나머지 \(more)개를 제자리에서 펼침 (이 맥에 저장)")
-                } else {
-                    Spacer(minLength: 0)
+        if let key = toggleKey, more > 0 {
+            let open = store.isOpen(key)
+            VStack(spacing: 0) {
+                if divider { RowDivider() }
+                Button { store.toggle(key) } label: {
+                    Text(open ? "▾ 접기" : "▸ 더 보기 · \(more)개")
+                        .font(.hub(cs.aux, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+                        .frame(maxWidth: .infinity, alignment: .trailing).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .help(caption)   // 출처 · 기준 · n · 정의 id — 마우스를 올리면 (펼침·접힘은 이 맥에 저장)
+                .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
             }
-            .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
         }
     }
 }

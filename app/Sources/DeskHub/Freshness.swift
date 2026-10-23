@@ -49,15 +49,17 @@ extension Freshness {
 
 struct FreshnessTag: View {
     let f: Freshness
+    /// 좁은 제목 줄에서는 아이콘만 (글은 도움말) — 제목이 잘리지 않게 (0.44.0 검증 1)
+    var iconOnly = false
     var body: some View {
         HStack(spacing: 3) {
             Image(systemName: f.state == .fresh ? "checkmark.circle" : f.state == .pending ? "arrow.triangle.2.circlepath" : "exclamationmark.circle")
-            Text(f.text)
+            if !iconOnly { Text(f.text) }
         }
         .font(.hub(10.5, weight: .medium))
         .lineLimit(1)   // 좁은 열에서 한 글자씩 줄바꿈 방지 (0.37.0 리뷰 2)
         .foregroundStyle(f.state == .stale ? Hub.text2 : Hub.text3)
-        .help(f.help)
+        .help(iconOnly ? f.text + " — " + f.help : f.help)
     }
 }
 
@@ -73,6 +75,11 @@ extension NotionHubModel {
     /// Paper Blitz: NAS 에서 바로 읽으면 pending, 지난 GRM 보다 오래면 stale
     var blitzFreshness: Freshness? {
         guard let d = blitzDate else { return nil }
+        // 덱 이름이 PB_yymmdd 가 아니면(PB261021.pptx) 주간 정리가 Notion 에 넣지 않는다 — 이름을 고치라는 꼬리표 (0.44.0 #61, 적색 아님)
+        let deck = blitzSource.flatMap { $0.hasPrefix("/") ? $0 : nil } ?? blitzDeckPath
+        if let deck, GRMMap.pbNameIssue((deck as NSString).lastPathComponent) != nil {
+            return Freshness(state: .pending, text: "NAS 덱 · 이름 확인", help: (deck as NSString).lastPathComponent + " — 규칙 PB_yymmdd")
+        }
         if blitzPending { return Freshness(state: .pending, text: "NAS 덱", help: "Notion Archive 반영 전 — NAS 의 PB 덱을 바로 읽음") }
         let behind = lastGRM.map { d < $0.date } ?? false
         return Freshness(state: behind ? .stale : .fresh, text: behind ? "지난 GRM 덱 없음?" : "최신",

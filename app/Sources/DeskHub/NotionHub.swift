@@ -404,13 +404,16 @@ final class NotionHubModel: ObservableObject {
     }
     private var calSettledSink: AnyCancellable?
 
-    /// 지난 Paper Blitz 덱 — NAS GRM/<yyyy>/<yyyymmdd>/PB_yymmdd.pdf (없으면 .pptx)
+    /// 지난 Paper Blitz 덱 — NAS GRM/<yyyy>/<yyyymmdd>/ 안에서 PB 덱(GRMMap.isPB — 판정은 그 한 곳, 0.44.0 #61)이고 이름에 yyMMdd 가 든 것.
+    /// pdf 먼저, 같은 확장자면 'PB_' 로 시작하는 이름 먼저(규칙에 맞는 이름), 그다음 이름순
     var blitzDeckPath: String? {
         guard let d = blitzDate else { return nil }
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy"; let y = f.string(from: d); f.dateFormat = "yyyyMMdd"; let ymd = f.string(from: d); f.dateFormat = "yyMMdd"; let s = f.string(from: d)
         let dir = "\(cfg.nasGRMRoot)/\(y)/\(ymd)"
-        return ["pdf", "pptx"].map { "\(dir)/PB_\(s).\($0)" }.first { FileManager.default.fileExists(atPath: $0) }
+        let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).filter { GRMMap.isPB($0) && $0.contains(s) }
+        let rank: (String) -> (Int, Int, String) = { n in (n.lowercased().hasSuffix(".pdf") ? 0 : 1, PaperBlitzDeck.ruleNamed(n) ? 0 : 1, n) }
+        return files.min { rank($0) < rank($1) }.map { "\(dir)/\($0)" }
     }
     private var preprintsFetchedAt: Date?
     /// 최신 원고를 마지막으로 받은 시각 — 카드 캡션 '기준' (0.40.0 C2)
@@ -1554,6 +1557,8 @@ struct SectionTitle: View {
     var hint: String? = nil
     /// 카드 글자 역할 (0.37.0) — 제목 = cs.title, 꼬리 링크 = cs.aux
     @Environment(\.cardStyle) private var cs
+    /// 허브 카드 접기 (0.44.0 #70) — Dashboard 카드 칸이 넣을 때만 제목 앞 화살표, 제목·화살표 클릭 = 접기(이 맥 기억)
+    @Environment(\.cardFold) private var fold
     init(text: String, hint: String? = nil, trailing: String? = nil, fresh: Freshness? = nil, badge: String? = nil, action: (() -> Void)? = nil) {
         self.text = text; self.hint = hint; self.trailing = trailing; self.fresh = fresh; self.badge = badge; self.action = action
     }
@@ -1563,10 +1568,19 @@ struct SectionTitle: View {
     }
     var body: some View {
         HStack(spacing: 6) {
+            if let fold {
+                Image(systemName: "chevron.down").font(.hub(max(9, cs.aux - 3), weight: .bold)).foregroundStyle(Hub.text3).frame(width: 12)
+                    .contentShape(Rectangle()).onTapGesture(perform: fold).help("접기 — 한 줄로 (이 맥에 기억)")
+            }
             // 좁은 열에서 한 글자씩 꺾이지 않게 한 줄 + 제목이 꼬리표보다 먼저 폭을 받는다 (0.37.0 리뷰 2)
-            Text(text).font(.hub(cs.title, weight: .semibold)).foregroundStyle(Hub.text2).tracking(0.3).lineLimit(1).layoutPriority(1)
-                .help(hint ?? "")
-            if let f = fresh { FreshnessTag(f: f) }
+            // 제목은 진하고 크게 (0.44.0 #71, 결정 D-10) — 행 글자보다 먼저 읽히게
+            // 좁은 열·1.6배에서 'Equipme…' 로 잘리지 않게: 꼬리표가 먼저 아이콘만 남고, 그래도 모자라면 제목이 조금 작아진다 (검증 1)
+            Text(text).font(.hub(cs.title, weight: .bold)).foregroundStyle(Hub.text).tracking(0.2).lineLimit(1).minimumScaleFactor(0.8).layoutPriority(1)
+                .help(fold == nil ? (hint ?? "") : (hint.map { $0 + " — " } ?? "") + "제목을 누르면 접기 (이 맥에 기억)")
+                .modifier(FoldTap(fold: fold))
+            if let f = fresh {
+                ViewThatFits(in: .horizontal) { FreshnessTag(f: f).fixedSize(); FreshnessTag(f: f, iconOnly: true) }
+            }
             if let b = badge { SeenBadge(card: b) }
             Spacer()
             if let t = trailing, let a = action {
@@ -1575,6 +1589,14 @@ struct SectionTitle: View {
                     .buttonStyle(.plain).foregroundStyle(Hub.text2)
             }
         }
+    }
+}
+
+/// 제목 글자 클릭 = 접기 — fold 가 없으면(허브 밖) 아무 제스처도 달지 않는다
+struct FoldTap: ViewModifier {
+    let fold: (() -> Void)?
+    func body(content: Content) -> some View {
+        if let fold { content.contentShape(Rectangle()).onTapGesture(perform: fold) } else { content }
     }
 }
 
@@ -1743,6 +1765,9 @@ struct NotionHubWidget: View {
 enum PaperBlitzDeck {
     struct Found { let date: Date; let path: String; let papers: [BlitzPaper] }
 
+    /// 규칙에 맞는 덱 이름인가 — 'PB_' 로 시작(대소문자 무시). 'PB261021' 처럼 밑줄 없는 이름은 GRMMap.isPB 가 받아들여도 뒤로 (0.44.0 #61)
+    static func ruleNamed(_ name: String) -> Bool { name.uppercased().starts(with: "PB_") }
+
     /// 가장 최근 PB 덱 경로만 (파싱 없이) — Notion 과 날짜 비교용
     static func latestFile(root: String, within days: Int = 21) -> (date: Date, path: String)? {
         let fm = FileManager.default
@@ -1753,8 +1778,10 @@ enum PaperBlitzDeck {
             let dirs = ((try? fm.contentsOfDirectory(atPath: "\(root)/\(y)")) ?? []).filter { $0.count == 8 && Int($0) != nil }.sorted(by: >)
             for d in dirs {
                 guard let date = f.date(from: d), date >= cutoff else { continue }
+                // PB 판정은 GRMMap.isPB 한 곳 (0.44.0 #61) — 파싱은 pptx 만, 규칙에 맞는 'PB_' 이름 먼저
                 let files = ((try? fm.contentsOfDirectory(atPath: "\(root)/\(y)/\(d)")) ?? [])
-                    .filter { $0.uppercased().hasPrefix("PB_") && $0.lowercased().hasSuffix(".pptx") && !$0.hasPrefix("~$") }.sorted()
+                    .filter { GRMMap.isPB($0) && $0.lowercased().hasSuffix(".pptx") }
+                    .sorted { a, b in ruleNamed(a) != ruleNamed(b) ? ruleNamed(a) : a < b }
                 if let file = files.first { return (Calendar.current.startOfDay(for: date), "\(root)/\(y)/\(d)/\(file)") }
             }
         }
@@ -1995,64 +2022,44 @@ struct ProlificClient {
 struct Dashboard: View {
     @ObservedObject var model: NotionHubModel
     @ObservedObject var expansion = HubExpansion.shared
+    /// 카드 접기 (0.44.0 #70) — 이 맥 기억 + 찾아가기 임시 펼침
+    @ObservedObject private var fold = HubFold.shared
     /// HubLayoutProbe 소유자 토큰 (0.38.0 C3) — 배율 변경으로 본문이 다시 만들어질 때 옛 Dashboard 가 새 값을 지우지 않게
     @State private var probeOwner = UUID()
+    /// 찾아간 카드 — Hub.ink 2pt 테두리 1.6초 (0.44.0 #63)
+    @State private var focusID: String? = nil
 
     var body: some View {
         ZStack {
             VStack(alignment: .leading, spacing: HubSpace.card) {
                 // 연구실 상태 한 줄 (0.40.0 C4, A3) — 허브 마감 적색은 이 줄 '확정 n' 한 칸으로 모은다(카드 D-day 는 quiet, 결정 D-b). 클릭 = 8주 띠
                 StatusLineView(model: model, quiet: false)
-                // 2026-10-13: 다음 GRM 은 한 줄로 작게, 연구원 + 진행 프로젝트 버튼, 논문 추천을 왼쪽 큰 칸(반응·댓글),
-                // 회의록은 최근 하나(펼치기), 아래 줄: 최신 원고 · 다가오는 학회 · 지난 Paper Blitz
-                // 다음 GRM 과 오늘 캘린더(지금·다음)는 다른 카드로 (#13 JYK — 한 카드에 섞이면 헷갈림)
-                // 0.37.0 (랩장 10-16 18:12): 여백 12 → 8(HubSpace), 글자는 CardStyle.large(제목 16·본문 15·보조 14), 윗줄 두 칸 300 → 320
-                // 0.42.0 C5 (R9-c, 결정 D-12): [Next GRM + Now·Next 세로 쌓기 320 | Members 카드 넓게] — 같은 카드 셋, 배치만
-                HStack(alignment: .top, spacing: HubSpace.column) {
-                    // 카드 끝 캡션 '출처 · 기준 · n · 정의 id' (0.40.0 C2, A1) — 윗줄 세 카드는 허브에서만
+                ScrollViewReader { proxy in
                     VStack(alignment: .leading, spacing: HubSpace.card) {
-                        CompactGRMBar(model: model, caption: true)
-                        if let cal = model.todayCalendar { NowNextCard(cal: cal, caption: true) }
-                    }
-                    // 글자 배율만큼 넓힘 — 고정 320 은 1.6배에서 내용이 넘쳐 왼쪽이 잘렸다('ext GRM', 0.42.0 C5 검증 1)
-                    .frame(width: Hub.s(320))
-                    MembersCard(model: model).frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                // 가운데 3열 (R-J1, 0.36.0 — 열 바닥 빈 면에 묻혀 있던 카드를 올림, 결정 D5):
-                //   열1 논문 추천 + 최신 원고 + 만든 앱(바닥) | 열2 할 일·메일 초안·실험·일정·그랜트 | 열3 회의록 + 지난 Paper Blitz(내용 높이) + 학회(5행)
-                // 열2·열3 은 스크롤 열 — 윗줄 연구원 줄이 길어져도 바닥 줄(제작·GitHub)이 밀려나지 않게. 빈 면은 HubLayoutProbe 로 잰다(windows.txt hub-cols)
-                // 리뷰 low 2-b (0.37.0): 일정은 설정값과 무관하게 10행을 강제하던 것을 8행으로 (가까운 것만은 C2)
-                // 0.37.0 C2: 카드마다 가까운 것만(nearOnly, HubNear) + '▸ 더 보기' 제자리 펼침(HubExpansion, 이 맥 저장). 관제탑·다른 뷰는 그대로
-                HStack(alignment: .top, spacing: HubSpace.column) {
-                    column1
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: HubSpace.card) {
-                            RemindersSection(model: model, nearOnly: true, quiet: true); AppsScriptSection(model: model); ExperimentsCard(model: model, nearOnly: true)
-                            EquipmentCard(model: model)   // 장비 예약 6줄 · 닫기 누락 (0.40.0 C5, A5)
-                            UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true)
-                            ClassesCard(model: model)   // 오늘·이번 주 수업 (0.42.0 C4, R1) — Upcoming 바로 아래
-                            GrantsSection(model: model, quiet: true, nearOnly: true)   // 메일 초안 버튼은 할 일 바로 아래 (스크롤 없이 보이게)   // GRM 자료 칸은 뺌 (랩장 의견 2026-10-13)
+                        // 윗줄 (0.44.0 #56, 결정 D-13): [Next GRM + Now·Next 세로 320 | Mine 넓게] — Members 는 Deadlines 열 아래 접힌 줄로
+                        HStack(alignment: .top, spacing: HubSpace.column) {
+                            VStack(alignment: .leading, spacing: HubSpace.card) {
+                                CompactGRMBar(model: model, caption: true).focusRing(focusID == "grm").id("grm")
+                                if let cal = model.todayCalendar { NowNextCard(cal: cal, caption: true).focusRing(focusID == "nownext").id("nownext") }
+                            }
+                            // 글자 배율만큼 넓힘 — 고정 320 은 1.6배에서 내용이 넘쳐 왼쪽이 잘렸다('ext GRM', 0.42.0 C5 검증 1)
+                            .frame(width: Hub.s(320))
+                            MineCard(model: model).focusRing(focusID == "mine").id("mine").frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        .hubProbe("2", .content)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .hubProbe("2", .visible)
-                    ScrollView(.vertical, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: HubSpace.card) {
-                            // 미팅 후속 (0.41.0 C3, R1-d) — 열3 맨 위, 회의록 맥락 바로 위 (결정 D-a). 가장 긴 열2 는 늘리지 않는다
-                            FollowupsCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
-                            MinutesCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
-                            BlitzCompact(model: model, fill: false, nearOnly: true)
-                            // 다가오는 학회 — 열2 그랜트 아래(R2-01 BHL)에서 열3 Blitz 아래 빈 면으로 (R-J1). 최신 원고는 열1 (검증 1)
-                            ConferencesCard(model: model, maxRows: 5, quiet: true, nearOnly: true)
+                        .fixedSize(horizontal: false, vertical: true)
+                        // 묶음 세 열 (0.44.0 #70, HubGroups — 결정 D-1·D-2·D-12): Research | This week | Deadlines. 접힌 카드는 한 줄(FoldedCardRow)
+                        // 열은 스크롤 열 — 빈 면은 HubLayoutProbe 로 잰다(windows.txt hub-cols). 카드마다 가까운 것만(nearOnly, HubNear) + '▸ 더 보기'
+                        HStack(alignment: .top, spacing: HubSpace.column) {
+                            column1
+                            groupColumn(HubGroups.columns[1])
+                            groupColumn(HubGroups.columns[2])
                         }
-                        .hubProbe("3", .content)
+                        .frame(maxHeight: .infinity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    .hubProbe("3", .visible)
+                    .onReceive(NotificationCenter.default.publisher(for: .deskhubFocusCard)) { n in
+                        if let id = n.object as? String { focus(id, proxy) }
+                    }
                 }
-                .frame(maxHeight: .infinity)
                 footer
             }
             .padding(HubSpace.outer)
@@ -2065,35 +2072,122 @@ struct Dashboard: View {
         .onChange(of: model.settledAt) { _, _ in HubFill.shared.poke() }
         .onChange(of: model.loading) { _, _ in HubFill.shared.poke() }
         .onChange(of: model.todayCalendar?.isSettled ?? false) { _, _ in HubFill.shared.poke() }
-        // 펼침·접힘은 모든 열을 '바뀐 뒤 측정 대기'로 — 애니메이션 중간·옛 높이로 정하거나 빼지 않게 (0.39.0 C0)
+        // 펼침·접힘(더 보기·카드 접기)은 모든 열을 '바뀐 뒤 측정 대기'로 — 애니메이션 중간·옛 높이로 정하거나 빼지 않게 (0.39.0 C0)
         .onChange(of: expansion.open) { _, _ in HubFill.shared.expansionChanged() }
+        .onChange(of: fold.overrides) { _, _ in HubFill.shared.foldChanged() }
+        .onChange(of: fold.temp) { _, _ in HubFill.shared.foldChanged() }
         .onDisappear { HubLayoutProbe.clear(owner: probeOwner) }
     }
 
-    /// 열1 — 논문 추천 + 최신 원고 + 만든 앱. 추천을 펼치면 0.36.0 처럼 추천 스크롤 칸이 열을 채우고(빈 면 = 그 칸, probe "1"),
-    /// 접히면 세 카드가 내용 높이로 쌓이고 열 전체가 스크롤(넘칠 때만) — 빈 면은 열 바닥 (probe "1" 을 열에서 잰다)
-    @ViewBuilder private var column1: some View {
-        // 생산자가 멈췄으면 펼침 저장값이 있어도 접힌 갈래 — 논문 추천은 한 줄, 열은 스크롤·바닥 빈 면 측정 (0.40.0 C8, R4). HubExpansion 값은 지우지 않는다
-        if expansion.isOpen("papers") && !model.papersStopped {
-            VStack(alignment: .leading, spacing: HubSpace.card) {
-                PaperRecBoard(model: model, probeKey: "1", nearOnly: true, fold: true)
-                LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
-                AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)   // 만든 앱 (랩장 10-16) — 열2 끝에서 열1 바닥으로
-                JointProjectsCard(model: model).fixedSize(horizontal: false, vertical: true)   // Joint projects (0.42.0 C6, R9-d) — 좌측 하단
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        } else {
+    /// 묶음 라벨 — 열 머리 작은 영어 (결정 D-12). 적색 없음
+    private func groupLabel(_ text: String) -> some View {
+        Text(text).font(.hub(11, weight: .semibold)).foregroundStyle(Hub.text3).tracking(0.4).lineLimit(1)
+            .padding(.leading, 4).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 카드 칸 — 접혔으면 한 줄, 아니면 카드(제목 앞 접기 화살표). id 로 찾아가기·강조
+    @ViewBuilder private func slot(_ id: String) -> some View {
+        Group {
+            if fold.isFolded(id) { FoldedCardRow(model: model, id: id) }
+            else { cardBody(id).environment(\.cardFold, { HubFold.shared.toggle(id) }) }
+        }
+        .focusRing(focusID == id)
+        .id(id)
+    }
+
+    /// 허브 카드 본문 — HubGroups id → 카드 (0.44.0 이전 Dashboard 열 내용 그대로, 인자도 같음)
+    @ViewBuilder private func cardBody(_ id: String) -> some View {
+        switch id {
+        case "papers": PaperRecBoard(model: model, nearOnly: true, fold: true)
+        case "followups": FollowupsCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
+        case "minutes": MinutesCard(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
+        case "blitz": BlitzCompact(model: model, fill: false, nearOnly: true)
+        case "preprints": LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
+        case "reminders": RemindersSection(model: model, nearOnly: true, quiet: true)
+        case "events": UpcomingEventsCard(model: model, cal: model.todayCalendar, maxRows: 8, nearOnly: true)
+        case "experiments": ExperimentsCard(model: model, nearOnly: true)
+        case "equipment": EquipmentCard(model: model)   // 장비 예약 6줄 · 닫기 누락 (0.40.0 C5, A5)
+        case "joint": JointProjectsCard(model: model).fixedSize(horizontal: false, vertical: true)
+        case "classes": ClassesCard(model: model)
+        case "tools": AppsScriptSection(model: model)
+        case "conferences": ConferencesCard(model: model, maxRows: 5, quiet: true, nearOnly: true)
+        case "grants": GrantsSection(model: model, quiet: true, nearOnly: true)
+        case "members": MembersCard(model: model)
+        case "apps": AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)
+        default: EmptyView()
+        }
+    }
+
+    /// 열2·열3 — 묶음 라벨 + 스크롤 열(probe 2·3)
+    private func groupColumn(_ c: HubGroups.Column) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            groupLabel(c.label)
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: HubSpace.card) {
-                    PaperRecBoard(model: model, nearOnly: true, fold: true)
-                    LatestManuscripts(model: model, nearOnly: true).fixedSize(horizontal: false, vertical: true)
-                    AppsCard(nearOnly: true).fixedSize(horizontal: false, vertical: true)
-                    JointProjectsCard(model: model).fixedSize(horizontal: false, vertical: true)
+                    ForEach(HubGroups.shown(c), id: \.self) { id in slot(id) }
                 }
-                .hubProbe("1", .content)
+                .hubProbe(c.n, .content)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .hubProbe("1", .visible)
+            .hubProbe(c.n, .visible)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// 열1 Research — 논문 추천을 펼치면 0.36.0 처럼 추천 스크롤 칸이 열을 채우고(빈 면 = 그 칸, probe "1"),
+    /// 접히면 카드가 내용 높이로 쌓이고 열 전체가 스크롤(넘칠 때만) — 빈 면은 열 바닥 (probe "1" 을 열에서 잰다)
+    @ViewBuilder private var column1: some View {
+        let c = HubGroups.columns[0]
+        let rest = HubGroups.shown(c).filter { $0 != "papers" }
+        VStack(alignment: .leading, spacing: 4) {
+            groupLabel(c.label)
+            // 생산자가 멈췄으면 펼침 저장값이 있어도 접힌 갈래 — 논문 추천은 한 줄, 열은 스크롤·바닥 빈 면 측정 (0.40.0 C8, R4). HubExpansion 값은 지우지 않는다
+            if expansion.isOpen("papers") && !model.papersStopped && !fold.isFolded("papers") {
+                VStack(alignment: .leading, spacing: HubSpace.card) {
+                    PaperRecBoard(model: model, probeKey: "1", nearOnly: true, fold: true)
+                        .environment(\.cardFold, { HubFold.shared.toggle("papers") })
+                        .focusRing(focusID == "papers").id("papers")
+                    ForEach(rest, id: \.self) { id in slot(id) }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: HubSpace.card) {
+                        ForEach(HubGroups.shown(c), id: \.self) { id in slot(id) }
+                    }
+                    .hubProbe("1", .content)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .hubProbe("1", .visible)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// 카드 찾아가기 (0.44.0 #63, 결정 D-9) — 접혀 있으면 임시로 펴고(저장 안 함) 그 열을 카드 위로 스크롤, Hub.ink 2pt 1.6초.
+    /// Dashboard 에 없는 datastate 는 관제탑으로 바꿔 Data status 를 편다. windows.txt choices 'hub-focus <id> (열n[, 임시 펼침])'
+    private func focus(_ id: String, _ proxy: ScrollViewProxy) {
+        if id == "datastate" {
+            HubFocus.pending = id
+            LayoutChoice.record("hub-focus", "\(id) (관제탑, 잠깐)")
+            // 이 맥 기본 뷰는 바꾸지 않는다 — 관제탑 소스 줄 '돌아가기'·재실행이면 랩 허브 (검증 1 리뷰)
+            ViewModeStore.shared.showTemporarily(.tower)
+            return
+        }
+        let where_: String
+        if HubGroups.top.contains(id) { where_ = "윗줄" }
+        else if let col = HubGroups.column(of: id), id != "apps" || !HubGroups.appsHidden {
+            let temp = fold.isFolded(id)
+            if temp { fold.openTemporarily(id) }
+            where_ = "열\(col)" + (temp ? ", 임시 펼침" : "")
+        } else { NSSound.beep(); return }
+        LayoutChoice.record("hub-focus", "\(id) (\(where_))")
+        UsageLog.panel("focus:" + id)
+        // 펼친 뒤 한 번 그려진 다음에 스크롤 — 접힌 줄 높이로 위치를 잡지 않게
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .top) }
+            focusID = id
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if focusID == id { withAnimation(.easeOut(duration: 0.3)) { focusID = nil } } }
         }
     }
 

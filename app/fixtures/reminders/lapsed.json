@@ -1,0 +1,11 @@
+{
+  "items": [
+    {"id": "conf:test-cosyne", "title": "시험 학회 A 초록 마감", "date": "2026-10-18", "kind": "제출", "source": "conferences_upcoming.json", "status": "confirmed", "by": "TST", "at": "2026-10-10T10:00:00+09:00"},
+    {"id": "test-report-1020", "title": "시험 보고서 제출", "date": "2026-10-20", "kind": "보고", "source": "manual", "status": "confirmed", "by": "TST", "at": "2026-10-10T10:00:00+09:00"},
+    {"id": "test-submit-1024", "title": "시험 서류 제출", "date": "2026-10-24", "kind": "제출", "source": "manual", "status": "confirmed", "by": "TST", "at": "2026-10-10T10:00:00+09:00"},
+    {"id": "test-visit-1027", "title": "시험 방문 일정", "date": "2026-10-27", "kind": "방문", "source": "manual", "status": "confirmed", "by": "TST", "at": "2026-10-10T10:00:00+09:00"},
+    {"id": "test-report-1105", "title": "시험 중간 보고", "date": "2026-11-05", "kind": "보고", "source": "manual", "status": "confirmed", "by": "TST", "at": "2026-10-10T10:00:00+09:00"},
+    {"id": "test-proposal-1030", "title": "시험 신청 접수", "date": "2026-10-30", "kind": "제출", "source": "manual", "status": "proposed"}
+  ],
+  "updated": "2026-10-22T09:00:00+09:00"
+}

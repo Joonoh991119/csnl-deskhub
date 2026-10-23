@@ -54,6 +54,12 @@ struct SemesterInfo: Codable, Hashable {
     enum CodingKeys: String, CodingKey { case label, start, end, makeupEnd = "makeup_end", holidays }
 }
 
+/// 오늘 캘린더(CalendarModel)에 싣는 수업 행 (0.44.0 B1, #58) — loadCourses 가 갱신, NowNextLine 이 내 수업을 지금·다음에 넣는다
+struct TimetableFeed: Equatable {
+    var rows: [CourseRow]
+    var aliases: [String: String]
+}
+
 enum Timetable {
     /// Notion 🎓 Courses (결정 D-7 — Config 가 아니라 코드 상수)
     static let coursesDB = "b86b2c5e-1c58-4597-a031-dc53fd03fc05"
@@ -195,7 +201,7 @@ enum Timetable {
         }
         return t.filter { !$0.isWhitespace }
     }
-    private static func minutes(_ s: String) -> Int { let p = s.split(separator: ":").compactMap { Int($0) }; return p.count == 2 ? p[0] * 60 + p[1] : 0 }
+    static func minutes(_ s: String) -> Int { let p = s.split(separator: ":").compactMap { Int($0) }; return p.count == 2 ? p[0] * 60 + p[1] : 0 }
     /// 서명 — 슬롯 (요일, 시작, 끝) 정렬 목록(강의실 없이)
     private static func signature(_ ss: [TTSlot]) -> [String] {
         Array(Set(ss.map { "\(days.firstIndex(of: $0.day) ?? 9)|\($0.start)|\($0.end)" })).sorted()
@@ -296,6 +302,12 @@ enum Timetable {
         }
     }
     static func weekLine(_ rows: [CourseRow]) -> String { weekCounts(rows).map { "\($0.0) \($0.1)" }.joined(separator: " · ") }
+    /// '이번 주 <수업 n>개 수업(<과목 m>과목) · 월 a · …' — 수업 = 요일별 덩어리 합, 과목 = 서로 다른 과목. Classes 카드·덤프 '이번 주:' 공용 (0.44.0 B2, #60)
+    static func weekText(_ rows: [CourseRow]) -> String {
+        let n = weekCounts(rows).reduce(0) { $0 + $1.1 }
+        let m = Set(blocks(rows).map(\.course)).count
+        return "이번 주 \(n)개 수업(\(m)과목) · " + weekLine(rows)
+    }
     /// 내 수업이면 '★ ', 진행 중이면 '● ' 를 앞에 (★ 가 맨 앞 — 0.43.1 C1, #53). me = 정본 이니셜(meKey 결과), 빈 값이면 ★ 없음
     static func blockText(_ b: Block, now: Date, me: String = "") -> String {
         (b.mine(me) ? "★ " : "") + (b.live(now) ? "● " : "") + "\(b.start)–\(b.end) \(b.course) · " + b.initials.joined(separator: ",")
@@ -325,6 +337,23 @@ enum Timetable {
         if me.isEmpty { return "내 수업: — (이니셜 없음)" }
         let bs = mineBlocks(rows, me: me)
         return "내 수업: " + (bs.isEmpty ? "없음" : bs.map { "\($0.day) \($0.start)–\($0.end) \($0.course)" }.joined(separator: " / "))
+    }
+
+    // MARK: 같은 수업 (0.44.0 B1, #58 #56)
+
+    /// 같은 수업 이름인가 — courseKey 가 서로 포함하고 짧은 쪽이 4자 이상(짧은 과목명이 다른 일정 제목에 들어가 잘못 맞지 않게)
+    static func sameCourse(_ a: String, _ b: String) -> Bool {
+        let x = courseKey(a), y = courseKey(b)
+        guard min(x.count, y.count) >= 4 else { return false }
+        return x.contains(y) || y.contains(x)
+    }
+    /// 일정(제목·시작)이 시간표 수업인가 — 그 요일 덩어리 중 시작이 [덩어리 시작 −30분, 끝) 이고 이름이 같은 수업. Upcoming 이 수업을 뺄 때(결정 D-8)
+    static func matchesClass(title: String, start: Date, rows: [CourseRow]) -> Bool {
+        guard !rows.isEmpty else { return false }
+        let d = weekday(start), t = minutes(hm(start))
+        return blocks(rows).contains { b in
+            b.day == d && t >= minutes(b.start) - 30 && t < minutes(b.end) && sameCourse(title, b.course)
+        }
     }
 
     // MARK: text-check (main.swift)
@@ -384,6 +413,14 @@ enum Timetable {
                 return star + "\(b.day) \(b.start)–\(b.end) \(b.course) · " + b.initials.joined(separator: ",") + note
             }
             .joined(separator: " / ")
+        case "up-class":
+            // 'at=yyyy-MM-ddTHH:mm;title=…;rows=…' → '수업'|'일정' — Upcoming 이 빼는 판정과 같은 matchesClass (0.44.0 B1, #56)
+            let k = kv(input)
+            guard let at = date(k["at"] ?? "") else { return "(입력 형식)" }
+            return matchesClass(title: k["title"] ?? "", start: at, rows: prepare(fixtureRows(k["rows"] ?? "")).rows) ? "수업" : "일정"
+        case "tt-week":
+            // 'rows=…' → prepare 뒤 weekText — Classes 카드 요약과 같은 함수 (0.44.0 B2, #60)
+            return weekText(prepare(fixtureRows(kv(input)["rows"] ?? "")).rows)
         case "tt-mine":
             // '[me=;]rows=…' → prepare 뒤 mineLine (0.43.1 C1, #53)
             let k = kv(input)
@@ -398,6 +435,11 @@ enum Timetable {
 extension NotionHubModel {
     /// refresh 끝(loadMetrics 뒤) — 학기 안일 때만, 6시간 캐시. 실패면 이전 행을 그대로 두고 coursesNote 에 원인(적색 아님)
     func loadCourses(_ api: NotionAPI?) async {
+        // 오늘 캘린더에 수업을 싣는다 — 오프라인·캐시·Notion 어느 갈래로 끝나도 (0.44.0 B1, #58). 같으면 다시 알리지 않는다
+        defer {
+            let feed = TimetableFeed(rows: courses, aliases: cfg.initialsAliases)
+            if let cal = todayCalendar, cal.timetable != feed { cal.timetable = feed }
+        }
         guard let sem = Timetable.semester(on: now) else { coursesSemester = nil; return }
         if let path = Timetable.offlinePath {
             let rows: [CourseRow]? = await Task.detached(priority: .utility) {
@@ -449,7 +491,17 @@ extension NotionHubModel {
                    + " · 나 \(me.isEmpty ? "—" : me) · 내 수업 \(Timetable.mineBlocks(courses, me: me).count)"]
         out.append(Timetable.todayLine(courses, now: now, me: me))
         out.append("주간: " + Timetable.weekLine(courses))
+        out.append("이번 주: " + Timetable.weekText(courses))
         out.append(Timetable.mineLine(courses, me: me))
+        // 지금·다음 후보 — NowNextLine 과 같은 NowNext.pick (오늘 남은 캘린더 일정 + 내 수업, 같은 수업은 Timetable 하나) (0.44.0 B1, #58)
+        let feed = TimetableFeed(rows: courses, aliases: cfg.initialsAliases)
+        let cal = todayCalendar
+        let pick = NowNext.pick(events: NowNext.eventSlots(cal?.events ?? [], now: now),
+                                classes: NowNext.classSlots(feed, me: HubPrefs.me, now: now), now: now)
+        out.append("지금·다음 후보: " + (pick.rest.isEmpty ? "없음" : pick.rest.map(NowNext.text).joined(separator: " / ")))
+        // Upcoming 에서 뺀 수업 — UpcomingEventsCard.items 와 같은 판정 (0.44.0 B1, #56)
+        let gone = UpcomingEventsCard.split(model: self, cal: cal, excludeToday: false).classes
+        out.append("Upcoming 에서 뺀 수업 \(gone.count)" + (gone.isEmpty ? "" : ": " + gone.map { "\($0.title) \(Hub.shortDay($0.date))" }.joined(separator: ", ")))
         out += coursesMergeNotes
         if let n = coursesNote { out.append("오류 · " + n) }
         return out
@@ -548,8 +600,8 @@ struct ClassesCard: View {
                 ForEach(today.prefix(Self.maxRows)) { b in blockRow(b, me: me) }
                 if today.count > Self.maxRows { line("+\(today.count - Self.maxRows)") }
             }
-            let names = Set(model.courses.map(\.course)).count
-            Text("이번 주 \(names)과목 · " + Timetable.weekLine(model.courses))
+            // '이번 주 7개 수업(6과목) · 월 …' — 수업 수와 과목 수를 같이 (0.44.0 B2, #60)
+            Text(Timetable.weekText(model.courses))
                 .font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).truncationMode(.tail)
                 .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                 .help(sem.label + (model.coursesUnparsed > 0 ? " · 못 읽은 행 \(model.coursesUnparsed)" : ""))
@@ -647,6 +699,14 @@ struct TimetableView: View {
                     Text(d).font(.hub(13, weight: d == today ? .bold : .semibold)).foregroundStyle(d == today ? Hub.ink : Hub.text2)
                         .frame(width: colW, height: headH).offset(x: timeW + CGFloat(i) * colW, y: 0)
                 }
+                // 지금 시각선 — 오늘 열, ink 1pt (휴일·범위 밖이면 없음). 덩어리보다 먼저 그려 칸 안을 가로지르지 않게(덩어리가 덮음) +
+                // 시각 칸 오른쪽 끝에 작은 ink 눈금(6×2pt) — 진행 중 칸 안에서도 지금 높이가 보이게 (0.44.0 B2, #72)
+                if !sem.holiday, let ti = dayCols.firstIndex(of: today), nowMin >= lo, nowMin <= hi {
+                    Rectangle().fill(Hub.ink).frame(width: colW, height: 1)
+                        .offset(x: timeW + CGFloat(ti) * colW, y: headH + CGFloat(nowMin - lo) * perMin)
+                    Rectangle().fill(Hub.ink).frame(width: 6, height: 2)
+                        .offset(x: timeW - 7, y: headH + CGFloat(nowMin - lo) * perMin - 0.5)
+                }
                 // 덩어리 — 겹치면 나란히
                 ForEach(Array(dayCols.enumerated()), id: \.element) { i, d in
                     let lanes = Self.lanes(bs.filter { $0.day == d }, minutes: minutes)
@@ -656,11 +716,6 @@ struct TimetableView: View {
                         let h = max(CGFloat(minutes(p.block.end) - minutes(p.block.start)) * perMin - 2, 14)
                         block(p.block, me: me).frame(width: (colW - 4) / CGFloat(p.of) - 2, height: h).offset(x: x, y: y)
                     }
-                }
-                // 지금 시각선 — 오늘 열, ink 1pt (휴일·범위 밖이면 없음)
-                if !sem.holiday, let ti = dayCols.firstIndex(of: today), nowMin >= lo, nowMin <= hi {
-                    Rectangle().fill(Hub.ink).frame(width: colW, height: 1)
-                        .offset(x: timeW + CGFloat(ti) * colW, y: headH + CGFloat(nowMin - lo) * perMin)
                 }
             }
         }
@@ -694,12 +749,10 @@ struct TimetableView: View {
             Spacer(minLength: 0)
         }
         .padding(5)
-        .padding(.leading, mine ? 3 : 0)   // 내 칸: 왼쪽 막대와 글자가 겹치지 않게 (0.43.1 C2, #53)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Hub.surface))
-        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(mine ? Hub.ink : Hub.divider, lineWidth: mine ? 2 : 1))
-        // 내 칸 왼쪽 ink 막대 — 위아래 6pt(모서리 반지름) 안쪽이라 clip 없이 둥근 모서리 밖으로 안 나감. 바탕 채움 없음(대비 하한, 결정 D-2)
-        .overlay(alignment: .leading) { if mine { Rectangle().fill(Hub.ink).frame(width: 3).padding(.vertical, 6) } }
+        // 안쪽 테두리 하나 — 네 변 같은 두께, 이웃 칸에 안 잘림. 내 칸은 ink 2pt (왼쪽 막대는 뺐다 — 2pt 테두리와 겹쳐 왼쪽만 굵었다, 0.44.0 B2 #72). 바탕 채움 없음(결정 D-2)
+        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(mine ? Hub.ink : Hub.divider, lineWidth: mine ? 2 : 1))
         .opacity(dim ? 0.35 : 1)
         .help("\(b.day) \(b.start)–\(b.end) \(b.course) · \(b.initials.joined(separator: ","))" + (b.room.isEmpty ? "" : " · \(b.room)") + (mine ? " · 내 수업" : "")
               + (b.notes.isEmpty ? "" : "\n" + b.notes.joined(separator: "\n")))

@@ -124,6 +124,8 @@ enum TextCheck {
             case "metric": got = metric(input, tsv: path)
             // 상태 한 줄 갈래 (0.40.0 C4, A3-variant) — 입력 '폭=;배율=;확정=;예상=;학회=;연구비=;멈춤=;GRM=;현장=', 기대 'L|M|S' + '|맞음|잘림'. fixtures/statusline-check.tsv
             case "statusline": got = statusline(input)
+            // 상태 한 줄 숫자 클릭 대상 (0.44.0 B2, #63) — '확정=;예상=;학회=;연구비=;멈춤=;GRM=;현장=' → '확정→band · 학회→conferences · …' | '—' (StatusLine.targets)
+            case "sl-target": got = StatusLine.targetsText(parts(kv(input)))
             // 미팅 후속 판정 (0.41.0 C2) — fu-status · fu-visible · fu-count · fu-remind · fu-mm (FollowupLogic, 화면과 같은 함수). fixtures/followup-check.tsv
             case _ where FollowupCheck.kinds.contains(kind): got = FollowupCheck.eval(kind, input, aliases: testAliases)
             // GRM 자료 지도 허브 한 줄 (0.41.0 C6, R2) — 'today=;rows=날짜 이니셜 ●○●–?|…;sched=날짜|…' → '이번 주 … · 지난주 …'. fixtures/grmweek-check.tsv
@@ -137,7 +139,16 @@ enum TextCheck {
             // 시간표 (0.42.0 C4, R1) — tt-slots(수업시간 → '요일 HH:mm–HH:mm (강의실)') · tt-sem(날짜 → 학기 id[ 휴일]|학기 밖) · tt-today. fixtures/timetable-check.tsv
             // tt-merge (0.43.0 C3, #47 #48) — Timetable.prepare(조교 제외·같은 과목 합치기) 뒤 모든 덩어리
             // tt-mine (0.43.1 C1, #53) — 'me=;rows=' → '내 수업: …'. tt-today·tt-merge 도 선택 키 me= (별칭은 testAliases 로 풂, 내 덩어리 앞 '★ ')
-            case "tt-slots", "tt-sem", "tt-today", "tt-merge", "tt-mine": got = Timetable.check(kind, input, tsv: path, aliases: testAliases)
+            case "tt-slots", "tt-sem", "tt-today", "tt-merge", "tt-mine", "tt-week": got = Timetable.check(kind, input, tsv: path, aliases: testAliases)
+            // 지금·다음 (0.44.0 B1, #58) — 'now=;cal=HH:mm-HH:mm/제목|…;cls=HH:mm-HH:mm/과목|…' → '지금 <…|—> · 다음 <…|—>' (NowNext.pick). fixtures/schedule-check.tsv
+            case "nownext": got = NowNext.check(input)
+            // Upcoming 에서 수업 빼기 (0.44.0 B1, #56) — 'at=yyyy-MM-ddTHH:mm;title=;rows=이니셜/과목/수업시간|…' → '수업'|'일정' (Timetable.matchesClass)
+            case "up-class": got = Timetable.check(kind, input, tsv: path, aliases: testAliases)
+            // Upcoming 날짜 줄 (0.44.0 B2, #69) — 'M.d HH:mm,…'(2026년) → UpcomingEventsCard.separators '─ ━'
+            case "up-sep":
+                let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy M.d HH:mm"
+                let ds = input.components(separatedBy: ",").filter { !$0.isEmpty }.compactMap { f.date(from: "2026 " + $0.trimmingCharacters(in: .whitespaces)) }
+                got = UpcomingEventsCard.separators(ds)
             // 멤버 상태 (0.42.0 C5, R2) — 'now=;ini=;cal=;notion=;slab=;class=;away=;members=' → 'kind · why · ~HH:mm' | '—'. fixtures/status-check.tsv
             case "mstatus": got = MemberStatus.check(input, tsv: path)
             // Joint projects 한 줄 (0.42.0 C6, R9-d) — 'id=;v=;owner=;done=;waiting=' → JointProjects.line. fixtures/joint-check.tsv
@@ -193,13 +204,18 @@ enum TextCheck {
         return BioRxivFeed.isSettled(p[1], today: today) ? "확정" : "미확정"
     }
     /// statusline — 앱과 같은 StatusLine.variant(NSFont 실측)
-    static func statusline(_ input: String) -> String {
-        let k = kv(input)
-        guard let w = k["폭"].flatMap(Double.init), let sc = k["배율"].flatMap(Double.init) else { return "(입력 형식)" }
+    /// 'k=v' 사전 → StatusLine.Parts (statusline · sl-target 공용)
+    static func parts(_ k: [String: String]) -> StatusLine.Parts {
         var p = StatusLine.Parts()
         p.confirmed = Int(k["확정"] ?? "") ?? 0; p.expected = Int(k["예상"] ?? "") ?? 0
         p.undecidedConf = Int(k["학회"] ?? "") ?? 0; p.undecidedGrant = Int(k["연구비"] ?? "") ?? 0
         p.stopped = Int(k["멈춤"] ?? "") ?? 0; p.nextGRM = k["GRM"] ?? "—"; p.fieldDays = k["현장"].flatMap(Int.init)
+        return p
+    }
+    static func statusline(_ input: String) -> String {
+        let k = kv(input)
+        guard let w = k["폭"].flatMap(Double.init), let sc = k["배율"].flatMap(Double.init) else { return "(입력 형식)" }
+        let p = parts(k)
         // 선택 키 '칩=<글>|<글>' (0.41.0 C4) — 뷰와 같은 칩 폭 빼기
         let chips = (k["칩"] ?? "").components(separatedBy: "|").filter { !$0.isEmpty }
         let v = StatusLine.variant(width: CGFloat(w), scale: CGFloat(sc), parts: p, chips: chips)

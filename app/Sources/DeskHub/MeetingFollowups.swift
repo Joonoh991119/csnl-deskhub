@@ -39,6 +39,43 @@ struct FollowupItem: Codable, Identifiable, Hashable {
         return nil
     }
     var linkKind: String { source["notion"] != nil ? "notion" : (source["nas"] != nil ? "nas" : "—") }
+
+    /// Plaud 원본 (0.44.0 C2, #59 결정 D-11) — source 'plaud'(스크립트가 단 NAS 녹취 JSON)가 있으면 그 파일,
+    /// 없고 GRM 이면 <GRM 루트>/<yyyy>/<yyyyMMdd>/transcript 폴더(있을 때). 같은 날 GRM 이 둘이면 폴더까지만 맞다
+    @MainActor func plaudTarget(grmRoot: String) -> PlaudTarget? {
+        PlaudTarget.resolve(plaud: source["plaud"], meeting: meeting, meetingDate: meetingDate, grmRoot: grmRoot,
+                            fileExists: { PlaudTarget.exists($0, dir: false) }, dirExists: { PlaudTarget.exists($0, dir: true) })
+    }
+}
+
+/// 미팅 후속 행의 'Plaud ↗' — Finder 에서 녹취 파일(또는 그날 transcript 폴더)을 선택해 보인다
+struct PlaudTarget: Equatable {
+    let path: String
+    let isFile: Bool
+    var kind: String { isFile ? "file" : "folder" }
+    func reveal() { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+
+    /// 순수 판정 — text-check 'fu-plaud' 와 같은 함수
+    /// 날짜 폴더는 meeting_date 글('yyyy-MM-dd…')에서 바로 — 시간대 변환 없이 NAS 폴더 이름과 같게
+    static func resolve(plaud: String?, meeting: String, meetingDate: String, grmRoot: String,
+                        fileExists: (String) -> Bool, dirExists: (String) -> Bool) -> PlaudTarget? {
+        if let p = plaud, !p.isEmpty, fileExists(p) { return PlaudTarget(path: p, isFile: true) }
+        let ymd = String(meetingDate.prefix(10))
+        guard meeting == "GRM", !grmRoot.isEmpty, ymd.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) != nil else { return nil }
+        let dir = "\(grmRoot)/\(ymd.prefix(4))/\(ymd.replacingOccurrences(of: "-", with: ""))/transcript"
+        return dirExists(dir) ? PlaudTarget(path: dir, isFile: false) : nil
+    }
+
+    /// NAS 확인을 화면 그릴 때마다 하지 않게 5분 기억 (메인 스레드)
+    @MainActor private static var cache: [String: (ok: Bool, at: Date)] = [:]
+    @MainActor static func exists(_ path: String, dir: Bool) -> Bool {
+        let k = (dir ? "d:" : "f:") + path
+        if let c = cache[k], Date().timeIntervalSince(c.at) < 300 { return c.ok }
+        var isDir: ObjCBool = false
+        let ok = FileManager.default.fileExists(atPath: path, isDirectory: &isDir) && isDir.boolValue == dir
+        cache[k] = (ok, Date())
+        return ok
+    }
 }
 
 struct FollowupState: Codable, Hashable {
@@ -521,6 +558,9 @@ extension NotionHubModel {
             out.append(f.joined(separator: " · "))
         }
         out.append("사람별: " + (followupUnknown == nil ? "?" : FollowupLogic.perPersonLine(followupCounts, unknown: followupUnknown ?? [])))
+        // Plaud 원본 연결 (0.44.0 C2, #59) — 보인 항목 기준(수만 보기는 연구실 전체 수)
+        let plaud = (view == .counts ? all : scope).map { $0.plaudTarget(grmRoot: cfg.nasGRMRoot)?.kind }
+        out.append("Plaud 연결: 파일 \(plaud.filter { $0 == "file" }.count) · 폴더 \(plaud.filter { $0 == "folder" }.count) · 없음 \(plaud.filter { $0 == nil }.count)")
         // 출처 바뀜 (0.42.0 C2, R6) — 전체 orphan 수 · 그중 '남은'(확정) 수
         let orphans = followups.filter(\.isOrphan)
         out.append("출처 바뀜 \(orphans.count) (남음 \(orphans.filter { FollowupLogic.isLive($0, followupStatus($0)) }.count) · 내 화면 제안 \(followupView == .full ? followupOrphanProposals(who: followupMe).count : 0))")
@@ -545,7 +585,7 @@ extension NotionHubModel {
 // MARK: - text-check (main.swift TextCheck 가 부른다)
 
 enum FollowupCheck {
-    static let kinds: Set<String> = ["fu-status", "fu-visible", "fu-count", "fu-remind", "fu-mm", "fu-choices", "fu-orphan", "fu-aka"]
+    static let kinds: Set<String> = ["fu-status", "fu-visible", "fu-count", "fu-remind", "fu-mm", "fu-choices", "fu-orphan", "fu-aka", "fu-plaud"]
     private static func kv(_ input: String) -> [String: String] {
         var out: [String: String] = [:]
         for part in input.components(separatedBy: ";") {
@@ -595,6 +635,11 @@ enum FollowupCheck {
             if FollowupLogic.isLive(it, eff) { return "남음" }
             return eff == "done" ? "끝남" : (eff == "dismissed" ? "버림" : "숨김")
         // aka 상태 이어받기 (0.42.0 C2) — 'aka=옛id,…;rows=id:status@at|…' (항목 id 'fu-new', 담당 JOP) → 실효 상태
+        // Plaud 원본 (0.44.0 C2, #59) — 'meeting=GRM|MM;date=yyyy-MM-dd;plaud=<경로>;file=0|1;folder=0|1' → file · folder · —
+        case "fu-plaud":
+            let t = PlaudTarget.resolve(plaud: k["plaud"], meeting: k["meeting"] ?? "", meetingDate: k["date"] ?? "", grmRoot: "/nas/GRM",
+                                        fileExists: { _ in k["file"] == "1" }, dirExists: { _ in k["folder"] == "1" })
+            return t?.kind ?? "—"
         case "fu-aka":
             var it = FollowupItem(id: "fu-new", who: "JOP", meeting: "GRM", meetingDate: "2026-10-07", kind: "기타", text: "t", source: [:])
             let aka = (k["aka"] ?? "").components(separatedBy: ",").filter { !$0.isEmpty }
@@ -703,6 +748,8 @@ struct FollowupsCard: View {
     let nearOnly: Bool
     @Environment(\.cardStyle) private var cs
     @ObservedObject private var expansion = HubExpansion.shared
+    /// 열1 바닥이 비면 다음 후속을 더 (HubFill, 0.44.0 검증 1) — '내 것' 보기만
+    @ObservedObject private var fill = HubFill.shared
     @State private var adding = false
     @State private var draft = ""
     @State private var draftKind = "코멘트"
@@ -744,7 +791,7 @@ struct FollowupsCard: View {
                 }
                 if nearOnly {
                     let cut = HubNear.followups(model)
-                    CardFooter(caption: CardMetas.caption("followups", model), toggleKey: "followups", more: cut.toggleCount(open: expansion.isOpen("followups"), extra: 0))
+                    CardFooter(caption: CardMetas.caption("followups", model), toggleKey: "followups", more: cut.toggleCount(open: expansion.isOpen("followups"), extra: view == .full ? (fill.extra["followups"] ?? 0) : 0))
                 }
                 // 되돌리기 줄은 카드 끝 제 줄에 (리마인더와 같은 자리) — 6초 동안만 한 줄 늘어남
                 if !commits.pending.isEmpty { UndoToast(commits: commits).padding(6) }
@@ -799,9 +846,9 @@ struct FollowupsCard: View {
 
     @ViewBuilder private var mineRows: some View {
         let cut = HubNear.followups(model)
-        let rows = nearOnly ? cut.shown(open: expansion.isOpen("followups"), extra: 0) : cut.full
+        let rows = nearOnly ? cut.shown(open: expansion.isOpen("followups"), extra: fill.extra["followups"] ?? 0) : cut.full
         if rows.isEmpty, model.followupRead == .ok {
-            Text(model.loading ? "불러오는 중…" : "남은 후속 없음 — 회의 뒤 제안이 여기 뜹니다")
+            Text(model.loading ? "불러오는 중…" : "없음")
                 .font(.hub(cs.aux)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -866,6 +913,16 @@ struct FollowupsCard: View {
             .background(Capsule().fill(Hub.fillNeutral))
         }
         .buttonStyle(.plain).disabled(it.link == nil).help(it.link?.help ?? "직접 적은 항목")
+        // Plaud 원본 ↗ — Finder 에서 녹취 파일(없으면 그날 transcript 폴더)을 선택 (0.44.0 C2, #59 JYK)
+        if let t = it.plaudTarget(grmRoot: model.cfg.nasGRMRoot) {
+            Button { t.reveal() } label: {
+                HStack(spacing: 3) { Text("Plaud").lineLimit(1).fixedSize(); Image(systemName: "arrow.up.forward") }
+                    .font(.hub(cs.tag, weight: .medium)).foregroundStyle(Hub.text2)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(Hub.fillNeutral))
+            }
+            .buttonStyle(.plain).help((t.isFile ? "Plaud 녹취 — " : "Plaud 녹취 폴더 — ") + t.path)
+        }
         // 출처 바뀜 (0.42.0 C2, R6) — 적색 아님(Hub.text2)
         if it.isOrphan {
             Text("출처 바뀜").font(.hub(cs.tag)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
@@ -919,7 +976,7 @@ struct FollowupsCard: View {
         let open = !nearOnly || expansion.isOpen("followups")
         let groups = model.followupGroups()
         if groups.isEmpty, model.followupRead == .ok {
-            Text("남은 후속 없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+            Text("없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         ForEach(groups, id: \.who) { g in
@@ -1007,7 +1064,7 @@ struct FollowupCountsView: View {
                 Text("NAS 를 읽지 못함 ? — 연구실 공용 저장소 연결을 확인하세요").font(.hub(cs.aux)).foregroundStyle(Hub.text2)
                     .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
             } else if rows.isEmpty {
-                Text("남은 미팅 후속 없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+                Text("없음").font(.hub(cs.aux)).foregroundStyle(Hub.text2).padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
             }
             ForEach(Array(rows.enumerated()), id: \.element.who) { i, r in
                 HStack(spacing: 8) {
@@ -1029,7 +1086,6 @@ struct FollowupCountsView: View {
             RowDivider()
             Text("개수만 보입니다 — 항목 내용은 본인·교수님 화면에만. 평가가 아닙니다").font(.hub(cs.tag)).foregroundStyle(Hub.text3)
                 .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV).fixedSize(horizontal: false, vertical: true)
-            SourceCaption(text: CardMetas.caption("followups", model)).padding(.horizontal, cs.rowH).padding(.bottom, cs.rowV)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))

@@ -88,7 +88,7 @@ struct MinutesCard: View {
                     }
                     .buttonStyle(.plain)
                 }
-                if model.minutes.isEmpty { Text(model.loading ? "불러오는 중…" : "회의록 없음").font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading) }
+                if model.minutes.isEmpty { Text(model.loading ? "불러오는 중…" : "없음").font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Hub.surface))
@@ -109,19 +109,16 @@ struct ExperimentsCard: View {
             // 꼬리표 = SLab 마지막 실험날짜(집계) — 허브만, 관제탑은 레일 줄에 (0.40.0 C3, A2)
             SectionTitle(card: "experiments", trailing: "SLab", fresh: nearOnly ? model.cardTag("experiments") : nil) { model.openInApp(id: model.cfg.slabDB) }
             VStack(spacing: 0) {
+                // 빈 상태는 한 단어 (0.44.0 #71) — 설명 줄·'(SLab 예약 기준)' 삭제
                 if model.experiments.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.loading ? "불러오는 중…" : (model.prolificNote == nil ? "오늘 예약된 실험 없음" : "오늘 예약된 실험 없음 (SLab 예약 기준)"))
-                            .font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
-                        if model.prolificNote == nil {
-                            Text("SLab 오늘 예약 · Prolific 진행·준비 중 study 가 여기 나옵니다").font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
-                        }
-                    }
-                    .padding(cs.empty)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.loading ? "불러오는 중…" : "없음")
+                        .font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
+                        .padding(cs.empty)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                // Prolific 이 연결되지 않았으면 '실험 없음'과 섞이지 않게 따로 한 줄 (#17)
-                if let n = model.prolificNote {
+                // Prolific 조회 실패(오류)만 행으로 (#17). '미연결'(토큰 없음)은 오류가 아니라 카드 끝 캡션 한 줄 (0.44.0 #56 BYL)
+                let unlinked = model.prolificNote?.hasPrefix("Prolific 미연결") ?? false
+                if let n = model.prolificNote, !unlinked {
                     if !model.experiments.isEmpty { RowDivider() }
                     HStack(spacing: 8) {
                         Text("Prolific").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text2).frame(width: cs.col(48), alignment: .leading)
@@ -129,9 +126,7 @@ struct ExperimentsCard: View {
                         Spacer()
                         // 토큰 없음 = 상태(무채색), 조회 실패 = 오류(적색) — 적색은 마감·오류에만 (R-L2, 0.36.0).
                         // 지난 행이 남아 보이는 실패는 무채색 굵게 — 안내 줄의 'HH:mm 결과' 가 알리고, 마감 적색 3개인 날 4번째 적색이 되지 않게 (0.38.0 C5, 계획 §4-6)
-                        if n.hasPrefix("Prolific 미연결") {
-                            Text("미연결").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text2)
-                        } else if model.experiments.contains(where: { $0.source == "Prolific" }) {
+                        if model.experiments.contains(where: { $0.source == "Prolific" }) {
                             Text("조회 실패").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text)
                         } else {
                             Text("조회 실패").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.signal)
@@ -144,7 +139,7 @@ struct ExperimentsCard: View {
                 let rows = cut.map { $0.shown(open: expansion.isOpen("experiments")) } ?? Array(model.experiments.prefix(6))
                 // 접힘에 보일 행이 없고 준비 중만 있으면 한 줄로 알림 — 카드가 빈 것처럼 보이지 않게 (검증 1)
                 if let cut, rows.isEmpty, cut.more > 0 {
-                    if model.prolificNote != nil { RowDivider() }
+                    if model.prolificNote != nil && !unlinked { RowDivider() }
                     // n = 실제 준비 중 수 — union(limit 6) 에 잘린 cut.more 가 아니라 (0.37.0 리뷰 2)
                     let prep = model.experiments.filter { $0.status == "준비 중" }.count
                     Text("오늘 예약·진행 중 없음 · 준비 중 \(prep)개는 더 보기")
@@ -174,6 +169,12 @@ struct ExperimentsCard: View {
                     .buttonStyle(.plain)
                     if i < rows.count - 1 { RowDivider() }
                 }
+                if unlinked, let n = model.prolificNote {
+                    Text("Prolific 미연결").font(.hub(cs.tag)).foregroundStyle(Hub.text3).lineLimit(1)
+                        .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .help(n + " — 토큰 공유 방식은 결정 대기 (GitHub #17)")
+                }
                 if let cut { CardFooter(caption: CardMetas.caption("experiments", model), toggleKey: "experiments", more: cut.more) }
             }
             .frame(maxWidth: .infinity, alignment: .top)
@@ -197,6 +198,8 @@ struct ConferencesCard: View {
     @ObservedObject private var fill = HubFill.shared
     /// 관심 표시·해제의 6초 미룸 — 모델에 두어 뷰를 바꿔도 잃지 않는다 (리마인더와 같은 방식)
     @ObservedObject private var commits: DelayedCommit
+    /// 학회 상태(관심·제출 예정·제출함) — 칩 꼬리·단추 글 (0.44.0 #62)
+    @ObservedObject private var statusStore = ConferenceStatusStore.shared
 
     init(model: NotionHubModel, maxRows: Int = 3, quiet: Bool = false, nearOnly: Bool = false) {
         self.model = model; self.maxRows = maxRows; self.quiet = quiet; self.nearOnly = nearOnly
@@ -231,12 +234,9 @@ struct ConferencesCard: View {
                 ?? Array(model.conferences.prefix(min(model.cfg.conferencesCount, maxRows)))   // 바닥 줄이 가운데 칸을 누르지 않게 3행 (마감 가까운 순)
             VStack(spacing: 0) {
                 if rows.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(model.loading && model.conferences.isEmpty ? "불러오는 중…" : "예정된 학회 없음").font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
-                        if !model.cfg.conferencesDB.isEmpty { Text("Conferences 에 예정 학회를 넣으면 나옵니다").font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1) }
-                    }
-                    .padding(cs.empty)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.loading && model.conferences.isEmpty ? "불러오는 중…" : "없음").font(.hub(cs.body, weight: .medium)).foregroundStyle(Hub.text2)
+                        .padding(cs.empty)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, c in
                     row(c)
@@ -259,12 +259,13 @@ struct ConferencesCard: View {
     }
 
     private func confName(_ c: ConferenceRow) -> some View {
-        Text(c.conference.isEmpty ? "학회" : c.conference).font(.hub(cs.body, weight: .semibold)).lineLimit(1).layoutPriority(2)
+        Text(c.conference.isEmpty ? "학회" : c.conference).font(.hub(cs.body, weight: .semibold)).foregroundStyle(Hub.text).lineLimit(1).layoutPriority(2)
     }
-    /// 형식·'국제' 는 줄바꿈 없이 고정 폭, 장소는 이상 폭 cs.col(56) — ViewThatFits 가 이름+꼬리표+장소 몇 글자로 한 줄 여부를 정하고, 장소는 남는 폭에서 잘린다
+    /// 형식·'국제' 는 줄바꿈 없이 고정 폭, 장소는 이상 폭 cs.col(56) — ViewThatFits 가 이름+꼬리표+장소 몇 글자로 한 줄 여부를 정하고, 장소는 남는 폭에서 잘린다.
+    /// 꼬리표는 모두 한 모양 ConfTag — 남색 TypePill·굵은 '국제' 가 섞여 행마다 강약이 달라 보이던 것 (0.44.0 #66)
     @ViewBuilder private func confTags(_ c: ConferenceRow) -> some View {
-        if !c.format.isEmpty { TypePill(text: c.format) }
-        if c.international { Text("국제").font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize() }
+        if !c.format.isEmpty { ConfTag(text: c.format) }
+        if c.international { ConfTag(text: "국제") }
         if !c.location.isEmpty {
             Text(c.location).font(.hub(cs.aux)).foregroundStyle(Hub.text2).lineLimit(1)
                 .frame(minWidth: 0, idealWidth: cs.col(56), maxWidth: .infinity, alignment: .leading).layoutPriority(-1)   // 이상 폭 0 이면 한 줄로 판정돼 장소가 '…' 만 남던 것 (리뷰 2)
@@ -273,19 +274,19 @@ struct ConferencesCard: View {
 
     private func row(_ c: ConferenceRow) -> some View {
         let me = HubPrefs.me.uppercased()
-        let names = model.interestNames(c)
-        let mine = !me.isEmpty && names.contains(me)
-        // 접수 중인 마감이 있으면 마감까지, 아니면 개최까지
-        let due = c.deadline.flatMap { $0 >= model.today ? $0 : nil }
-        let target = due ?? c.start
-        let cd = Calendar.current.dateComponents([.day], from: model.today, to: target).day ?? 99
+        let st = model.confStatuses(c)
+        let names = st.keys.sorted()
+        let myState = me.isEmpty ? nil : st[me]
+        let mine = myState != nil
+        // 접수 중인 마감이 있으면 마감까지, 아니면 개최까지 — 색·라벨은 ConfRowStyle 한 규칙 (덤프와 같은 함수)
+        let due = ConfRowStyle.due(c, today: model.today)
         let dateW = cs.col(76)
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 // 왼쪽(날짜·이름·장소·제목·마감) = 원본 링크
                 Button { if let l = c.link { NSWorkspace.shared.open(l) } else { model.openInApp(id: c.id) } } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(Hub.range(c.start, c.end)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit()
+                        Text(Hub.range(c.start, c.end)).font(.hub(cs.aux)).monospacedDigit()
                             .lineLimit(1).frame(width: dateW, alignment: .leading).foregroundStyle(Hub.text2)
                         VStack(alignment: .leading, spacing: 1) {
                             // 이름이 먼저 폭을 받는다 — 이름+꼬리표가 한 줄에 다 들어가면 한 줄(장소는 남는 폭에서 잘림),
@@ -317,19 +318,19 @@ struct ConferencesCard: View {
                 .buttonStyle(.plain)
                 // 좁은 열(허브 가운데)에서도 D-day 칸은 고정 폭, 제목이 먼저 잘림
                 VStack(alignment: .trailing, spacing: 1) {
-                    // 적색은 접수 중인 초록 마감이 D≤3 일 때만 (0.35.0) — 개최일 D-day 는 마감이 아니다
-                    Text(Hub.dday(target)).font(.hub(cs.tag, weight: .bold)).foregroundStyle(due != nil && cd <= 3 ? (quiet ? Hub.ink : Hub.signal) : Hub.text2).monospacedDigit().lineLimit(1)
-                    if due != nil { Text("마감").font(.hub(cs.tag - 1)).foregroundStyle(Hub.text3).lineLimit(1) }
+                    // 적색은 접수 중인 초록 마감이 D≤3 일 때만 (0.35.0) — 개최일 D-day 는 마감이 아니다. 라벨은 늘 '마감' 또는 '개최' (0.44.0 #66)
+                    Text(due.text).font(.hub(cs.tag, weight: .bold)).foregroundStyle(ConfRowStyle.color(due, quiet: quiet)).monospacedDigit().lineLimit(1)
+                    Text(due.label).font(.hub(cs.tag - 1)).foregroundStyle(Hub.text3).lineLimit(1)
                 }
                 .frame(width: cs.col(44), alignment: .trailing)
             }
-            // 관심 줄 — 날짜 칸만큼 들여 '관심' 단추(클릭 1회, 6초 안에 되돌리기) + 관심 표시한 사람 이니셜 칩(내 것은 남색 테두리).
-            // 단추를 이름 줄 오른쪽에서 이 줄로 옮겨 이름이 폭을 잃지 않게 (검증 1)
+            // 상태 줄 — 날짜 칸만큼 들여 상태 단추(클릭 1회 = 한 단계: 관심 → 제출 예정 → 제출함 → 해제, 6초 안에 되돌리기, 결정 D-5)
+            // + 표시한 사람 칩(관심 'JYK' · 예정 'JYK 예정' · 제출 'JYK 제출', 내 것은 남색 테두리). 단추 글 = 지금 내 상태, 도움말 = 다음 단계 (0.44.0 #62)
             HStack(alignment: .center, spacing: 6) {
                 Button { model.toggleInterest(c) } label: {
                     HStack(spacing: 3) {
                         Image(systemName: mine ? "hand.raised.fill" : "hand.raised")
-                        Text("관심")
+                        Text(myState?.label ?? "관심")
                     }
                     .font(.hub(cs.tag, weight: .semibold)).foregroundStyle(mine ? Hub.ink : Hub.text2)
                     .lineLimit(1).fixedSize()
@@ -341,10 +342,10 @@ struct ConferencesCard: View {
                 .buttonStyle(.plain)
                 .disabled(model.interestLocked != nil)
                 .help(model.interestLocked != nil ? "관심 파일을 읽지 못해 잠김"
-                      : (mine ? "관심 해제 — 6초 안에 되돌리기" : "관심 표시 — 내 이니셜이 이 학회에 붙음 (NAS, 6초 안에 되돌리기)"))
+                      : "누르면 " + (ConfStatus.next(myState).map { "'\($0.label)'" } ?? "해제") + " — 클릭 1회 = 한 단계 (관심 → 제출 예정 → 제출함 → 해제, NAS, 6초 안에 되돌리기)")
                 if !names.isEmpty {
                     FlowLayout(spacing: 4, lineSpacing: 3) {
-                        ForEach(names, id: \.self) { n in InitialChip(text: n, mine: n == me) }
+                        ForEach(names, id: \.self) { n in ConfStatusChip(who: n, state: st[n] ?? .interest, mine: n == me) }
                     }
                 }
                 Spacer(minLength: 0)
@@ -352,5 +353,49 @@ struct ConferencesCard: View {
             .padding(.leading, dateW + 8)
         }
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV)
+    }
+}
+
+// MARK: - 학회 행 강조 한 규칙 (0.44.0 C2, #66 BHL — 행마다 강약이 달라 보임)
+// 이름 cs.body semibold Hub.text · 날짜 cs.aux text2 · 꼬리표(형식·국제)는 모두 ConfTag · D-n cs.tag bold 고정폭,
+// 색은 '접수 중 마감 D≤3' 만 Hub.signal(관제탑 quiet 는 Hub.ink), 나머지 text2 · D-n 아래 라벨은 늘 '마감' 또는 '개최'
+enum ConfRowStyle {
+    struct Due: Equatable { let text: String; let label: String; let urgent: Bool }
+    /// 접수 중인 초록 마감이 있으면 마감까지, 아니면 개최까지
+    static func due(_ c: ConferenceRow, today: Date) -> Due {
+        let open = c.deadline.flatMap { $0 >= today ? $0 : nil }
+        let target = open ?? c.start
+        let cd = Calendar.current.dateComponents([.day], from: today, to: target).day ?? 99
+        return Due(text: Hub.dday(target), label: open != nil ? "마감" : "개최", urgent: open != nil && cd <= 3)
+    }
+    static func color(_ d: Due, quiet: Bool) -> Color { d.urgent ? (quiet ? Hub.ink : Hub.signal) : Hub.text2 }
+    /// 덤프 '[학회 관심]' 색 이름
+    static func colorName(_ d: Due, quiet: Bool) -> String { d.urgent ? (quiet ? "ink" : "signal") : "text2" }
+}
+
+/// 학회 꼬리표 한 모양 — 형식·국제 (cs.tag medium Hub.text2, Hub.fillNeutral 캡슐)
+struct ConfTag: View {
+    let text: String
+    @Environment(\.cardStyle) private var cs
+    var body: some View {
+        Text(text).font(.hub(cs.tag, weight: .medium)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Capsule().fill(Hub.fillNeutral))
+    }
+}
+
+/// 학회 상태 칩 — 관심 'JYK' · 예정 'JYK 예정' · 제출 'JYK 제출' ('제출' 은 submitted 인 사람만). 모양은 InitialChip 과 같다
+struct ConfStatusChip: View {
+    let who: String
+    let state: ConfStatus
+    var mine = false
+    @Environment(\.cardStyle) private var cs
+    var body: some View {
+        Text(who + state.chipSuffix).font(.hub(cs.tag - 0.5, weight: .bold, design: .rounded)).lineLimit(1).fixedSize()
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .background(Capsule().fill(Hub.fillNeutral))
+            .overlay(Capsule().stroke(mine ? Hub.ink : Color.clear, lineWidth: 1.5))
+            .foregroundStyle(mine ? Hub.ink : Hub.text2)
+            .help("\(who)\(mine ? " · 나" : "") — \(state.label)")
     }
 }

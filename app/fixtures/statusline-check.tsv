@@ -29,3 +29,9 @@ statusline	폭=600;배율=1.6;확정=2;예상=3;학회=4;연구비=1;멈춤=5;GR
 statusline	폭=900;배율=1.3;확정=2;예상=3;학회=4;연구비=1;멈춤=5;GRM=10.21;현장=12;칩=미팅 후속 3 · 내일 GRM	M|맞음
 statusline	폭=1100;배율=1.0;확정=2;예상=3;학회=4;연구비=1;멈춤=5;GRM=10.21;현장=12;칩=내 GRM 바뀜 · 확인|미팅 후속 3 · 내일 GRM	L|맞음
 statusline	폭=1100;배율=1.6;확정=2;예상=3;학회=4;연구비=1;멈춤=5;GRM=10.21;현장=12;칩=미팅 후속 3 · 내일 GRM	M|맞음
+# sl-target (0.44.0 B2, #63) — 누를 수 있는 숫자와 대상 카드(StatusLine.targets). 0·'—' 은 빠짐, 확정·예상은 8주 띠
+sl-target	확정=2;예상=0;학회=3;연구비=3;멈춤=4;GRM=10.21;현장=55	확정→band · 학회→conferences · 연구비→grants · 멈춤→datastate · GRM→grm · 현장→experiments
+sl-target	확정=0;예상=0;학회=0;연구비=0;멈춤=0;GRM=—;현장=0	—
+sl-target	확정=0;예상=1;학회=0;연구비=0;멈춤=0;GRM=—	예상→band
+sl-target	확정=1;예상=2;학회=0;연구비=1;멈춤=0;GRM=10.29	확정→band · 예상→band · 연구비→grants · GRM→grm
+sl-target	확정=0;예상=0;학회=2;연구비=0;멈춤=0;GRM=—;현장=3	학회→conferences · 현장→experiments

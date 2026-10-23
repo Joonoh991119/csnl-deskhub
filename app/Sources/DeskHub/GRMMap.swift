@@ -31,10 +31,24 @@ enum GRMMap {
         guard !name.hasPrefix("."), !name.hasPrefix("~$"), low != "thumbs.db", !isPB(name) else { return false }
         return low.hasSuffix(".pptx") || low.hasSuffix(".key") || low.hasSuffix(".pdf")
     }
-    /// Paper Blitz 덱 — PB_*.pdf·pptx (예전 공정 보드는 pptx 만 봐서 PB_260401.pdf 를 놓쳤다)
+    /// Paper Blitz 덱 — PB_yymmdd*.pdf·pptx (예전 공정 보드는 pptx 만 봐서 PB_260401.pdf 를 놓쳤다).
+    /// 밑줄 없는 PB261021.pptx 도 덱으로 센다(0.44.0 #61 — 예전엔 놓치고 슬라이드로 셌다). 이름 경고는 pbNameIssue. aggregate_daily.is_pb 와 같은 규칙
     static func isPB(_ name: String) -> Bool {
         let low = name.lowercased()
-        return name.uppercased().hasPrefix("PB_") && !name.hasPrefix("~$") && (low.hasSuffix(".pdf") || low.hasSuffix(".pptx"))
+        guard !name.hasPrefix("~$"), low.hasSuffix(".pdf") || low.hasSuffix(".pptx") else { return false }
+        return name.range(of: #"^[Pp][Bb]_?[0-9]{6}"#, options: .regularExpression) != nil
+    }
+    /// 덱 이름 규칙(PB_yymmdd) 어긋남 — 밑줄이 없으면 경고 글, 맞거나 덱이 아니면 nil (공정 'blitz' 칸·신선도 꼬리표·text-check A6-pb)
+    static func pbNameIssue(_ name: String) -> String? {
+        guard isPB(name), !name.uppercased().hasPrefix("PB_") else { return nil }
+        return "이름 규칙 어긋남 (PB_yymmdd)"
+    }
+    /// 한 폴더에서 덱 하나 — 밑줄 쪽 먼저, 같으면 pdf 먼저, 그다음 이름순
+    static func pickPB(_ names: [String]) -> String? {
+        names.filter(isPB).min { a, b in
+            func key(_ n: String) -> (Int, Int, String) { (pbNameIssue(n) == nil ? 0 : 1, n.lowercased().hasSuffix(".pdf") ? 0 : 1, n) }
+            return key(a) < key(b)
+        }
     }
     static func isTranscript(_ name: String) -> Bool { name.hasPrefix("GRM_transcript_") && name.hasSuffix(".json") }
     /// 회의록 날짜 (A6-minutes) — 제목이 있는 Meeting Notes 행 **전부**(Type 'Other' 포함)의 날짜. 회의록 카드는 Other 를 빼지만
@@ -46,8 +60,10 @@ enum GRMMap {
     static func hasMinutes(relation: Bool, day: Date, minuteDays: Set<Date>) -> Bool {
         relation || minuteDays.contains(Calendar.current.startOfDay(for: day))
     }
-    /// text-check — 파일 이름 → '슬라이드' | 'PB' | '녹취' | '—'
-    static func classify(_ name: String) -> String { isPB(name) ? "PB" : (isSlide(name) ? "슬라이드" : (isTranscript(name) ? "녹취" : "—")) }
+    /// text-check — 파일 이름 → '슬라이드' | 'PB' | 'PB(이름 규칙 어긋남)' | '녹취' | '—'
+    static func classify(_ name: String) -> String {
+        isPB(name) ? (pbNameIssue(name) == nil ? "PB" : "PB(이름 규칙 어긋남)") : (isSlide(name) ? "슬라이드" : (isTranscript(name) ? "녹취" : "—"))
+    }
 
     static func folderName(_ d: Date) -> String {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyyMMdd"; return f.string(from: d)

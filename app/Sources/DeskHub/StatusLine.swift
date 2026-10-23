@@ -98,6 +98,50 @@ enum StatusLine {
     }
     static func text(_ v: Variant, _ p: Parts) -> String { segments(v, p, quiet: true).map(\.0).joined() }
 
+    // MARK: 숫자 클릭 (0.44.0 B2, #63) — 숫자를 누르면 그 카드로. 받는 쪽은 알림 "DeskHub.focusCard"(object = 카드 id)
+    /// 조각 이름 → 대상 카드 id. 확정·예상은 8주 띠(band)
+    static let targetIDs: [(segment: String, target: String)] = [
+        ("확정", "band"), ("예상", "band"), ("학회", "conferences"), ("연구비", "grants"), ("멈춤", "datastate"), ("GRM", "grm"), ("현장", "experiments"),
+    ]
+    /// 순수 — 누를 수 있는 숫자(0·'—' 은 빠짐)와 대상. 뷰·text-check sl-target 이 같은 함수
+    static func targets(_ p: Parts) -> [(segment: String, target: String)] {
+        let live: [String: Bool] = [
+            "확정": p.confirmed > 0, "예상": p.expected > 0, "학회": p.undecidedConf > 0, "연구비": p.undecidedGrant > 0,
+            "멈춤": p.stopped > 0, "GRM": !p.nextGRM.isEmpty && p.nextGRM != "—", "현장": (p.fieldDays ?? 0) > 0,
+        ]
+        return targetIDs.filter { live[$0.segment] == true }
+    }
+    /// 숫자 조각 바로 앞 라벨 → 조각 이름 (segments 의 라벨 글과 짝). S 갈래 '마감 n' 은 확정 수
+    static func segmentName(afterLabel label: String) -> String? {
+        let l = label.trimmingCharacters(in: CharacterSet(charactersIn: " ·|"))
+        switch l {
+        case "확정", "마감": return "확정"
+        case "예상": return "예상"
+        case "미정 학회": return "학회"
+        case "연구비": return "연구비"
+        case "자료 멈춤", "멈춤": return "멈춤"
+        case "다음 GRM": return "GRM"
+        case "현장 실험 마지막": return "현장"
+        default: return nil
+        }
+    }
+    /// 도움말에 쓰는 대상 이름
+    static func targetTitle(_ id: String) -> String {
+        if id == "band" { return "8주 마감 띠" }
+        if HubCardTitle.hint(id) != nil { return HubCardTitle.title(id) }
+        return id == "datastate" ? "Data status" : id
+    }
+    /// 숫자 클릭 1회 — band 면 띠 열기·닫기, 아니면 그 카드로(받는 쪽이 펼침·테두리). Notification.Name 확장 멤버는 만들지 않는다(갈래 약속)
+    @MainActor static func focus(_ id: String) {
+        if id == "band" { StatusBand.shared.toggle(); return }
+        NotificationCenter.default.post(name: Notification.Name("DeskHub.focusCard"), object: id)
+    }
+    /// text-check sl-target — '확정→band · 학회→conferences · …' | '—'
+    static func targetsText(_ p: Parts) -> String {
+        let t = targets(p)
+        return t.isEmpty ? "—" : t.map { "\($0.segment)→\($0.target)" }.joined(separator: " · ")
+    }
+
     /// 실제 폭(NSFont 13×배율, 숫자 굵게와 같은 semibold 로 넉넉히)으로 갈래를 고른다 — 420pt 미만은 M·S 만. 하나도 안 맞으면 (S, 잘림)
     static let horizontalPadding: CGFloat = 24
     /// weight — 기본 semibold(상태 한 줄). Members 열 머리 실측은 bold (0.43.0 C2)
@@ -133,6 +177,13 @@ enum StatusLine {
         }
     }
     static func rangeText(_ s: Date, _ e: Date) -> String { Hub.shortDay(s) + "–" + Hub.shortDay(e) }
+    /// 8주 띠 범례 두 줄 (0.44.0 B2, #63) — 뷰·덤프 '범례: …' 같은 글
+    static let legend: [String] = [
+        "◆ 확정 = 날짜가 정해진 연구비·리마인더·학회 마감 · ◇ 예상 = 아직 공지 전, 작년 날짜로 잡은 학회 마감",
+        "GRM = 그 주 발표자 · 미정 = 마감일이 아직 없는 학회·연구비",
+    ]
+    /// 띠 왼쪽 줄 이름 열
+    static let rowNames = ["주", "마감", "GRM"]
 
     // MARK: 덤프
     /// text.txt [상태 한 줄] — L 전체 글 + 300·420·600pt × 1.0·1.3·1.6 갈래
@@ -178,6 +229,7 @@ enum StatusLine {
             return f.joined(separator: " · ")
         }
         out.append("마감 미정 학회 \(p.undecidedConf) · 연구비 \(p.undecidedGrant)")
+        out.append("범례: " + legend.joined(separator: " · "))
         return out
     }
 }
@@ -200,6 +252,8 @@ struct StatusLineView: View {
     var quiet = false
     @ObservedObject private var band = StatusBand.shared
     @ObservedObject private var seen = SeenCards.shared
+    /// 마우스가 올라간 숫자 조각(밑줄)
+    @State private var hovered: String?
     static var height: CGFloat { Hub.s(26) }
 
     var body: some View {
@@ -217,7 +271,7 @@ struct StatusLineView: View {
                     }
                     .buttonStyle(.plain).help(c.help)
                 }
-                line(StatusLine.segments(v.variant, p, quiet: quiet)).lineLimit(1)
+                line(StatusLine.segments(v.variant, p, quiet: quiet), targets: StatusLine.targets(p))
                 Spacer(minLength: 0)
                 Image(systemName: band.open ? "chevron.up" : "chevron.down").font(.hub(10, weight: .bold)).foregroundStyle(Hub.text3)
             }
@@ -253,17 +307,34 @@ struct StatusLineView: View {
         }
     }
 
-    private func line(_ segs: [(String, StatusLine.Role)]) -> Text {
-        segs.reduce(Text("")) { acc, s in
-            let t = Text(s.0)
-            switch s.1 {
-            case .label: return acc + t.foregroundStyle(Hub.text2)
-            case .number: return acc + t.fontWeight(.bold).foregroundStyle(Hub.text)
-            case .sep: return acc + t.foregroundStyle(Hub.divider)
-            case .signal: return acc + t.fontWeight(.bold).foregroundStyle(Hub.signal)
+    /// 조각을 Text 여러 개로(글 폭은 이어붙인 글과 같음 — variant 판정 그대로). 대상이 있는 숫자만 누를 수 있고(밑줄·도움말), 그 밖은 줄 전체 = 띠 열기·닫기 (0.44.0 B2, #63)
+    private func line(_ segs: [(String, StatusLine.Role)], targets: [(segment: String, target: String)]) -> some View {
+        let byName = Dictionary(targets.map { ($0.segment, $0.target) }, uniquingKeysWith: { a, _ in a })
+        return HStack(alignment: .firstTextBaseline, spacing: 0) {
+            ForEach(Array(segs.enumerated()), id: \.offset) { i, s in
+                let isNum = s.1 == .number || s.1 == .signal
+                let name = isNum && i > 0 ? StatusLine.segmentName(afterLabel: segs[i - 1].0) : nil
+                if let name, let target = byName[name] {
+                    piece(s).underline(hovered == name).fixedSize()
+                        .contentShape(Rectangle())
+                        .onTapGesture { StatusLine.focus(target) }
+                        .onHover { h in hovered = h ? name : (hovered == name ? nil : hovered) }
+                        .help("눌러서 \(StatusLine.targetTitle(target)) 보기")
+                } else {
+                    piece(s).lineLimit(1)
+                }
             }
         }
         .font(.hub(13))
+    }
+    private func piece(_ s: (String, StatusLine.Role)) -> Text {
+        let t = Text(s.0)
+        switch s.1 {
+        case .label: return t.foregroundStyle(Hub.text2)
+        case .number: return t.fontWeight(.bold).foregroundStyle(Hub.text)
+        case .sep: return t.foregroundStyle(Hub.divider)
+        case .signal: return t.fontWeight(.bold).foregroundStyle(Hub.signal)
+        }
     }
 }
 
@@ -277,19 +348,29 @@ struct EightWeekBand: View {
         let weeks = StatusLine.weeks(model)
         let p = StatusLine.parts(model)
         let inner = max(160, width - 24)
-        let cellW = (inner - gap * 7) / 8
+        // 왼쪽 줄 이름 열('주'·'마감'·'GRM') 만큼 칸이 좁아진다 (0.44.0 B2, #63)
+        let nameW = Hub.s(30)
+        let cellW = (inner - nameW - gap * 8) / 8
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Text("8주 마감 띠").font(.hub(13, weight: .bold))
-                Text("◆ 확정 · ◇ 예상 · 칸 아래 = 그 주 GRM 발표자").font(.hub(11)).foregroundStyle(Hub.text3).lineLimit(1)
                 Spacer(minLength: 4)
                 Button { StatusBand.shared.close() } label: { Image(systemName: "xmark").font(.hub(11, weight: .bold)).frame(width: 22, height: 22).contentShape(Rectangle()) }
                     .buttonStyle(.plain).foregroundStyle(Hub.text2).help("닫기 (Esc)")
             }
-            HStack(alignment: .top, spacing: gap) {
-                ForEach(weeks) { w in
-                    VStack(spacing: 3) {
+            VStack(alignment: .leading, spacing: 3) {
+                // 주 — 그 주 월요일
+                HStack(alignment: .firstTextBaseline, spacing: gap) {
+                    rowName(StatusLine.rowNames[0], width: nameW)
+                    ForEach(weeks) { w in
                         Text(Hub.shortDay(w.start)).font(.hub(11, weight: w.current ? .bold : .regular)).foregroundStyle(w.current ? Hub.ink : Hub.text3).lineLimit(1)
+                            .frame(width: cellW).help(StatusLine.rangeText(w.start, w.end))
+                    }
+                }
+                // 마감 — ◆ 확정 · ◇ 예상
+                HStack(alignment: .center, spacing: gap) {
+                    rowName(StatusLine.rowNames[1], width: nameW)
+                    ForEach(weeks) { w in
                         ZStack {
                             RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Hub.fillNeutral)
                             if w.current { RoundedRectangle(cornerRadius: 6, style: .continuous).stroke(Hub.ink, lineWidth: 1) }
@@ -304,21 +385,34 @@ struct EightWeekBand: View {
                             }
                         }
                         .frame(width: cellW, height: Hub.s(44))
+                        .help(StatusLine.rangeText(w.start, w.end))
+                    }
+                }
+                // GRM — 그 주 발표자
+                HStack(alignment: .firstTextBaseline, spacing: gap) {
+                    rowName(StatusLine.rowNames[2], width: nameW)
+                    ForEach(weeks) { w in
                         Text(w.grm.isEmpty ? " " : w.grm.joined(separator: " ")).font(.hub(10.5)).foregroundStyle(Hub.text3).lineLimit(1).truncationMode(.tail)
                             .frame(width: cellW)
                     }
-                    .help(StatusLine.rangeText(w.start, w.end))
                 }
             }
             Text("마감 미정 학회 \(p.undecidedConf) · 연구비 \(p.undecidedGrant)").font(.hub(12)).foregroundStyle(Hub.text2)
-            SourceCaption(text: MetricDefs.caption(source: "그랜트·학회 파일·리마인더", basis: CardMetas.basis(model.lastUpdated),
-                                                   n: "\(p.confirmed + p.expected)", id: "A3-window"))
+            // 범례 두 줄 — 적색 없음, 줄바꿈 허용 (0.44.0 B2, #63). 출처 캡션은 뺐다(#65)
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(StatusLine.legend, id: \.self) { l in
+                    Text(l).font(.hub(11)).foregroundStyle(Hub.text2).fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(12)
         .frame(width: width, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Hub.card).shadow(color: .black.opacity(0.22), radius: 12, y: 4))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Hub.divider))
         .foregroundStyle(Hub.text)
+    }
+    private func rowName(_ t: String, width: CGFloat) -> some View {
+        Text(t).font(.hub(10.5)).foregroundStyle(Hub.text3).lineLimit(1).frame(width: width, alignment: .leading)
     }
 }
 

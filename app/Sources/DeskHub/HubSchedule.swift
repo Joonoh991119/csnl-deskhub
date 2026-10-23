@@ -32,13 +32,15 @@ struct NowNextCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(HubCardTitle.title("nownext")).font(.hub(cs.aux, weight: .bold)).foregroundStyle(Hub.text2).lineLimit(1).fixedSize()
-                    .help(HubCardTitle.hint("nownext") ?? "")
+                // 제목 — SectionTitle 과 같은 글자(cs.title bold Hub.text, 0.44.0 B2 #71)
+                Text(HubCardTitle.title("nownext")).font(.hub(cs.title, weight: .bold)).foregroundStyle(Hub.text).tracking(0.2).lineLimit(1).fixedSize()
+                    .help((HubCardTitle.hint("nownext") ?? "") + (caption ? "\n" + CardMetas.nownextCaption(cal) : ""))
                 if caption, let f = DataSources.calendarTag(cal) { FreshnessTag(f: f).layoutPriority(-1) }   // 라이브 '갱신 HH:mm' (허브만, 0.40.0 C3)
                 Spacer(minLength: 0)
             }
             NowNextLine(cal: cal)
-            if caption { Spacer(minLength: 0); SourceCaption(text: CardMetas.nownextCaption(cal)) }
+            // 카드 끝 출처 줄은 뺐다 (0.44.0 B2, #65) — 출처는 덤프 [카드 출처]·제목 도움말
+            if caption { Spacer(minLength: 0) }
         }
         .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -67,10 +69,19 @@ struct UpcomingEventsCard: View {
         if let cal { Observed(model: model, cal: cal, maxRows: maxRows, excludeToday: excludeToday, nearOnly: nearOnly) } else { Inner(model: model, cal: nil, maxRows: maxRows, excludeToday: excludeToday, nearOnly: nearOnly) }
     }
 
-    /// Notion Schedule & Events + CSNL·SLab 캘린더(겹치면 하나), 날짜순 — 카드와 text.txt [허브 카드] 가 같이 쓴다
+    /// Notion Schedule & Events + CSNL·SLab 캘린더(겹치면 하나), 날짜순 — 카드와 text.txt [허브 카드] 가 같이 쓴다.
+    /// 시간표 수업(Timetable.matchesClass)은 뺀다 — 같은 수업은 한 곳(내 것이면 Now·Next, 아니면 Classes) (0.44.0 B1, #56, 결정 D-8)
     @MainActor
     static func items(model: NotionHubModel, cal: CalendarModel?, excludeToday: Bool) -> [Item] {
+        split(model: model, cal: cal, excludeToday: excludeToday).items
+    }
+
+    /// items + 뺀 수업(덤프 [Timetable] 'Upcoming 에서 뺀 수업') — 같은 판정 한 곳
+    @MainActor
+    static func split(model: NotionHubModel, cal: CalendarModel?, excludeToday: Bool) -> (items: [Item], classes: [Item]) {
         let c = Calendar.current
+        let rows = model.courses
+        func isClass(_ i: Item) -> Bool { i.hasTime && Timetable.matchesClass(title: i.title, start: i.date, rows: rows) }
         let notion = model.visibleEvents.filter { !excludeToday || !c.isDate($0.date, inSameDayAs: model.now) }
         var out: [Item] = notion.map {
             Item(id: $0.id, date: $0.date, hasTime: $0.hasTime, title: model.displayTitle(forEvent: $0), source: "Notion", type: $0.type, notionID: $0.id)
@@ -87,7 +98,15 @@ struct UpcomingEventsCard: View {
                                 title: Hub.canonicalNames(e.title), source: src, type: "", notionID: nil))
             }
         }
-        return out.sorted { $0.date < $1.date }
+        let sorted = out.sorted { $0.date < $1.date }
+        return (sorted.filter { !isClass($0) }, sorted.filter(isClass))
+    }
+
+    /// 행 사이 구분선 — 다음 행과 날짜가 다르면 진한 날짜 줄(DayDivider), 같으면 RowDivider (0.44.0 B2, #69)
+    nonisolated static func dayBreak(_ a: Date, _ b: Date) -> Bool { !Calendar.current.isDate(a, inSameDayAs: b) }
+    /// 순수 — 행 날짜들 → 구분선 글 '─'(같은 날)·'━'(날짜 바뀜) 을 공백으로. 1행이면 빈 글. text-check up-sep
+    nonisolated static func separators(_ dates: [Date]) -> String {
+        zip(dates, dates.dropFirst()).map { dayBreak($0, $1) ? "━" : "─" }.joined(separator: " ")
     }
 
     /// 캘린더 모델이 갱신될 때도 다시 그리도록
@@ -135,7 +154,7 @@ struct UpcomingEventsCard: View {
                 VStack(spacing: 0) {
                     if rows.isEmpty {
                         // Notion 조회 중이거나 캘린더 첫 조회 전 (0.37.0 C6)
-                        Text(model.loading || cal?.isSettled == false ? "불러오는 중…" : "GRM 외 예정된 일정 없음").font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
+                        Text(model.loading || cal?.isSettled == false ? "불러오는 중…" : "없음").font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
                     }
                     ForEach(Array(rows.enumerated()), id: \.element.id) { i, e in
                         let past = e.hasTime && e.date.addingTimeInterval(3600) < model.now
@@ -157,7 +176,9 @@ struct UpcomingEventsCard: View {
                         }
                         .buttonStyle(.plain)
                         .help(e.notionID == nil ? "\(e.source) 캘린더 일정 · 클릭하면 Google 캘린더" : "Notion Schedule & Events")
-                        if i < rows.count - 1 { RowDivider() }
+                        if i < rows.count - 1 {
+                            if UpcomingEventsCard.dayBreak(e.date, rows[i + 1].date) { DayDivider() } else { RowDivider() }
+                        }
                     }
                     // Notion 행만 있고 캘린더는 아직 — 끝난 목록처럼 보이지 않게 한 줄 (0.37.0 C6 검증 1)
                     if !rows.isEmpty, cal?.isSettled == false {
@@ -186,6 +207,9 @@ struct UpcomingEventsCard: View {
         }
     }
 }
+
+/// Upcoming 날짜가 바뀌는 곳 — RowDivider 보다 진한 1.5pt (0.44.0 B2, #69). 적색 아님
+struct DayDivider: View { var body: some View { Rectangle().fill(Hub.text3.opacity(0.55)).frame(height: 1.5) } }
 
 /// 'CSNL GRM' 탭 — 발표 순번 (랩장 2026-10-14 #18: 이 탭은 순번을 알기 위한 것)
 struct GRMOrderView: View {

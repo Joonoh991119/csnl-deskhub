@@ -190,7 +190,7 @@ struct EquipmentCard: View {
     }
 
     private var empty: some View {
-        Text(model.loading ? "불러오는 중…" : (model.equipmentLoaded ? "예약 없음" : "Resource 를 읽지 못함"))
+        Text(model.loading ? "불러오는 중…" : (model.equipmentLoaded ? "없음" : "Resource 를 읽지 못함"))
             .font(.hub(cs.body)).foregroundStyle(Hub.text2).padding(cs.empty).frame(maxWidth: .infinity, alignment: .leading)
     }
 

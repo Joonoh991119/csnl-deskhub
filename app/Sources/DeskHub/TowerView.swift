@@ -11,8 +11,11 @@ import AppKit
 struct TowerView: View {
     @ObservedObject var model: NotionHubModel
     @ObservedObject private var commits: DelayedCommit
+    /// 숫자 클릭으로 잠깐 온 관제탑의 '돌아가기' (0.44.0 검증 1 리뷰)
+    @ObservedObject private var viewStore = ViewModeStore.shared
     /// 펼친 섹션 — 열마다 관련 있는 것(TowerRelevance)을 하루 한 번(창 크기로 갈래가 바뀌면 다시) 자동으로, 그 뒤는 사용자가 (SMJ #27, 0.35.0). 데이터 전 첫 프레임은 모두 접힘
-    @State private var expanded: Set<String> = []
+    /// 0.44.0 A3 (#70, 결정 D-3): 사람이 만진 펼침은 이 맥에 기억(DeskHub.towerOpen) — 저장이 있으면 시작 때 그대로 펴고 자동 결정을 하지 않는다
+    @State private var expanded: Set<String> = Set(TowerOpenStore.load() ?? [])
     /// 자동 펼침을 결정한 갈래 '날짜|열 수|좁음' — 같은 갈래면 한 번만(갱신마다 레이아웃이 바뀌지 않게), 창 크기로 갈래가 바뀌면 그날도 다시 (0.43.2 C7)
     @State private var decidedKey: String? = nil
     /// 좁은 세로 관제탑 — tall 이고 GeometryReader 높이 < 1200pt (창 높이만으로 — 레일·경보 높이에서 정하면 되먹임) (0.43.2 C7, #54 ①).
@@ -20,13 +23,21 @@ struct TowerView: View {
     @State private var railTight = false
     /// 펼친 카드 높이 실측 — windows.txt choices 'tower-rail' 용 (0.43.2 C7)
     @State private var cardH: [String: CGFloat] = [:]
-    /// 사용자가 레일을 직접 펴거나 접은 날 — 그날은 자동 결정을 하지 않는다. 날짜로 두어 첫 결정 전에 만져도 다음 날엔 풀린다 (검증 1 리뷰)
-    @State private var touchedDay: Date? = nil
+    /// 사람이 레일을 펴거나 접었음(저장 있음) — 자동 결정 안 함. sourcesLine '자동' 단추·'--key rail:auto' 로 풀림 (0.44.0 A3, 결정 D-3 — 예전엔 그날만)
+    @State private var pinned: Bool = TowerOpenStore.load() != nil
+    /// 찾아가기로 연 레일 — 뒤이은 자동 결정이 접지 않게 (저장 안 함, 0.44.0 #63)
+    @State private var focusHold: String? = nil
+    /// 찾아간 레일 강조 — Hub.ink 2pt 1.6초
+    @State private var focusID: String? = nil
+    /// 마지막 레일 열 수 — '자동' 단추가 다시 결정할 때
+    @State private var railCols = 2
     /// 마지막으로 연 레일 — 좁은 세로로 바뀔 때 여러 개 열려 있으면 이것 하나만 남긴다 (0.43.2 C7 검증 1 리뷰)
     @State private var lastOpened: String? = nil
     /// 확인함(ack) — C·A 만, 맥 단위 로컬, 7일 뒤 풀림 (W 는 ack 불가 — 처리해야 사라짐)
     @State private var acks: [String: Double] = AlertAck.load()
     @State private var showAcked = false
+    /// '지난 마감 n건 ▸' 펼침 — 제자리 토글, 저장 안 함 (0.44.0 #68, 팝오버와 같은 규칙)
+    @State private var lapsedOpen = false
     /// 로스터 띠에서 고른 '대상' — 10분 동안 그 사람 기준으로 C·A 정렬·'내 것' 판정 (공용 맥 개인화)
     @State private var target: String? = nil
     @State private var targetUntil: Date? = nil
@@ -93,8 +104,12 @@ struct TowerView: View {
             }
         }
         .padding(12)
+        // 카드 찾아가기 (0.44.0 #63) — 상태 한 줄 숫자·'--key focus:<id>'·Dashboard 에서 넘긴 datastate
+        .onReceive(NotificationCenter.default.publisher(for: .deskhubFocusCard)) { n in if let id = n.object as? String { focusRail(id) } }
+        .onAppear { if let p = HubFocus.pending { HubFocus.pending = nil; focusRail(p) } }
         // onChange 는 빠른 연속 입력을 하나로 합치므로 발행마다 받는 onReceive
-        .onReceive(bus.$event.compactMap { $0 }) { e in handleKey(e.key, alerts: set.alerts) }
+        // j/k 는 지금 할 것(live)만 — 지난 마감은 접힌 줄 (0.44.0 #68)
+        .onReceive(bus.$event.compactMap { $0 }) { e in handleKey(e.key, alerts: set.live) }
     }
 
     /// D6 키: j/k 고르기 · Enter 원본 · Space 관련 섹션 · d 끝남 · a 확인함 · \ 접기 · Esc 해제
@@ -105,14 +120,16 @@ struct TowerView: View {
         case "j": sel = n == 0 ? nil : min((sel ?? -1) + 1, n - 1)
         case "k": sel = n == 0 ? nil : max((sel ?? n) - 1, 0)
         case "enter": cur?.link?.open()
-        case "space": if let a = cur { openRail(for: a) }   // openRail 이 touchedDay 를 세운다
+        case "space": if let a = cur { openRail(for: a) }   // openRail 이 저장한다
         case "d":
             if let a = cur, a.id.hasPrefix("rem-"), let r = model.reminders.first(where: { $0.id == String(a.id.dropFirst(4)) }) {
                 commits.schedule(id: r.id, label: "\(r.title) · 끝남") { model.setReminder(r, status: "done") }
             }
         case "a":
             if let a = cur, a.level != .warning { acks[AlertAck.key(a)] = Date().timeIntervalSince1970; AlertAck.save(acks); UsageLog.action("ack") }
-        case "\\": markTouched(); withAnimation(.easeOut(duration: 0.15)) { expanded = [] }
+        case "\\": markTouched(); withAnimation(.easeOut(duration: 0.15)) { expanded = [] }; persist()
+        // 펼침 기억 지우고 자동으로 (0.44.0 A3) — sourcesLine '자동' 단추와 같은 경로
+        case "rail:auto": resetAuto()
         // 시험용 열기 (0.40.0 C3) — '--key rail:<id>' 는 레일 줄 클릭과 같은 경로(그날 자동 결정 멈춤 · panel 기록)
         case let r where r.hasPrefix("rail:"):
             let id = String(r.dropFirst("rail:".count))
@@ -120,18 +137,42 @@ struct TowerView: View {
             markTouched()
             let opening = !expanded.contains(id)
             withAnimation(.easeOut(duration: 0.2)) { open(id) }
+            persist()
             if opening { UsageLog.panel("tower:" + id) }
         case "esc":
-            if sel != nil { sel = nil } else { markTouched(); withAnimation(.easeOut(duration: 0.15)) { expanded = [] } }
+            if sel != nil { sel = nil } else { markTouched(); withAnimation(.easeOut(duration: 0.15)) { expanded = [] }; persist() }
         default: break
         }
     }
 
     /// 사용자가 레일을 만졌음 — 오늘(HubClock 날짜)은 자동 결정 안 함
-    private func markTouched() { touchedDay = HubClock.today }
+    private func markTouched() { pinned = true; focusHold = nil }
+    /// 사람이 만진 펼침을 이 맥에 저장 (markTouched 뒤, 바꾼 다음에 부른다)
+    private func persist() { if pinned { TowerOpenStore.save(expanded) } }
+    /// 저장을 지우고 다시 자동 결정 — '자동' 단추·'--key rail:auto'
+    private func resetAuto() {
+        TowerOpenStore.clear()
+        pinned = false; decidedKey = nil; focusHold = nil
+        decideExpansion(columns: railCols, height: railHeight)
+    }
 
-    /// 미팅 후속(0.41.0 C5)은 회의록 다음 — 13개면 half 7, 앞 열 papers…grants · 뒤 열 conferences…datastate 그대로
-    static let railOrder = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps", "tools", "datastate"]
+    /// 레일 묶음 (0.44.0 A3, #70 결정 D-12) — 열1 Schedule(일정·마감) · 열2 Research · More. 세로 1열은 열1 다음 열2.
+    /// '같은 열' 판정(open)·자동 결정·접힌 줄 순서가 이 표 하나
+    static let railColumns: [(label: String, ids: [String])] = [
+        ("Schedule", ["events", "experiments", "conferences", "grants"]),
+        ("Research · More", ["papers", "followups", "minutes", "blitz", "preprints", "members", "apps", "tools", "datastate"]),
+    ]
+    static let railOrder: [String] = railColumns.flatMap(\.ids)
+    /// 자동 펼침에서 빼는 것 — 허브 기본 접힘 7종 + 자료 상태 (classes 는 레일에 없음)
+    static let autoExcluded: Set<String> = HubGroups.defaultFolded.union(["datastate"])
+    private static func railCol(_ id: String) -> Int { railColumns.firstIndex { $0.ids.contains(id) } ?? 0 }
+    /// text.txt [관제탑 레일] 한 줄 — '열1 Schedule: … · 열2 Research·More: … · 자동 제외: … · 저장: —|id,…'
+    static func railDumpLine() -> String {
+        let cols = railColumns.enumerated().map { i, c in "열\(i + 1) \(c.label.replacingOccurrences(of: " · ", with: "·")): " + c.ids.joined(separator: " · ") }
+        let ex = railOrder.filter { autoExcluded.contains($0) }
+        let saved = TowerOpenStore.load().map { $0.isEmpty ? "(모두 접음)" : $0.joined(separator: ",") } ?? "—"
+        return (cols + ["자동 제외: " + ex.joined(separator: " · "), "저장: " + saved]).joined(separator: " · ")
+    }
     /// 데이터 항목(꼬리표 대상, 0.40.0 C3 M3) — 도구·자료 상태 제외
     static let railDataItems = ["papers", "minutes", "followups", "events", "blitz", "experiments", "grants", "conferences", "preprints", "members", "apps"]
     /// 같은 열의 다른 펼침은 접고 이것을 편다 (열 = 레일 순서 앞 절반·뒤 절반).
@@ -139,9 +180,7 @@ struct TowerView: View {
     private func open(_ key: String) {
         lastOpened = key
         if railTight { expanded = [key]; return }
-        let half = (Self.railOrder.count + 1) / 2
-        let col: (String) -> Int = { k in (Self.railOrder.firstIndex(of: k) ?? 0) < half ? 0 : 1 }
-        expanded = expanded.filter { col($0) != col(key) }
+        expanded = expanded.filter { Self.railCol($0) != Self.railCol(key) }
         expanded.insert(key)
     }
 
@@ -154,13 +193,15 @@ struct TowerView: View {
     }
 
     /// 경보 열의 내용 높이 추정 — 실측(alertContentH) 전 첫 프레임만 쓴다 (0.43.2 C6: 끝의 '+96+24' 과대 추정 삭제, 열 안 실제 여백만).
-    /// 경보 행 ~46pt · 경보 없음 줄 44 · 넘침 26 · 확인함 30 · 되돌리기 줄 6+30 · 오늘 일정(위 14 + 머리 20 + 행 27(최대 8) + 넘침 20) · 스택 간격 8 (R-J2)
+    /// 경보 행 ~46pt · 경보 없음 줄 44 · 넘침 26 · 지난 마감 줄 26(펼치면 + 행) · 확인함 30 · 되돌리기 줄 6+30 · 오늘 일정(위 14 + 머리 20 + 행 27(최대 8) + 넘침 20) · 스택 간격 8 (R-J2)
     private func alertEstimate(_ set: AlertSet, acked: [HubAlert]) -> CGFloat {
+        let live = set.live, lapsed = set.lapsed
         let agenda = (model.todayCalendar?.events ?? []).filter { $0.end > model.now && Calendar.current.isDate($0.start, inSameDayAs: model.now) }.count
         let toast = !commits.pending.isEmpty
         // 스택 자식: [경보 없음 줄] · 경보 묶음 · [되돌리기] · [확인함] · 오늘 일정 — 간격은 자식 사이마다
-        let children = 2 + (set.isClear ? 1 : 0) + (toast ? 1 : 0) + (acked.isEmpty ? 0 : 1)
-        return CGFloat(set.alerts.count) * 46 + (set.isClear ? 44 : 0) + CGFloat(set.overflow.count) * 26 + (acked.isEmpty ? 0 : 30)
+        let children = 2 + (live.isEmpty ? 1 : 0) + (toast ? 1 : 0) + (acked.isEmpty ? 0 : 1)
+        return CGFloat(live.count) * 46 + (live.isEmpty ? 44 : 0) + CGFloat(set.overflow.count) * 26 + (acked.isEmpty ? 0 : 30)
+            + (lapsed.isEmpty ? 0 : 26 + (lapsedOpen ? CGFloat(lapsed.count) * 46 : 0))
             + (toast ? 36 : 0)
             + 14 + 20 + CGFloat(min(max(agenda, 1), 8)) * 27 + (agenda > 8 ? 20 : 0)
             + CGFloat(children - 1) * 8
@@ -193,11 +234,13 @@ struct TowerView: View {
     }
 
     private func headCounters(_ set: AlertSet, tall: Bool, alertWidth: CGFloat) -> some View {
-        HStack(spacing: 8) {
-            Text("경보").font(.hub(13, weight: .bold)).foregroundStyle(Hub.text2)
-            counter("■", set.counts[.warning] ?? 0, strong: true)
-            counter("□", set.counts[.caution] ?? 0, strong: false)
-            counter("·", set.counts[.advisory] ?? 0, strong: false)
+        // 기호 대신 말 세 칸 '급함 n · 할 일 n · 참고 n' (0.44.0 #67, 결정 D-4) — AlertSet.headline 과 같은 말. 급함 n>0 만 적색(지금 ■ 와 같은 예산)
+        // 머리 수는 지금 것(live)만 — 지난 마감은 경보 열 끝 접힌 줄이 센다 (검증 1)
+        let c = set.liveCounts
+        return HStack(spacing: 12) {
+            ForEach(HubAlert.Level.ordered, id: \.self) { lv in
+                counter(lv.word, c[lv] ?? 0, strong: lv == .warning).help(lv.wordHelp)
+            }
         }
         .fixedSize()
         .frame(width: tall ? nil : alertWidth - 12, alignment: .leading)
@@ -241,9 +284,9 @@ struct TowerView: View {
         }
     }
 
-    private func counter(_ mark: String, _ n: Int, strong: Bool) -> some View {
-        HStack(spacing: 2) {
-            Text(mark).font(.hub(11, weight: .bold))
+    private func counter(_ word: String, _ n: Int, strong: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(word).font(.hub(13, weight: strong && n > 0 ? .bold : .semibold))
             Text("\(n)").font(.hub(13, weight: .bold, design: .rounded)).monospacedDigit()
         }
         .foregroundStyle(strong && n > 0 ? Hub.signal : (n > 0 ? Hub.text : Hub.text3))
@@ -266,20 +309,36 @@ struct TowerView: View {
     private func alertColumn(_ set: AlertSet, acked: [HubAlert]) -> some View {
         ScrollView(.vertical, showsIndicators: false) {
             // 명시적 스택 하나(암시 스택과 같은 간격) — 내용 높이 실측용 (0.43.2 C6)
+            // 행은 지금 할 것(live)만 — 어제 이전 마감은 목록 끝 '지난 마감 n건 ▸' 한 줄로 접힘, 누르면 제자리 펼침(같은 행·'끝남으로 표시'·미루기 그대로) (0.44.0 #68)
+            let live = set.live, lapsed = set.lapsed
             VStack(spacing: nil) {
-                if set.isClear { clearLine.padding(.bottom, 8) }
+                if live.isEmpty { clearLine.padding(.bottom, 8) }
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(set.alerts.enumerated()), id: \.element.id) { i, a in
+                    ForEach(Array(live.enumerated()), id: \.element.id) { i, a in
                         alertRow(a)
                             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(sel == i ? Hub.ink : Color.clear, lineWidth: 1.5))
-                        if i < set.alerts.count - 1 { RowDivider() }
+                        if i < live.count - 1 { RowDivider() }
                     }
                     ForEach(set.overflow.sorted(by: { $0.key < $1.key }), id: \.key) { l, n in
                         RowDivider()
                         Text("\(l.mark) +\(n) 더").font(.hub(11.5)).foregroundStyle(Hub.text3).padding(.horizontal, 12).padding(.vertical, 6)
                     }
+                    if !lapsed.isEmpty {
+                        if !live.isEmpty || !set.overflow.isEmpty { RowDivider() }
+                        HStack(spacing: 6) {
+                            Text(PopoverTodo.lapsedLabel(lapsed.count) + (lapsedOpen ? " ▾" : " ▸")).font(.hub(11.5, weight: .medium))
+                            Spacer()
+                        }
+                        .foregroundStyle(Hub.text3).padding(.horizontal, 12).padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { lapsedOpen.toggle() } }
+                        .help(lapsedOpen ? "접기" : "어제 이전 마감 — 펼쳐서 '끝남으로 표시'·미루기 (7일 뒤 저절로 사라짐)")
+                        if lapsedOpen {
+                            ForEach(lapsed) { a in RowDivider(); alertRow(a) }
+                        }
+                    }
                 }
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(set.isClear ? Color.clear : Hub.surface))
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(live.isEmpty && lapsed.isEmpty ? Color.clear : Hub.surface))
                 UndoToast(commits: commits).padding(.top, 6)
                 if !acked.isEmpty { ackedBlock(acked) }
                 todayAgenda.padding(.top, 14)
@@ -430,7 +489,7 @@ struct TowerView: View {
     private func openRail(for a: HubAlert) {
         let key: String? = a.sources.contains("GRM") ? "minutes" : a.sources.contains("그랜트") ? "grants" : a.sources.contains("학회") ? "conferences"
             : a.sources.contains("papers") ? "papers" : a.sources.contains("Prolific") ? "experiments" : nil
-        if let key { markTouched(); withAnimation(.easeOut(duration: 0.2)) { open(key) } } else { a.link?.open() }
+        if let key { markTouched(); withAnimation(.easeOut(duration: 0.2)) { open(key) }; persist() } else { a.link?.open() }
     }
 
     // MARK: 참조 레일
@@ -443,39 +502,33 @@ struct TowerView: View {
     private var railItems: [RailItem] {
         let me = HubPrefs.me
         let mine = model.papers.filter { me.isEmpty || $0.researcher == me }
-        let unreacted = mine.filter { (model.paperComments[$0.id] ?? []).filter(\.isReaction).isEmpty }.count
         // 오늘 분은 경보 열 '오늘 남은 일정'에 있으므로 레일은 내일부터 (R2-02 BHL — 중복 제거)
-        let events = model.todayCalendar?.upcoming(days: model.cfg.eventsDays).filter { $0.end > model.now && !Calendar.current.isDate($0.start, inSameDayAs: model.now) } ?? []
-        let firstMin = model.minutes.first.map { m -> String in let h = model.minutesHeader(m); return (m.date.map(Hub.day) ?? "") + " " + h.who + " | " + h.title } ?? "없음"
-        let checks = model.grants.filter { $0.needsCheck(today: model.today) }.count
-        let conf = model.conferences.first.map { c in c.conference + (c.deadline.map { " 초록 " + Hub.relative($0, now: model.now, hasTime: false) } ?? "") } ?? "없음"
-        let items: [RailItem] = [
+        let events = CardSummary.upcomingEvents(model)
+        // 요약·원본 링크는 CardSummary 한 곳 — 허브 접힌 줄과 같은 글 (0.44.0 A3). 제목은 HubCardTitle (0.44.0 #71). 순서는 railColumns
+        func item(_ id: String, fresh: Freshness?, chips: [String] = []) -> RailItem {
+            RailItem(id: id, title: HubCardTitle.title(id), summary: CardSummary.text(id, model), fresh: fresh, link: CardSummary.link(id, model), chips: chips)
+        }
+        let byID: [String: RailItem] = [
             // 꼬리표는 모두 model.cardTag — 허브 카드 머리·[꼬리표] 덤프와 같은 함수 (0.40.0 C3, A2)
             // 생산자가 멈췄으면 '새 추천 없음 (6.1~)' — 펼쳐도 한 줄(fold), 자동 펼침 후보에서 빠짐(est 0) (0.40.0 C8, R4)
-            RailItem(id: "papers", title: "Papers",
-                     summary: model.papersStopped ? "새 추천 없음 (\(model.papersStoppedSince)~)" : "\(mine.count)편" + (me.isEmpty ? "" : " · \(me)") + " · 반응 없음 \(unreacted)",
-                     fresh: model.cardTag("papers"), link: .notion(model.cfg.paperRecDB)),
-            RailItem(id: "minutes", title: "Minutes", summary: firstMin, fresh: model.cardTag("minutes"), link: .notion(model.cfg.meetingNotesDB)),
+            "papers": item("papers", fresh: model.cardTag("papers")),
+            "minutes": item("minutes", fresh: model.cardTag("minutes")),
             // 미팅 후속 (0.41.0 C5) — 사람별 남은 수만(항목 글 없음). 관련도 0 · est 0 이라 자동으로 펴지 않는다
-            RailItem(id: "followups", title: "Follow-ups", summary: model.followupRailSummary(), fresh: model.cardTag("followups"), link: nil),
-            // 캘린더 첫 조회 전에는 '0건' 대신 불러오는 중 (0.37.0 C6 검증 1)
-            RailItem(id: "events", title: "Upcoming",
-                     summary: model.todayCalendar?.isSettled == false ? "캘린더 불러오는 중…"
-                        : "내일부터 \(model.cfg.eventsDays)일 · \(events.count)건" + (events.first.map { " · 다음 " + Hub.relative($0.start, now: model.now) + " " + Hub.canonicalNames($0.title) } ?? ""),
-                     fresh: model.cardTag("events"), link: .notion(model.cfg.eventsDB)),
-            RailItem(id: "blitz", title: "Paper Blitz", summary: (model.blitzDate.map(Hub.day) ?? "—") + " · \(model.blitz.count)편", fresh: model.cardTag("blitz"), link: model.blitzDeckPath.map(HubLink.nas)),
-            RailItem(id: "experiments", title: "Experiments", summary: "\(model.experiments.count)건" + (model.prolificNote != nil ? " · Prolific 미연결" : ""), fresh: model.cardTag("experiments"), link: .notion(model.cfg.slabDB)),
-            RailItem(id: "grants", title: "Grants", summary: "\(model.grants.count)건" + (checks > 0 ? " · 확인 필요 \(checks)" : ""), fresh: model.cardTag("grants"), link: .nas((model.cfg.grantsFile as NSString).deletingLastPathComponent)),
+            "followups": item("followups", fresh: model.cardTag("followups")),
+            "events": item("events", fresh: model.cardTag("events")),
+            "blitz": item("blitz", fresh: model.cardTag("blitz")),
+            "experiments": item("experiments", fresh: model.cardTag("experiments")),
+            "grants": item("grants", fresh: model.cardTag("grants")),
             // 접힌 줄 칩 = 요약에 쓴 첫 학회의 관심 이니셜 (0.38.0 C4 — 펼치면 카드 안 칩·'관심' 단추가 있으므로 줄에서는 뺀다)
-            RailItem(id: "conferences", title: "Conferences", summary: "\(model.conferences.count)건 · " + conf, fresh: model.cardTag("conferences"), link: .notion(model.cfg.conferencesDB),
-                     chips: model.conferences.first.map { model.interestNames($0) } ?? []),
-            RailItem(id: "preprints", title: "Preprints", summary: "\(model.preprints.count)편" + (model.preprints.first.map { " · " + $0.title } ?? ""), fresh: model.cardTag("preprints"), link: .notion(model.cfg.publicationsDB)),
-            RailItem(id: "members", title: "Members", summary: "\(model.members.filter(\.active).count)명 · 프로젝트 \(model.projects.count)", fresh: model.cardTag("members"), link: .notion(model.cfg.membersDB)),
-            RailItem(id: "apps", title: "Apps", summary: MadeApps.summary, fresh: model.cardTag("apps"), link: nil),
-            RailItem(id: "tools", title: "Tools", summary: "메일 초안 4 · GRM 안내·공지·청소·휴가", fresh: nil, link: nil),
+            "conferences": item("conferences", fresh: model.cardTag("conferences"), chips: model.conferences.first.map { model.interestNames($0) } ?? []),
+            "preprints": item("preprints", fresh: model.cardTag("preprints")),
+            "members": item("members", fresh: model.cardTag("members")),
+            "apps": item("apps", fresh: model.cardTag("apps")),
+            "tools": item("tools", fresh: nil),
             // 자료 상태 (0.40.0 C3, A2) — 원천 정렬 표 + 위생 목록. 관련도 0 이라 자동으로 펴지 않는다
-            RailItem(id: "datastate", title: "Data status", summary: DataSources.summary(model), fresh: nil, link: nil),
+            "datastate": item("datastate", fresh: nil),
         ]
+        let items = Self.railOrder.compactMap { byID[$0] }
         // 펼쳤을 때 내용 높이 추정(pt) — 가로 2열 채우기 판단용 (행 높이 × 줄 수 + 제목)
         let est: [String: CGFloat] = [
             "papers": model.papersStopped ? 0 : CGFloat(min(mine.count, 3)) * 150 + 40, "minutes": 180,
@@ -496,17 +549,22 @@ struct TowerView: View {
 
     /// 참조 레일 — 가로 2열(R2, JYK: '너무 세로로만 나열돼 일정 아래로는 왼/오 두 개로'), 세로 1열. 펼침은 그 열 안에서.
     /// 바깥 ScrollView 없이 열이 남은 높이를 받고, 펼친 카드(안쪽 ScrollView)가 그 높이를 채운다 (R2-01 빈 면)
+    /// railColumns 묶음별 항목 — (라벨, 항목)
+    private func railGroups(_ items: [RailItem]) -> [(label: String, items: [RailItem])] {
+        let byID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        return Self.railColumns.map { c in (c.label, c.ids.compactMap { byID[$0] }) }
+    }
+
     private func rail(columns: Int) -> some View {
-        let items = railItems
-        let half = (items.count + 1) / 2
+        let groups = railGroups(railItems)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
                 // 세로 1열: 펼친 카드가 남은 높이를 채움. 가로 2열: 카드는 내용 높이(최대 열의 62%) — 늘리면 카드 안이 비고 접힌 줄이 바닥으로 밀림 (R2 검증 10-15)
+                // 묶음 (0.44.0 A3): 열1 Schedule · 열2 Research · More, 세로 1열은 둘을 이어서
                 if columns == 1 {
-                    railColumn(items, stretch: true)
+                    railColumn(groups, stretch: true)
                 } else {
-                    railColumn(Array(items.prefix(half)), stretch: false)
-                    railColumn(Array(items.dropFirst(half)), stretch: false)
+                    ForEach(Array(groups.enumerated()), id: \.offset) { _, g in railColumn([g], stretch: false) }
                 }
             }
             // minHeight 0 + clipped: 펼친 카드가 넘쳐도 열이 창 밖으로 커지지 않는다 — 소스 줄('캘린더 ✓')은 늘 보인다 (검증 1 세로)
@@ -514,7 +572,7 @@ struct TowerView: View {
             .clipped()
             .background(GeometryReader { g in
                 // 열 높이 실측 — 펼친 '일정' 의 줄 수 계산 (onGeometryChange 는 macOS 15+)
-                Color.clear.onAppear { railHeight = g.size.height; decideExpansion(columns: columns, height: g.size.height) }
+                Color.clear.onAppear { railHeight = g.size.height; railCols = columns; decideExpansion(columns: columns, height: g.size.height) }
                     .onChange(of: g.size.height) { _, n in railHeight = n; decideExpansion(columns: columns, height: n) }
                     // 데이터가 다 온 뒤(갱신 본체 + 그 갱신이 띄운 댓글·Blitz·Prolific·원고, 늦으면 20초) 결정 — lastUpdated 는 그랜트·학회 파일·댓글보다 먼저 선다 (검증 1 리뷰).
                     // 날짜가 바뀐 뒤 첫 갱신도 여기서
@@ -560,63 +618,87 @@ struct TowerView: View {
     /// 기본 펼침 = 관련도 (SMJ #27, 0.35.0) — 세로(1열)·가로(2열) 같은 규칙. 캘린더 .ready + 데이터 다 옴(settledAt) + 실측 높이 뒤 갈래(날짜·열 수·좁음)마다 한 번.
     /// 열(가로 = 레일 순서 앞·뒤 절반, 세로 = 전체)마다 점수>0 이고 내용이 있는(est>0) 것만 점수 순(같으면 레일 순서)으로, 접힌 줄 + 펼친 카드(cost)가
     /// 열 높이 안에 드는 것만 펼치고(세로는 최대 3개 · 좁은 세로 1개, DESKHUB_RAIL_FILL=0 은 1개) 나머지는 접는다. 열에 관련 항목이 없으면 그 열의 기본
-    /// (앞 events · 뒤 conferences, 세로는 둘 다)을 같은 높이 규칙으로. 사용자가 펴거나 접은 날(touchedDay)은 정하지 않는다. 날짜가 바뀐 뒤 첫 갱신에서 다시
+    /// (앞 events · 뒤 conferences, 세로는 둘 다)을 같은 높이 규칙으로. 사람이 펴거나 접어 이 맥에 기억 중이면(pinned, 0.44.0 A3) 정하지 않는다. 날짜가 바뀐 뒤 첫 갱신에서 다시
     private func decideExpansion(columns: Int, height: CGFloat) {
-        // 날짜 키는 HubClock.today 하나 — settledDay·touchedDay·점수 안 today 가 같은 달력 (model.now 는 1분 늦게 넘어간다, R-L1)
+        // 날짜 키는 HubClock.today 하나 — settledDay·점수 안 today 가 같은 달력 (model.now 는 1분 늦게 넘어간다, R-L1)
         let today = HubClock.today
         let key = "\(Int(today.timeIntervalSince1970))|\(columns)|\(railTight ? "좁음" : "보통")"
-        guard decidedKey != key, touchedDay != today, height > 100, model.todayCalendar?.status == .ready,
+        guard decidedKey != key, !pinned, height > 100, model.todayCalendar?.status == .ready,
               model.lastUpdated != nil, !model.loading, model.settledDay == today else { return }
         decidedKey = key
         let scores = TowerRelevance.score(model: model, now: HubClock.now, me: HubPrefs.me)
         // 캡처한 items 는 마지막 body 계산 때 것이라(일정 0건) 추정이 틀린다 → 호출 시점에 railItems 를 다시 계산 (리뷰 2)
-        let items = railItems
-        let half = (items.count + 1) / 2
-        let cols: [[RailItem]] = columns == 1 ? [items] : [Array(items.prefix(half)), Array(items.dropFirst(half))]
+        let groups = railGroups(railItems)
+        // 열 = railColumns 묶음(가로), 세로는 전체 하나. 묶음 라벨 높이도 접힌 줄과 함께 센다 (0.44.0 A3)
+        let cols: [[RailItem]] = columns == 1 ? [groups.flatMap(\.items)] : groups.map(\.items)
+        let labelsPerCol = columns == 1 ? CGFloat(groups.count) : 1
         let rank: (String) -> Int = { Self.railOrder.firstIndex(of: $0) ?? 99 }
         let limit = !Self.fillLandscape ? 1 : (columns == 1 ? (railTight ? 1 : 3) : Int.max)
         var next: Set<String> = []
         for (ci, col) in cols.enumerated() {
-            let ranked = col.filter { (scores[$0.id]?.score ?? 0) > 0 && $0.est > 0 }
+            // 기본 접힘 7종·자료 상태는 자동으로 펴지 않는다 (0.44.0 A3)
+            let ranked = col.filter { (scores[$0.id]?.score ?? 0) > 0 && $0.est > 0 && !Self.autoExcluded.contains($0.id) }
                 .sorted { a, b in
                     let sa = scores[a.id]?.score ?? 0, sb = scores[b.id]?.score ?? 0
                     return sa != sb ? sa > sb : rank(a.id) < rank(b.id)
                 }
-            let defaults: Set<String> = columns == 1 ? ["events", "conferences"] : [ci == 0 ? "events" : "conferences"]
-            let candidates = ranked.isEmpty ? col.filter { defaults.contains($0.id) } : ranked
-            var used = CGFloat(col.count) * railLineH, n = 0
+            // 열 기본값 (0.44.0 A3): Schedule events · Research·More papers. 내용 없는(est 0 — 논문 추천 멈춤 R4) 기본값은 펴지 않고
+            // 다음 기본값(미팅 후속)으로 — 멈춘 공급원은 자동 펼침 후보가 아니다 (0.40.0 C8, 검증 1 리뷰)
+            let order = columns == 1 ? [["events"], ["papers", "followups"]] : [ci == 0 ? ["events"] : ["papers", "followups"]]
+            let defaults = order.compactMap { ids in ids.lazy.compactMap { id in col.first { $0.id == id && $0.est > 0 } }.first }
+            let candidates = ranked.isEmpty ? defaults : ranked
+            var used = CGFloat(col.count) * railLineH + labelsPerCol * railLabelH, n = 0
             for it in candidates where n < limit {
                 let c = cost(it, columns: columns, height: height)
                 if used + c > height { continue }   // 안 들어가면 다음 후보 (작은 고정 카드가 큰 카드 뒤에서 밀리지 않게)
                 next.insert(it.id); used += c; n += 1
             }
         }
+        // 찾아가기로 연 레일은 남긴다 (0.44.0 #63)
+        if let f = focusHold { if railTight { next = [f] } else { next = next.filter { Self.railCol($0) != Self.railCol(f) }; next.insert(f) } }
         withAnimation(.easeOut(duration: 0.2)) { expanded = next }
     }
 
-    private func railColumn(_ items: [RailItem], stretch: Bool) -> some View {
-        VStack(alignment: .leading, spacing: railTight ? 4 : 6) {
-            ForEach(items) { it in
-                let on = expanded.contains(it.id)
-                VStack(alignment: .leading, spacing: 0) {
-                    railLine(it, chipLimit: stretch ? 2 : 3)
-                    if on {
-                        railContent(it.id, rows: items.count, stretch: stretch, est: it.est).padding(.horizontal, 6).padding(.bottom, 8)
-                            .transition(.opacity)
-                        // 펼친 카드 아래 캡션 '출처 · 기준 · n · 정의 id' — 허브 카드 끝과 같은 함수 (0.40.0 C2, A1)
-                        if let cid = CardMetas.cardID(forRail: it.id) {
-                            SourceCaption(text: CardMetas.caption(cid, model)).padding(.horizontal, 12).padding(.bottom, 8)
+    /// 카드 찾아가기 받는 쪽 (0.44.0 #63) — 그 레일을 펴고(저장 안 함) Hub.ink 테두리 1.6초. windows.txt choices 'tower-focus <id>'
+    private func focusRail(_ id: String) {
+        guard Self.railOrder.contains(id) else { LayoutChoice.record("tower-focus", "\(id) (레일 없음)"); NSSound.beep(); return }
+        focusHold = id
+        withAnimation(.easeOut(duration: 0.2)) { open(id) }
+        LayoutChoice.record("tower-focus", id)
+        UsageLog.panel("focus:" + id)
+        focusID = id
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { if focusID == id { withAnimation(.easeOut(duration: 0.3)) { focusID = nil } } }
+    }
+
+    /// 묶음 라벨 높이 — 결정에서 접힌 줄과 함께 센다
+    private var railLabelH: CGFloat { Hub.s(16) }
+
+    private func railColumn(_ groups: [(label: String, items: [RailItem])], stretch: Bool) -> some View {
+        let count = groups.reduce(0) { $0 + $1.items.count }
+        return VStack(alignment: .leading, spacing: railTight ? 4 : 6) {
+            ForEach(Array(groups.enumerated()), id: \.offset) { _, g in
+                // 묶음 라벨 — 얇게(10.5 Hub.text3), 적색 없음 (결정 D-12)
+                Text(g.label).font(.hub(10.5, weight: .semibold)).foregroundStyle(Hub.text3).tracking(0.4).padding(.leading, 6).frame(height: railLabelH, alignment: .bottom)
+                ForEach(g.items) { it in
+                    let on = expanded.contains(it.id)
+                    VStack(alignment: .leading, spacing: 0) {
+                        railLine(it, chipLimit: stretch ? 2 : 3)
+                        if on {
+                            railContent(it.id, rows: count, stretch: stretch, est: it.est).padding(.horizontal, 6).padding(.bottom, 8)
+                                .transition(.opacity)
                         }
                     }
+                    .frame(maxHeight: on && stretch && Self.flexRail.contains(it.id) ? .infinity : nil, alignment: .top)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? Hub.card.opacity(0.5) : Hub.surface))
+                    // 찾아간 레일 강조 — Hub.ink 2pt 1.6초 (0.44.0 #63)
+                    .focusRing(focusID == it.id)
+                    // 펼친 카드 높이 실측 — choices 'tower-rail' (0.43.2 C7)
+                    .background {
+                        if on { GeometryReader { g in Color.clear.onChange(of: g.size.height, initial: true) { _, h in cardH[it.id] = h } } }
+                    }
+                    // 펼친 카드가 남은 높이를 먼저 받는다 — 끝의 Spacer 와 반씩 나누면 줄어드는 카드(그랜트·논문)가 절반만 받았다 (검증 1)
+                    .layoutPriority(on ? 1 : 0)
                 }
-                .frame(maxHeight: on && stretch && Self.flexRail.contains(it.id) ? .infinity : nil, alignment: .top)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(on ? Hub.card.opacity(0.5) : Hub.surface))
-                // 펼친 카드 높이 실측 — choices 'tower-rail' (0.43.2 C7)
-                .background {
-                    if on { GeometryReader { g in Color.clear.onChange(of: g.size.height, initial: true) { _, h in cardH[it.id] = h } } }
-                }
-                // 펼친 카드가 남은 높이를 먼저 받는다 — 끝의 Spacer 와 반씩 나누면 줄어드는 카드(그랜트·논문)가 절반만 받았다 (검증 1)
-                .layoutPriority(on ? 1 : 0)
             }
             Spacer(minLength: 0)
         }
@@ -627,7 +709,10 @@ struct TowerView: View {
     private func railLine(_ it: RailItem, chipLimit: Int = 3) -> some View {
         HStack(spacing: 8) {
             Image(systemName: expanded.contains(it.id) ? "chevron.down" : "chevron.right").font(.hub(10, weight: .bold)).foregroundStyle(Hub.text3).frame(width: 12)
-            Text(it.title).font(.hub(13, weight: .semibold)).frame(width: Hub.s(84), alignment: .leading)
+            // 제목 (0.44.0 #71, 결정 D-10) — Hub.text, 접힘 14 semibold · 펼침 16 bold. 칸 폭은 'Conferences'·'Paper Blitz'·'Mail drafts' 16 bold 가 들어가게
+            let on = expanded.contains(it.id)
+            Text(it.title).font(.hub(on ? 16 : 14, weight: on ? .bold : .semibold)).foregroundStyle(Hub.text)
+                .lineLimit(1).minimumScaleFactor(0.85).frame(width: Hub.s(104), alignment: .leading)
             Text(it.summary).font(.hub(12.5)).foregroundStyle(Hub.text2).lineLimit(1)
             // 접혔을 때만 관심 칩 — 펼친 학회 카드에는 행마다 칩·'관심' 단추가 있다 (0.38.0 C4)
             if !it.chips.isEmpty && !expanded.contains(it.id) { InterestChips(names: it.chips, limit: chipLimit) }
@@ -644,6 +729,7 @@ struct TowerView: View {
             markTouched()
             let opening = !expanded.contains(it.id)
             withAnimation(.easeOut(duration: 0.2)) { if expanded.contains(it.id) { expanded.remove(it.id) } else { open(it.id) } }
+            persist()   // 이 맥에 기억 (0.44.0 A3, 결정 D-3)
             if opening { UsageLog.panel("tower:" + it.id) }   // 열 때만 (0.40.0 C2, A1)
         }
     }
@@ -698,6 +784,18 @@ struct TowerView: View {
             Text("Notion " + (model.lastUpdated.map(Hub.time) ?? "—")).font(.hub(11)).foregroundStyle(Hub.text3)
             Text("NAS " + (FileManager.default.fileExists(atPath: model.cfg.nasGRMRoot) ? "✓" : "✕")).font(.hub(11)).foregroundStyle(Hub.text3)
             Text("캘린더 " + ((model.todayCalendar?.status == .ready) ? "✓" : "…")).font(.hub(11)).foregroundStyle(Hub.text3)
+            // 펼침을 이 맥에 기억 중일 때만 — 누르면 저장을 지우고 다시 관련도로 자동 펼침 (0.44.0 A3, 결정 D-3)
+            if pinned {
+                Button { resetAuto() } label: { Text("자동").font(.hub(11, weight: .medium)).foregroundStyle(Hub.text2) }
+                    .buttonStyle(.plain).help("레일 펼침을 이 맥에 기억 중 — 누르면 지우고 오늘 관련 있는 것을 자동으로 폄")
+            }
+            // 랩 허브 숫자 클릭으로 잠깐 온 것이면 — 저장된 뷰로 돌아가는 단추 (0.44.0 검증 1 리뷰)
+            if let back = viewStore.returnTo {
+                Button { viewStore.returnBack() } label: {
+                    HStack(spacing: 3) { Image(systemName: "arrow.uturn.backward"); Text("돌아가기") }.font(.hub(11, weight: .medium)).foregroundStyle(Hub.text2)
+                }
+                .buttonStyle(.plain).help("잠깐 연 관제탑 — 누르면 \(back.title) 뷰로 (이 맥 기본 뷰는 그대로)")
+            }
             Spacer()
             Text("DeskHub \(Hub.buildLabel)").font(.hub(10.5)).foregroundStyle(Hub.text3)
         }
@@ -846,4 +944,12 @@ enum AlertAck {
         return d.filter { $0.value > cutoff }
     }
     static func save(_ d: [String: Double]) { UserDefaults.standard.set(d, forKey: "DeskHub.alertAck") }
+}
+
+/// 관제탑 레일 펼침 기억 (0.44.0 A3, 결정 D-3) — UserDefaults DeskHub.towerOpen(정렬 배열, 빈 배열 = 모두 접음). 없으면(nil) 자동 결정
+enum TowerOpenStore {
+    static let key = "DeskHub.towerOpen"
+    static func load() -> [String]? { UserDefaults.standard.stringArray(forKey: key) }
+    static func save(_ open: Set<String>) { UserDefaults.standard.set(open.sorted(), forKey: key) }
+    static func clear() { UserDefaults.standard.removeObject(forKey: key) }
 }

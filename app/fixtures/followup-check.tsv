@@ -62,3 +62,11 @@ fu-aka	aka=fu-old;rows=	proposed
 fu-aka	aka=fu-old;rows=fu-old:confirmed@2026-10-10T10:00:00+09:00|fu-new:done@2026-10-09T10:00:00+09:00	done
 fu-aka	aka=fu-a,fu-b;rows=fu-a:confirmed@2026-10-10T10:00:00+09:00|fu-b:done@2026-10-12T10:00:00+09:00	done
 fu-aka	aka=;rows=fu-old:confirmed@2026-10-10T10:00:00+09:00	proposed
+# fu-plaud (0.44.0 C2, #59) — 'Plaud ↗' 대상: source plaud 파일이 있으면 file, 없고 GRM 이면 그날 transcript 폴더(있을 때) folder, 아니면 —
+fu-plaud	meeting=GRM;date=2026-10-21;plaud=/nas/GRM/2026/20261021/transcript/GRM_transcript_20261021.json;file=1;folder=1	file
+fu-plaud	meeting=GRM;date=2026-10-21;plaud=/nas/GRM/2026/20261021/transcript/GRM_transcript_20261021.json;file=0;folder=1	folder
+fu-plaud	meeting=GRM;date=2026-10-21;plaud=;file=0;folder=1	folder
+fu-plaud	meeting=GRM;date=2026-10-21;plaud=;file=0;folder=0	—
+fu-plaud	meeting=MM;date=2026-10-20;plaud=;file=0;folder=1	—
+fu-plaud	meeting=MM;date=2026-10-20;plaud=/nas/GRM/x.json;file=1;folder=0	file
+fu-plaud	meeting=GRM;date=;plaud=;file=0;folder=1	—

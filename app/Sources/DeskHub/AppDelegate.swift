@@ -313,6 +313,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // 허브 카드 '더 보기' 토글 (0.37.0 C2) — 클릭과 같은 경로(HubExpansion.toggle, 이 맥 저장)
         else if k.hasPrefix("expand:") { HubExpansion.shared.toggle(String(k.dropFirst("expand:".count))) }
+        // 허브 카드 접기 (0.44.0 A3, #70) — 접힌 줄·제목 화살표 클릭과 같은 경로(HubFold.toggle, 이 맥 저장 DeskHub.hubFold)
+        else if k.hasPrefix("fold:") {
+            let id = String(k.dropFirst("fold:".count))
+            if HubGroups.allCards.contains(id) { HubFold.shared.toggle(id) } else { NSSound.beep() }
+        }
+        // 카드 찾아가기 (0.44.0 A3, #63) — 상태 한 줄 숫자 클릭과 같은 알림 "DeskHub.focusCard"(Dashboard·관제탑이 받음)
+        else if k.hasPrefix("focus:") { NotificationCenter.default.post(name: .deskhubFocusCard, object: String(k.dropFirst("focus:".count))) }
         // 8주 띠 (0.40.0 C4) — 상태 한 줄 클릭과 같은 경로 · esc 는 띠가 열려 있으면 닫기(아니면 뷰로)
         else if k == "band" { StatusBand.shared.toggle() }
         else if k == "esc", StatusBand.shared.open { StatusBand.shared.close() }
@@ -406,6 +413,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             var out = ["[허브 글자] " + CardStyle.large.dumpLine, ""]
             // [허브 카드] — 카드마다 가까운 것만 보인 수·숨긴 수·펼침·기준값 (0.37.0 C2, HubNear — 뷰와 같은 함수)
             out += ["[허브 카드] \(HubNear.keys.count)"] + HubNear.dumpLines(m) + [""]
+            // [허브 배치]·[관제탑 레일]·[내 것] (0.44.0 A3 — HubGroups·TowerView.railColumns·MineSummary, 뷰와 같은 표·함수)
+            out += ["[허브 배치]"] + HubGroups.dumpLines() + [""]
+            out += ["[관제탑 레일]", TowerView.railDumpLine(), ""]
+            out += ["[내 것]"] + MineSummary.dumpLines(m) + [""]
             // [카드 제목] — 허브 카드 제목 표 'id · 제목 · 도움말' (0.42.0 C3, R9-a — SectionTitle(card:) 와 같은 HubCardTitle)
             out += ["[카드 제목] \(HubCardTitle.rows.count)"] + HubCardTitle.dumpLines() + [""]
             // [카드 출처] — 허브 데이터 카드 14: id · 꼬리표 · 캡션('출처 · 기준 · n · 정의 id', CardMetas.caption — 카드 끝 CardFooter 와 같은 함수) (0.40.0 C2, A1)

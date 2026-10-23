@@ -1,0 +1,11 @@
+{
+ "items": [
+  {"id": "cosyne2027@2027-03-11|SMJ", "conf": "cosyne2027@2027-03-11", "name": "Cosyne 2027", "who": "SMJ", "on": true, "at": "2026-10-20T10:00:00+09:00", "state": "interest"},
+  {"id": "cosyne2027@2027-03-11|BHL", "conf": "cosyne2027@2027-03-11", "name": "Cosyne 2027", "who": "BHL", "on": true, "at": "2026-10-20T10:05:00+09:00", "state": "plan"},
+  {"id": "cosyne2027@2027-03-11|JOP", "conf": "cosyne2027@2027-03-11", "name": "Cosyne 2027", "who": "JOP", "on": true, "at": "2026-10-17T21:00:00+09:00", "state": "submitted"},
+  {"id": "cosyne2027@2027-03-11|SJK", "conf": "cosyne2027@2027-03-11", "name": "Cosyne 2027", "who": "SJK", "on": false, "at": "2026-10-18T09:00:00+09:00", "state": "submitted"},
+  {"id": "vss2027@2027-05-21|BYL", "conf": "vss2027@2027-05-21", "name": "VSS 2027", "who": "BYL", "on": true, "at": "2026-10-21T11:00:00+09:00"},
+  {"id": "vss2027@2027-05-21|JHR", "conf": "vss2027@2027-05-21", "name": "VSS 2027", "who": "JHR", "on": true, "at": "2026-10-21T11:30:00+09:00", "state": "plan"}
+ ],
+ "updated": "2026-10-21T11:30:00+09:00"
+}

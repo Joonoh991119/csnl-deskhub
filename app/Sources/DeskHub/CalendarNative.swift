@@ -28,6 +28,8 @@ final class CalendarModel: ObservableObject {
     @Published var sourceLabel = ""
     @Published var lastUpdated: Date?
     @Published var lastError: String?
+    /// 시간표 수업 행 (0.44.0 B1, #58) — NotionHubModel.loadCourses 가 싣는다. NowNextLine 이 오늘 내 수업을 지금·다음에 넣는다(호출처는 그대로)
+    @Published var timetable: TimetableFeed?
     /// 첫 조회가 끝났는가 (0.37.0 C6, D-2) — start() 의 첫 loadICS·probeEventKit·refresh 뒤 true(성공·실패 무관), 다시 false 가 되지 않는다.
     /// 그 전의 빈 일정은 '없음' 이 아니라 '불러오는 중…' (보드·관제탑·허브·팝오버·앰비언트·캘린더 창). status·icsSettled 는 그대로
     @Published private(set) var isSettled = false

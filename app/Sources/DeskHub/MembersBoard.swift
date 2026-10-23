@@ -274,6 +274,8 @@ struct MembersBoardRow {
     let projects: String
     let projectsHelp: String
     let nextGRM: String          // '10.22 D-7' 또는 —
+    /// 다음 GRM 날짜 — 화면은 날짜·D-day 를 두 칸으로 나눠 D-day 가 한 세로줄에서 시작 (0.44.0 B2, #73). 덤프는 nextGRM 글 그대로
+    var nextGRMDate: Date? = nil
     let milestone: MilestoneFile?
     /// 실제 열 '논문 반응' — 댓글을 아직 못 읽었으면 nil('—')
     let live: Int?
@@ -289,6 +291,7 @@ struct MembersBoardRow {
             let vals: [Int?] = sample.map { s in s.columns.map { s.values[m.initials]?[$0.id] ?? nil } } ?? []
             return MembersBoardRow(member: m, projects: shown, projectsHelp: projs.joined(separator: "\n"),
                                    nextGRM: g.map { Hub.shortDay($0.date) + " " + Hub.dday($0.date) } ?? "",
+                                   nextGRMDate: g?.date,
                                    milestone: model.milestones?[m.initials],
                                    live: ScoreboardLive.value(tally, initials: m.initials, aliases: model.cfg.initialsAliases),
                                    followups: model.followupCountCell(m.initials), samples: vals)
@@ -319,10 +322,10 @@ struct MembersBoardRow {
     }
     /// 고정 열 폭 합(배율 1.0, colScale 전) — 0.42.0 의 604(70+92+96+150+84+112, 예시 열은 한 번) 보다 늘리지 않는다(Projects 열이 줄지 않게)
     static var fixedWidthSum: CGFloat { fixedColumns.map(\.width).reduce(0, +) + sampleWidth }
-    /// 머리 글 실측 폭(pt, 배율 반영) — 머리 글꼴(cs.tag 14 bold × 배율)과 칩(12 bold × 배율 + 좌우 안쪽 10, 간격 4) + 여유 4
+    /// 머리 글 실측 폭(pt, 배율 반영) — 머리 글꼴(cs.body 15 bold × 배율, 0.44.0 B2 #73 — 행 글자보다 진하게)과 칩(12 bold × 배율 + 좌우 안쪽 10, 간격 4) + 여유 4
     static func headerNeed(_ c: Column, scale: CGFloat) -> CGFloat {
         let cs = CardStyle.large
-        var need = StatusLine.measure(c.title, size: cs.tag * scale, weight: .bold) + 4
+        var need = StatusLine.measure(c.title, size: cs.body * scale, weight: .bold) + 4
         if let chip = c.chip { need += 4 + StatusLine.measure(chip, size: (cs.tag - 2) * scale, weight: .bold) + 10 }
         return need
     }
@@ -336,16 +339,20 @@ struct MembersBoardRow {
         let m = StatusLine.measure
         switch id {
         case "ini": return (16 * cs.colScale * scale).rounded() + 4 + m("WWW", cs.body * scale, .bold) + 4
-        case "grm": return m("12.31 D-99", cs.aux * scale, .semibold) + 4
+        // 날짜 고정 칸(grmDateWidth) + 간격 4 + D-day (0.44.0 B2, #73)
+        case "grm": return grmDateWidth(scale: scale) + 4 + m("D-00", cs.aux * scale, .regular) + 4
         case "mm": return m("12.31", cs.aux * scale, .semibold) + 4 + m("수정일", (cs.tag - 2) * scale, .regular) + 4
         case "fu": return m("99", cs.aux * scale, .regular) + 4
         default: return (56 * cs.colScale * scale).rounded() + 6 + m("999", cs.tag * scale, .regular) + 4
         }
     }
+    /// Next GRM 날짜 칸 고정 폭(pt) — 가장 넓은 'MM.dd'(고정폭 숫자라 '00.00' 으로 잼) + 2. 행 뷰와 cellNeed 가 같은 값 (0.44.0 B2, #73)
+    static func grmDateWidth(scale: CGFloat) -> CGFloat { StatusLine.measure("00.00", size: CardStyle.large.aux * scale, weight: .semibold) + 2 }
     /// 열이 줄어들 수 있는 하한 — 머리·칸 실측 중 큰 것
     static func minWidth(_ c: Column, scale: CGFloat) -> CGFloat { ceil(Swift.max(headerNeed(c, scale: scale), cellNeed(c.id, scale: scale))) }
     /// Projects 열에 남길 최소 폭(배율 1.0·colScale 전)
-    static let projectsMin: CGFloat = 80
+    /// 0.44.0 B2 (#73): 80 → 56 — 머리 글꼴을 cs.body 로 키운 만큼 1.6 배·1313pt 창에서 표가 가로로 넘치지 않게(Projects 는 한 줄 '…' 허용 열)
+    static let projectsMin: CGFloat = 56
     /// 열 폭(pt, cols 순서) — 표가 avail(탭 폭 − 좌우 여백) 안에 들어가게 (0.43.0 C2 검증 1: 1.6 배·1313pt 창에서 표가 창보다 넓어 양쪽이 잘림).
     /// 넉넉하면 열 표 폭 그대로(cs.col 과 같은 값), 좁으면 모두 같은 비율로 줄이되 minWidth 아래로는 줄이지 않는다(머리 '…' 없음). 열 표 폭보다 넓히지는 않는다
     static func fittedWidths(_ cols: [Column], scale: CGFloat, avail: CGFloat) -> [CGFloat] {
@@ -467,6 +474,8 @@ struct MembersBoardView: View {
         /// 표가 쓸 수 있는 폭(탭 폭 − 좌우 여백 32)
         let avail: CGFloat
         @Environment(\.cardStyle) private var cs
+        /// 마우스가 올라간 행 (0.44.0 B2, #73)
+        @State private var hoverID: String?
 
         /// 열 폭 — 열 표(MembersBoardRow.Column) 값에 글자 배율을 따르고(CardStyle.col), 탭이 좁으면 fittedWidths 로 줄인다 (검증 1)
         private struct Widths {
@@ -580,7 +589,8 @@ struct MembersBoardView: View {
                     .help(headerHelp(c, period: period))
                 }
             }
-            .font(.hub(cs.tag, weight: .bold)).foregroundStyle(Hub.text3)
+            // 머리 — 행 글자보다 진하고 크게(cs.body bold Hub.text2, 0.44.0 B2 #73). headerNeed 도 같은 글꼴로 잰다
+            .font(.hub(cs.body, weight: .bold)).foregroundStyle(Hub.text2)
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
         }
 
@@ -611,9 +621,7 @@ struct MembersBoardView: View {
                 .buttonStyle(.plain).help("Members 페이지 열기")
                 Text(r.projects.isEmpty ? "—" : r.projects).font(.hub(cs.aux)).foregroundStyle(r.projects.isEmpty ? Hub.text3 : Hub.text).lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading).help(r.projectsHelp)
-                Text(r.nextGRM.isEmpty ? "—" : r.nextGRM).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit()
-                    .foregroundStyle(r.nextGRM.isEmpty ? Hub.text3 : Hub.text2).lineLimit(1)
-                    .frame(width: w("grm"), alignment: .leading)
+                grmCell(r).frame(width: w("grm"), alignment: .leading)
                 if model.milestones != nil { milestoneCell(r.milestone).frame(width: w("mm"), alignment: .leading) }
                 sampleCell(r.live, max: liveMax, mine: isMe(r.member.initials)).frame(width: w("react"), alignment: .leading)
                     .help(ScoreboardLive.help)
@@ -625,13 +633,30 @@ struct MembersBoardView: View {
                 }
             }
             .padding(.horizontal, cs.rowH).padding(.vertical, cs.rowV + 2)
+            // 행 hover — 옅은 바탕 + 1pt 테두리(적색 아님), 어느 행을 보는지 (0.44.0 B2, #73)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(hoverID == r.member.id ? Hub.fillNeutral : Color.clear))
+            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(Hub.ink.opacity(hoverID == r.member.id ? 0.4 : 0), lineWidth: 1))
+            .onHover { h in hoverID = h ? r.member.id : (hoverID == r.member.id ? nil : hoverID) }
+        }
+
+        /// Next GRM — 날짜(Hub.text2, 고정 폭) + D-day(Hub.text3) 두 칸: D-day 가 모든 행에서 같은 x 에서 시작 (0.44.0 B2, #73)
+        @ViewBuilder private func grmCell(_ r: MembersBoardRow) -> some View {
+            if let d = r.nextGRMDate {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(Hub.shortDay(d)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text2)
+                        .lineLimit(1).frame(width: MembersBoardRow.grmDateWidth(scale: HubDisplay.scale), alignment: .leading)
+                    Text(Hub.dday(d)).font(.hub(cs.aux, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text3).lineLimit(1)
+                }
+            } else {
+                Text("—").font(.hub(cs.aux)).foregroundStyle(Hub.text3)
+            }
         }
 
         @ViewBuilder private func milestoneCell(_ f: MilestoneFile?) -> some View {
             if let f {
                 Button { HubLink.nas(f.path).open() } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(Hub.shortDay(f.date)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Hub.ink)
+                        Text(Hub.shortDay(f.date)).font(.hub(cs.aux, weight: .semibold, design: .rounded)).monospacedDigit().foregroundStyle(Hub.text2)   // Next GRM 날짜와 같은 색 (0.44.0 B2, #73)
                         if !f.fromName { Text("수정일").font(.hub(cs.tag - 2)).foregroundStyle(Hub.text3) }
                     }
                     .contentShape(Rectangle())

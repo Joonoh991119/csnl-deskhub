@@ -215,8 +215,10 @@ enum PipelineEngine {
         case "blitz":
             // PB_*.pdf 도 인정 — 예전엔 pptx 만 봐서 PB_260401.pdf 회차가 '?' 였다 (GRMMap.isPB, 0.40.0 C6). Archive 날짜도 같은 회차로
             let count = m.blitzDate.map { Calendar.current.isDate($0, inSameDayAs: g.date) } == true ? "\(m.blitz.count)편" : ""
-            if let pb = files.first(where: GRMMap.isPB) {
-                return StageState(kind: .done, note: count, link: .nas(dir + "/" + pb))
+            // 밑줄 없는 PB261021.pptx 도 덱 — 완료 표시는 그대로, note 에 '이름 규칙 어긋남'(적색 아님, 0.44.0 #61)
+            if let pb = GRMMap.pickPB(files) {
+                let warn = GRMMap.pbNameIssue(pb) == nil ? "" : "이름 규칙 어긋남"
+                return StageState(kind: .done, note: [count, warn].filter { !$0.isEmpty }.joined(separator: " · "), link: .nas(dir + "/" + pb))
             }
             if m.blitzDates.contains(Calendar.current.startOfDay(for: g.date)) { return StageState(kind: .done, note: count, link: .notion(m.paperBlitzDB)) }
             return StageState(kind: talked ? .unknown : .future)
