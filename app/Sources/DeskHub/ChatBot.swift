@@ -6,7 +6,7 @@ import Combine
 // 여는 길: NSApp.sendAction(Selector(("openDeskHubChat:")), to: nil, from: nil | 질문 String) — Main 둥근 단추·메뉴 '챗봇 열기'·--key chat[:<질문>].
 // 1단계 로컬 즉답(ChatIntent.match): 다음 GRM 발표자 · 장비 예약 방법. 2단계 찾기: NAS 위키 md 조각 + 앱이 읽어 둔 Notion 값 → 낱말 겹침×idf 상위 5.
 // 모델: OpenRouter 는 키가 있을 때만 — 키는 요청할 때만 파일에서 읽고 보관·로그·덤프에 쓰지 않는다. 키가 없으면(1.0.1) 이 맥의 Ollama(OpenAI 호환,
-// 127.0.0.1:11434, 기본 qwen3:8b)가 떠 있을 때만 로컬로 묻는다 — 밖으로 나가지 않음. 둘 다 없으면 '모델 연결 전' + 찾은 조각 제목.
+// 127.0.0.1:11434, 기본 qwen3:8b, reasoning_effort none)가 떠 있을 때만 로컬로 묻는다 — 밖으로 나가지 않음. 둘 다 없으면 '모델 연결 전' + 찾은 조각 제목.
 // 대화는 메모리에만. 시험 길(창이 열려 있을 때만): KeyBus chat-close, 분산 알림 .snapshot → chat.png · .dumptext → chat.txt,
 // 훅 DESKHUB_CHAT_DRY=<dir>(보내지 않고 chat-request.json) · DESKHUB_OPENROUTER_ENV · DESKHUB_OPENROUTER_URL · DESKHUB_LOCAL_URL · DESKHUB_WIKI_DIR
 
@@ -217,11 +217,10 @@ enum ChatModelLink {
 
     static let system = "너는 연구실 대시보드의 도우미다. 아래 연구실 자료 조각만 근거로 한국어 3문장 이내로 답하고, 근거로 쓴 조각 번호를 [n] 으로 붙여라. 자료에 답이 없으면 '자료에 없음' 이라고만 답하라."
 
-    /// local = 로컬 모델용 — 시스템 문장 끝에 ' /no_think'(Qwen3 생각 끄기 표시, 다른 모델은 무시)
-    static func messages(question: String, snippets: [ChatSnippet], local: Bool = false) -> [[String: String]] {
+    static func messages(question: String, snippets: [ChatSnippet]) -> [[String: String]] {
         let ctx = snippets.enumerated().map { i, s in "[\(i + 1)] \(s.title)\n\(s.text)" }.joined(separator: "\n\n")
         let user = "질문: \(question)\n\n연구실 자료 조각:\n" + (ctx.isEmpty ? "(없음)" : ctx)
-        return [["role": "system", "content": local ? system + " /no_think" : system], ["role": "user", "content": user]]
+        return [["role": "system", "content": system], ["role": "user", "content": user]]
     }
 
     /// 드라이런 파일 — model · snippet_ids · messages 만(Authorization·키 없음). '"model": "<id>"' 꼴로 쓴다
@@ -243,7 +242,7 @@ enum ChatModelLink {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("DeskHub", forHTTPHeaderField: "X-Title")
         var body: [String: Any] = ["model": model, "messages": messages, "max_tokens": 400, "temperature": 0.2]
-        if key == nil { body["think"] = false }   // Ollama 생각 끄기(모르는 서버는 무시)
+        if key == nil { body["reasoning_effort"] = "none" }   // 로컬 생각 끄기 — Ollama /v1 은 think:false·'/no_think' 를 무시하고 이것만 듣는다(1.0.2, 실측). 안 끄면 max_tokens 를 생각으로 다 써 빈 답
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
         req.httpBody = data
         guard let (d, resp) = try? await URLSession.shared.data(for: req),
@@ -396,7 +395,7 @@ final class ChatSession: ObservableObject {
                     if local, !(await ChatModelLink.localAlive(url: localURL)) { return (.offline, "", "") }
                     let id = local ? localID : modelID
                     let link = local ? "로컬 \(id)" : "OpenRouter \(id)"
-                    let msgs = ChatModelLink.messages(question: q, snippets: top, local: local)
+                    let msgs = ChatModelLink.messages(question: q, snippets: top)
                     if let dry {
                         let json = ChatModelLink.dryJSON(model: id, messages: msgs, ids: top.map(\.id))
                         try? FileManager.default.createDirectory(atPath: dry, withIntermediateDirectories: true)
