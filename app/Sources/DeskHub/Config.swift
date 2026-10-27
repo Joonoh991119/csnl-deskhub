@@ -231,7 +231,7 @@ struct ProlificConfig: Codable {
     /// 워크스페이스 ID. 비우면 첫 워크스페이스. 프로젝트 이름이 실험자 이름("Joonoh Park")이라 프로젝트별로 study 를 읽어 실험자를 붙인다
     var workspaceID: String = ""
     /// 프로젝트 이름 → 이니셜. Members DB 이름과 맞지 않는 프로젝트만 적는다 (나머지는 Members 에서 찾음)
-    var projectInitials: [String: String] = ["MinsuYeo": "MSY", "Minsu Yeo": "MSY", "Boyun Lee": "BYL", "Bohyun Lee": "BHL", "Jaeseob Lim": "JSL", "Joonoh Park": "JOP", "Jungye Kim": "JYK", "Sungje Kim": "SJK", "Saemi Jung": "SMJ", "Suyoung Jo": "SYJ", "Juhyoung Ryu": "JHR", "Min Jin Choe": "MJC", "Minjin Choe": "MJC", "Hyunju Hwang": "HJH"]
+    var projectInitials: [String: String] = ["MinsuYeo": "MSY", "Minsu Yeo": "MSY", "Boyun Lee": "BYL", "Bohyun Lee": "BHL", "Jaeseob Lim": "JSL", "Joonoh Park": "JOP", "Jungye Kim": "JYK", "Sungje Kim": "SJK", "Saemi Jung": "SMJ", "Suyoung Jo": "SYJ", "Sooyoung Jo": "SYJ", "Juhyoung Ryu": "JHR", "Min Jin Choe": "MJC", "Minjin Choe": "MJC", "Hyunju Hwang": "HJH"]
 }
 
 struct NASConfig: Codable {

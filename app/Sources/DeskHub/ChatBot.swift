@@ -5,9 +5,10 @@ import Combine
 // MARK: - 챗봇 창 (1.0.0 B3, R6 — 계획 docs/plan-1.0.0-2026-10-23.md §B3, 설계 §5 ③·§6-2)
 // 여는 길: NSApp.sendAction(Selector(("openDeskHubChat:")), to: nil, from: nil | 질문 String) — Main 둥근 단추·메뉴 '챗봇 열기'·--key chat[:<질문>].
 // 1단계 로컬 즉답(ChatIntent.match): 다음 GRM 발표자 · 장비 예약 방법. 2단계 찾기: NAS 위키 md 조각 + 앱이 읽어 둔 Notion 값 → 낱말 겹침×idf 상위 5.
-// 모델(OpenRouter)은 키가 있을 때만 — 키는 요청할 때만 파일에서 읽고 보관·로그·덤프에 쓰지 않는다. 없으면 '모델 연결 전' + 찾은 조각 제목.
+// 모델: OpenRouter 는 키가 있을 때만 — 키는 요청할 때만 파일에서 읽고 보관·로그·덤프에 쓰지 않는다. 키가 없으면(1.0.1) 이 맥의 Ollama(OpenAI 호환,
+// 127.0.0.1:11434, 기본 qwen3:8b)가 떠 있을 때만 로컬로 묻는다 — 밖으로 나가지 않음. 둘 다 없으면 '모델 연결 전' + 찾은 조각 제목.
 // 대화는 메모리에만. 시험 길(창이 열려 있을 때만): KeyBus chat-close, 분산 알림 .snapshot → chat.png · .dumptext → chat.txt,
-// 훅 DESKHUB_CHAT_DRY=<dir>(보내지 않고 chat-request.json) · DESKHUB_OPENROUTER_ENV · DESKHUB_OPENROUTER_URL · DESKHUB_WIKI_DIR
+// 훅 DESKHUB_CHAT_DRY=<dir>(보내지 않고 chat-request.json) · DESKHUB_OPENROUTER_ENV · DESKHUB_OPENROUTER_URL · DESKHUB_LOCAL_URL · DESKHUB_WIKI_DIR
 
 extension NSApplication {
     /// sender = nil(창만) 또는 질문 String(열고 바로 묻기). 허브 모델이 없으면 삐
@@ -157,6 +158,38 @@ enum ChatModelLink {
         guard let v = ProcessInfo.processInfo.environment["DESKHUB_CHAT_DRY"], !v.isEmpty else { return nil }
         return (v as NSString).expandingTildeInPath
     }
+
+    // MARK: 로컬 모델 (1.0.1) — 키가 없을 때의 두 번째 길. Ollama 의 OpenAI 호환 주소, 키 없음, 이 맥 밖으로 나가지 않는다
+    static let localDefaultModel = "qwen3:8b"
+    static var localModelID: String {
+        let v = (UserDefaults.standard.string(forKey: "DeskHub.chatLocalModel") ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? localDefaultModel : v
+    }
+    /// 로컬 chat/completions 주소 — 훅 DESKHUB_LOCAL_URL → UserDefaults DeskHub.chatLocalURL → 기본 127.0.0.1:11434
+    static var localEndpoint: URL {
+        for raw in [ProcessInfo.processInfo.environment["DESKHUB_LOCAL_URL"], UserDefaults.standard.string(forKey: "DeskHub.chatLocalURL")] {
+            let v = (raw ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !v.isEmpty, let u = URL(string: v) { return u }
+        }
+        return URL(string: "http://127.0.0.1:11434/v1/chat/completions")!
+    }
+    /// 로컬 서버가 떠 있는지 — '…/chat/completions' 와 같은 자리의 '…/models' 를 2초 안에 GET(그 꼴이 아니면 주소 그대로). 5xx·연결 실패만 죽은 것으로
+    static func localAlive(url: URL) async -> Bool {
+        let s = url.absoluteString, tail = "/chat/completions"
+        let probe = s.hasSuffix(tail) ? (URL(string: String(s.dropLast(tail.count)) + "/models") ?? url) : url
+        var req = URLRequest(url: probe)
+        req.timeoutInterval = 2
+        guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return false }
+        return ((resp as? HTTPURLResponse)?.statusCode ?? 500) < 500
+    }
+    /// 생각 블록(<think>…</think>) 제거 — 로컬 Qwen3 류가 답 앞에 끼워 넣는 것
+    static func stripThink(_ s: String) -> String {
+        var out = s
+        while let a = out.range(of: "<think>"), let b = out.range(of: "</think>", range: a.upperBound..<out.endIndex) {
+            out.removeSubrange(a.lowerBound..<b.upperBound)
+        }
+        return out.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
     /// 키를 찾을 파일 순서 — 시험 훅이 있으면 그것만(다른 파일로 넘어가지 않음), 아니면 NAS tokens.env → 이 맥 .env
     @MainActor static func keyFiles(model: NotionHubModel) -> [String] {
         if let v = ProcessInfo.processInfo.environment["DESKHUB_OPENROUTER_ENV"], !v.isEmpty { return [(v as NSString).expandingTildeInPath] }
@@ -184,10 +217,11 @@ enum ChatModelLink {
 
     static let system = "너는 연구실 대시보드의 도우미다. 아래 연구실 자료 조각만 근거로 한국어 3문장 이내로 답하고, 근거로 쓴 조각 번호를 [n] 으로 붙여라. 자료에 답이 없으면 '자료에 없음' 이라고만 답하라."
 
-    static func messages(question: String, snippets: [ChatSnippet]) -> [[String: String]] {
+    /// local = 로컬 모델용 — 시스템 문장 끝에 ' /no_think'(Qwen3 생각 끄기 표시, 다른 모델은 무시)
+    static func messages(question: String, snippets: [ChatSnippet], local: Bool = false) -> [[String: String]] {
         let ctx = snippets.enumerated().map { i, s in "[\(i + 1)] \(s.title)\n\(s.text)" }.joined(separator: "\n\n")
         let user = "질문: \(question)\n\n연구실 자료 조각:\n" + (ctx.isEmpty ? "(없음)" : ctx)
-        return [["role": "system", "content": system], ["role": "user", "content": user]]
+        return [["role": "system", "content": local ? system + " /no_think" : system], ["role": "user", "content": user]]
     }
 
     /// 드라이런 파일 — model · snippet_ids · messages 만(Authorization·키 없음). '"model": "<id>"' 꼴로 쓴다
@@ -200,15 +234,16 @@ enum ChatModelLink {
             + messages.map { "    " + enc($0) }.joined(separator: ",\n") + "\n  ]\n}\n"
     }
 
-    /// OpenRouter chat/completions — 20초 제한. 성공이면 답 글, 실패면 nil
-    static func complete(key: String, model: String, messages: [[String: String]], url: URL) async -> String? {
+    /// chat/completions — OpenRouter(key 있음, 20초) 또는 로컬(key nil, 60초 — 첫 답은 모델을 메모리에 올리느라 느리다). 성공이면 답 글, 실패면 nil
+    static func complete(key: String?, model: String, messages: [[String: String]], url: URL) async -> String? {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
-        req.timeoutInterval = 20
-        req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = key == nil ? 60 : 20
+        if let key { req.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("DeskHub", forHTTPHeaderField: "X-Title")
-        let body: [String: Any] = ["model": model, "messages": messages, "max_tokens": 400, "temperature": 0.2]
+        var body: [String: Any] = ["model": model, "messages": messages, "max_tokens": 400, "temperature": 0.2]
+        if key == nil { body["think"] = false }   // Ollama 생각 끄기(모르는 서버는 무시)
         guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
         req.httpBody = data
         guard let (d, resp) = try? await URLSession.shared.data(for: req),
@@ -216,7 +251,7 @@ enum ChatModelLink {
               let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
               let choice = (o["choices"] as? [[String: Any]])?.first,
               let text = (choice["message"] as? [String: Any])?["content"] as? String else { return nil }
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let t = stripThink(text)
         return t.isEmpty ? nil : t
     }
 }
@@ -237,7 +272,8 @@ struct ChatTurn: Identifiable {
 final class ChatSession: ObservableObject {
     let model: NotionHubModel
     @Published var turns: [ChatTurn] = []
-    @Published var keyPresent = false
+    @Published var linked = false        // 모델에 물을 수 있는 상태(키 또는 로컬 서버)
+    @Published var linkName = ""         // 'OpenRouter <id>' 또는 '로컬 <id>'
     @Published var wikiCount = 0
     @Published var draft = ""
     var minButton: CGFloat = .infinity
@@ -251,7 +287,7 @@ final class ChatSession: ObservableObject {
         return (model.nasRoot as NSString).appendingPathComponent("AI_Meeting/llm_wiki_practice/wiki")
     }
 
-    /// 창을 열 때 — 위키 읽기(백그라운드, NAS 가 느려도 화면이 멈추지 않게) · 키 있음 확인(값은 버림)
+    /// 창을 열 때 — 위키 읽기(백그라운드, NAS 가 느려도 화면이 멈추지 않게) · 연결 확인(키 있음(값은 버림) → 없으면 로컬 서버)
     func start() {
         let dir = wikiDir
         let t = Task.detached(priority: .utility) { ChatSearch.loadWiki(dir: dir) }
@@ -260,14 +296,20 @@ final class ChatSession: ObservableObject {
             let w = await t.value
             self?.wikiCount = w.count
         }
-        checkKey()
+        checkLink()
     }
 
-    func checkKey() {
+    /// 키가 있으면 OpenRouter, 없고 로컬 서버가 살아 있으면 로컬, 둘 다 아니면 연결 전
+    func checkLink() {
         let files = ChatModelLink.keyFiles(model: model)
+        let cloud = ChatModelLink.modelID, localID = ChatModelLink.localModelID, localURL = ChatModelLink.localEndpoint
         Task { [weak self] in
-            let has = await Task.detached { ChatModelLink.readKey(files: files) != nil }.value
-            self?.keyPresent = has
+            let r: (Bool, String) = await Task.detached {
+                if ChatModelLink.readKey(files: files) != nil { return (true, "OpenRouter \(cloud)") }
+                if await ChatModelLink.localAlive(url: localURL) { return (true, "로컬 \(localID)") }
+                return (false, "")
+            }.value
+            self?.linked = r.0; self?.linkName = r.1
         }
     }
 
@@ -342,37 +384,41 @@ final class ChatSession: ObservableObject {
             turns.append(ChatTurn(id: id, question: q, intent: intent, kind: .waiting, answer: "자료를 찾는 중…", evidence: []))
             let notion = notionSnippets(), files = ChatModelLink.keyFiles(model: model)
             let modelID = ChatModelLink.modelID, url = ChatModelLink.endpoint, dry = ChatModelLink.dryDir
+            let localID = ChatModelLink.localModelID, localURL = ChatModelLink.localEndpoint
             let wiki = wikiTask
             Task { [weak self] in
                 let w = await wiki?.value ?? []
                 let top = ChatSearch.rank(q, w + notion)
-                let msgs = ChatModelLink.messages(question: q, snippets: top)
-                // 키는 이 안에서만 — 꺼내 쓰고 버린다(상태·로그·덤프에 남지 않음)
-                let outcome: (ChatTurn.Kind, String) = await Task.detached {
-                    guard let key = ChatModelLink.readKey(files: files) else { return (.offline, "") }
+                // 키는 이 안에서만 — 꺼내 쓰고 버린다(상태·로그·덤프에 남지 않음). 길: 키 → OpenRouter, 없으면 로컬 서버가 살아 있을 때만 로컬
+                let outcome: (ChatTurn.Kind, String, String) = await Task.detached {
+                    let key = ChatModelLink.readKey(files: files)
+                    let local = key == nil
+                    if local, !(await ChatModelLink.localAlive(url: localURL)) { return (.offline, "", "") }
+                    let id = local ? localID : modelID
+                    let link = local ? "로컬 \(id)" : "OpenRouter \(id)"
+                    let msgs = ChatModelLink.messages(question: q, snippets: top, local: local)
                     if let dry {
-                        let json = ChatModelLink.dryJSON(model: modelID, messages: msgs, ids: top.map(\.id))
+                        let json = ChatModelLink.dryJSON(model: id, messages: msgs, ids: top.map(\.id))
                         try? FileManager.default.createDirectory(atPath: dry, withIntermediateDirectories: true)
                         try? json.write(toFile: (dry as NSString).appendingPathComponent("chat-request.json"), atomically: true, encoding: .utf8)
-                        _ = key
-                        return (.dry, "")
+                        return (.dry, "", link)
                     }
-                    if let a = await ChatModelLink.complete(key: key, model: modelID, messages: msgs, url: url) { return (.model, a) }
-                    return (.failed, "")
+                    if let a = await ChatModelLink.complete(key: key, model: id, messages: msgs, url: local ? localURL : url) { return (.model, a, link) }
+                    return (.failed, "", link)
                 }.value
-                self?.finish(id: id, kind: outcome.0, modelAnswer: outcome.1, top: top)
+                self?.finish(id: id, kind: outcome.0, modelAnswer: outcome.1, link: outcome.2, top: top)
             }
         }
     }
 
-    private func finish(id: Int, kind: ChatTurn.Kind, modelAnswer: String, top: [ChatSnippet]) {
+    private func finish(id: Int, kind: ChatTurn.Kind, modelAnswer: String, link: String, top: [ChatSnippet]) {
         guard let i = turns.firstIndex(where: { $0.id == id }) else { return }
         let titles = top.isEmpty ? "찾은 자료 없음" : top.enumerated().map { "[\($0.offset + 1)] \($0.element.title)" }.joined(separator: "\n")
         switch kind {
-        case .model: turns[i].answer = modelAnswer; keyPresent = true
-        case .dry: turns[i].answer = "(드라이런) 요청을 남김 — 자료 \(top.count)개"; keyPresent = true
-        case .offline: turns[i].answer = "모델 연결 전 — 연구실 자료에서 찾은 것:\n" + titles; keyPresent = false
-        case .failed: turns[i].answer = "모델 응답 실패 — 찾은 자료:\n" + titles; keyPresent = true
+        case .model: turns[i].answer = modelAnswer; linked = true; linkName = link
+        case .dry: turns[i].answer = "(드라이런) 요청을 남김 — 자료 \(top.count)개 · \(link)"; linked = true; linkName = link
+        case .offline: turns[i].answer = "모델 연결 전 — 연구실 자료에서 찾은 것:\n" + titles; linked = false; linkName = ""
+        case .failed: turns[i].answer = "모델 응답 실패(\(link)) — 찾은 자료:\n" + titles; linked = true; linkName = link
         default: break
         }
         turns[i].kind = kind
@@ -472,7 +518,7 @@ final class ChatWindowController: NSObject, NSWindowDelegate {
         try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
         let s = session
         let btn = s.minButton.isFinite ? "\(Int(s.minButton.rounded(.down)))" : "—"
-        var lines = ["[챗봇] 모델 \(ChatModelLink.modelID) · 키 \(s.keyPresent ? "있음" : "없음") · 위키 조각 \(s.wikiCount) · Notion 조각 \(s.notionSnippets().count) · 단추 최소 높이 \(btn)"]
+        var lines = ["[챗봇] 모델 \(ChatModelLink.modelID) · 로컬 \(ChatModelLink.localModelID) · 연결 \(s.linked ? s.linkName : "없음") · 위키 조각 \(s.wikiCount) · Notion 조각 \(s.notionSnippets().count) · 단추 최소 높이 \(btn)"]
         for t in s.turns {
             let ev = t.evidence.isEmpty ? "—" : t.evidence.map(\.id).joined(separator: ",")
             let head = String(t.answer.replacingOccurrences(of: "\n", with: " ").prefix(80))
@@ -502,6 +548,7 @@ struct ChatWindowView: View {
     @ObservedObject private var display = HubDisplay.shared
     @State private var settingsOpen = false
     @State private var modelDraft = UserDefaults.standard.string(forKey: "DeskHub.chatModel") ?? ""
+    @State private var localDraft = UserDefaults.standard.string(forKey: "DeskHub.chatLocalModel") ?? ""
     @State private var openEvidence: Set<Int> = []
     private let cs = CardStyle.large
     static let examples = ["다음 GRM 발표자", "장비 예약 방법"]
@@ -550,9 +597,9 @@ struct ChatWindowView: View {
 
     private var statusRow: some View {
         HStack(spacing: 8) {
-            Circle().fill(session.keyPresent ? Hub.ink : Hub.text3).frame(width: 9, height: 9)
-            Text(session.keyPresent ? "모델 연결됨" : "모델 연결 전 — 연구실 자료에서 찾은 것만")
-                .font(.hub(cs.aux, weight: .semibold)).foregroundStyle(session.keyPresent ? Hub.text : Hub.text2).lineLimit(2)
+            Circle().fill(session.linked ? Hub.ink : Hub.text3).frame(width: 9, height: 9)
+            Text(session.linked ? "모델 연결됨 · \(session.linkName)" : "모델 연결 전 — 연구실 자료에서 찾은 것만")
+                .font(.hub(cs.aux, weight: .semibold)).foregroundStyle(session.linked ? Hub.text : Hub.text2).lineLimit(2)
             Spacer(minLength: 8)
             Button(action: close) {
                 HStack(spacing: 4) { Text("닫기"); Image(systemName: "xmark") }
@@ -642,26 +689,35 @@ struct ChatWindowView: View {
             }
             .buttonStyle(PressFillStyle(cornerRadius: 6))
             if settingsOpen {
-                HStack(spacing: 8) {
-                    Text("모델 id").font(.hub(cs.tag, weight: .semibold)).foregroundStyle(Hub.text2)
-                    TextField(ChatModelLink.defaultModel, text: $modelDraft)
-                        .textFieldStyle(.roundedBorder).font(.hub(cs.tag, design: .monospaced))
-                        .onSubmit { saveModel() }
-                    Button { saveModel() } label: {
-                        Text("저장").font(.hub(cs.tag, weight: .semibold)).padding(.horizontal, 10)
-                            .frame(minHeight: TapTarget.min)
-                            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Hub.fillNeutral))
-                    }
-                    .buttonStyle(PressFillStyle())
-                }
-                Text("비우면 기본값 · 이 맥에만 저장 · 대화는 저장하지 않습니다").font(.hub(cs.tag - 1)).foregroundStyle(Hub.text3)
+                settingRow("OpenRouter 모델", placeholder: ChatModelLink.defaultModel, text: $modelDraft)
+                settingRow("로컬 모델", placeholder: ChatModelLink.localDefaultModel, text: $localDraft)
+                Text("OpenRouter 키가 없으면 이 맥의 Ollama(127.0.0.1:11434)에 묻습니다 · 비우면 기본값 · 이 맥에만 저장 · 대화는 저장하지 않습니다")
+                    .font(.hub(cs.tag - 1)).foregroundStyle(Hub.text3).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
+    private func settingRow(_ label: String, placeholder: String, text: Binding<String>) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.hub(cs.tag, weight: .semibold)).foregroundStyle(Hub.text2)
+            TextField(placeholder, text: text)
+                .textFieldStyle(.roundedBorder).font(.hub(cs.tag, design: .monospaced))
+                .onSubmit { saveModel() }
+            Button { saveModel() } label: {
+                Text("저장").font(.hub(cs.tag, weight: .semibold)).padding(.horizontal, 10)
+                    .frame(minHeight: TapTarget.min)
+                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Hub.fillNeutral))
+            }
+            .buttonStyle(PressFillStyle())
+        }
+    }
+
+    /// 두 칸 다 저장(빈 칸 = 기본값) 뒤 연결 상태를 다시 본다
     private func saveModel() {
-        let v = modelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if v.isEmpty { UserDefaults.standard.removeObject(forKey: "DeskHub.chatModel") } else { UserDefaults.standard.set(v, forKey: "DeskHub.chatModel") }
-        session.objectWillChange.send()
+        for (draft, key) in [(modelDraft, "DeskHub.chatModel"), (localDraft, "DeskHub.chatLocalModel")] {
+            let v = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if v.isEmpty { UserDefaults.standard.removeObject(forKey: key) } else { UserDefaults.standard.set(v, forKey: key) }
+        }
+        session.checkLink()
     }
 }
